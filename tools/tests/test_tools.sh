@@ -78,8 +78,8 @@ python3 tools/qa/capture.py --scene res://modules/demo/internal/demo.tscn --fram
 python3 tools/qa/record.py --scene res://modules/demo/internal/demo.tscn --seconds 1 --mode fast --out docs/qa/videos/t/d.mp4 >/dev/null 2>&1 && echo RECORD_OK
 RS
   res=$(unshare --user --map-root-user --mount --net bash $R/run.sh 2>&1)
-  echo "$res" | grep -q CAPTURE_OK && ok "capture works with read-only /tmp and no network" || bad "capture under sandbox-like conditions"
-  echo "$res" | grep -q RECORD_OK && ok "record works with read-only /tmp and no network" || bad "record under sandbox-like conditions"
+  echo "$res" | grep -q CAPTURE_OK && ok "capture works with the sandbox's /tmp rule and no network" || bad "capture under sandbox-like conditions"
+  echo "$res" | grep -q RECORD_OK && ok "record works with the sandbox's /tmp rule and no network" || bad "record under sandbox-like conditions"
   rm -rf $R
 else
   echo "SKIP  render tools (needs godot, Xvfb and unprivileged user namespaces)"
