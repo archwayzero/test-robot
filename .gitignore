@@ -34,3 +34,15 @@ dist/
 /.claude/routines
 /.claude/scheduled_tasks.json
 /.claude/workflows
+
+# From GitHub's Godot template (initial commit on main). Omitted: data_*/ (Mono only, could hide real folders).
+~*.dll
+.nomedia
+.import/
+export.cfg
+export_credentials.cfg
+*.tmp
+*.translation
+.mono/
+mono_crash.*.json
+*.exe
