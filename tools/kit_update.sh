@@ -23,6 +23,10 @@ FIRST=$(git rev-list --max-parents=0 HEAD | tail -1)
 LOCKED=".claude/hooks/scope_guard.py .claude/hooks/bash_guard.py .claude/hooks/completion_gate.py .claude/hooks/log_event.py
 tools/scope_lib.py tools/precommit_checks.py tools/githooks/pre-commit tools/githooks/pre-push tools/githooks/post-checkout
 tools/setup.sh tools/envcheck.py tools/xdisplay.py tools/sandbox_selftest.py tools/kit_update.sh tools/comfy/comfy_client.py
+tools/maintain.sh MAINTAINING.md .gitattributes .github/workflows/kit-tests.yml
+tools/tests/run_all.sh tools/tests/test_guards_git.sh tools/tests/test_release.sh tools/tests/test_tools.sh
+tools/tests/make_glb.py tools/tests/fake_comfy.py tools/tests/fwdproxy.py tools/tests/loopback_up.py
+tools/tests/kit_copy.sh tools/tests/fixtures/budgets.json
 docs/module-map.json"
 OTHER=".claude/agents/module-dev.md .claude/agents/orchestrator.md .claude/agents/reviewer.md .claude/agents/qa.md
 .claude/agents/modeler.md .claude/agents/rigger-animator.md .claude/agents/reference-director.md
@@ -89,7 +93,7 @@ for line in "/.kit-update/"; do grep -qxF "$line" .gitignore || echo "$line" >> 
 mkdir -p .dvc/tmp/site_cache "$HOME/.local/share/godot" "$HOME/.config/godot" "$HOME/.cache/godot"
 dvc config --local core.site_cache_dir "$PWD/.dvc/tmp/site_cache" && echo "DVC state folder moved into the project"
 
-git add -A -- .claude .github tools docs CLAUDE.md README.md PROMPTS.md SETUP.md .gitignore 2>/dev/null || true
+git add -A -- .claude .github tools docs CLAUDE.md README.md PROMPTS.md SETUP.md MAINTAINING.md .gitignore .gitattributes 2>/dev/null || true
 git reset -q -- .kit-update 2>/dev/null || true
 if git diff --cached --quiet; then echo "Nothing to commit: already up to date."; else
   ALLOW_KIT_UPDATE=1 git commit -q -m "kit: update from gamedev-kit.zip" && echo "Committed on branch $(git branch --show-current)."
