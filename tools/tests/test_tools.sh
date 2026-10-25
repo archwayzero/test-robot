@@ -66,8 +66,13 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 3)
 TS
   cat > $R/run.sh <<RS
 python3 "$K/tools/tests/loopback_up.py" >/dev/null
-# remount,ro fails silently in a user namespace and left /tmp writable; mount it read-only directly and check
-mount -t tmpfs -o ro tmpfs /tmp && ! touch /tmp/.rw-probe 2>/dev/null || { echo RO_TMP_SETUP_FAILED; exit 1; }
+# /tmp as the sandbox gives it: writable only if settings.json allowWrite lists it, otherwise read-only
+# (remount,ro fails silently in a user namespace, so mount it read-only directly and check)
+if python3 -I -c 'import json,sys; sys.exit("/tmp" not in json.load(open(sys.argv[1]))["sandbox"]["filesystem"]["allowWrite"])' "$K/.claude/settings.json"; then
+  mount -t tmpfs tmpfs /tmp || { echo TMP_SETUP_FAILED; exit 1; }
+else
+  mount -t tmpfs -o ro tmpfs /tmp && ! touch /tmp/.rw-probe 2>/dev/null || { echo TMP_SETUP_FAILED; exit 1; }
+fi
 export TMPDIR=$R/tmpw; unset DISPLAY WAYLAND_DISPLAY; cd $R/p
 python3 tools/qa/capture.py --scene res://modules/demo/internal/demo.tscn --frames 6 --every 3 --mode fast >/dev/null 2>&1 && echo CAPTURE_OK
 python3 tools/qa/record.py --scene res://modules/demo/internal/demo.tscn --seconds 1 --mode fast --out docs/qa/videos/t/d.mp4 >/dev/null 2>&1 && echo RECORD_OK

@@ -2,8 +2,8 @@
 """Private virtual display for rendering inside Claude Code's sandbox.
 
 The sandbox blocks Unix sockets and gives each command its own private loopback network, so the usual
-xvfb-run (Unix socket) does not work there; /tmp is also read-only, so Xvfb runs with -nolock (no
-/tmp/.X<N>-lock file). This starts Xvfb listening only on TCP loopback and returns a DISPLAY like 127.0.0.1:N. Rendering is on the CPU (Mesa llvmpipe for OpenGL, lavapipe for Vulkan): sandboxed
+xvfb-run (Unix socket) does not work there. Xvfb runs with -nolock (no /tmp/.X<N>-lock file), but its
+keyboard compiler still writes /tmp/server-<N>.xkm, so /tmp must be in the sandbox's allowWrite. This starts Xvfb listening only on TCP loopback and returns a DISPLAY like 127.0.0.1:N. Rendering is on the CPU (Mesa llvmpipe for OpenGL, lavapipe for Vulkan): sandboxed
 commands cannot see the GPU.
 """
 import contextlib

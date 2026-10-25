@@ -67,6 +67,15 @@ check("can write ordinary project files", os.access(ROOT / "docs", os.W_OK))
 for d in ("~/.local/share/godot", "~/.config/godot", "~/.cache/godot"):
     pd = Path(d).expanduser()
     check(f"Godot can write {d}", pd.is_dir() and os.access(pd, os.W_OK), "missing or read-only: re-run tools/setup.sh")
+check("can write /tmp (Xvfb's keyboard map)", os.access("/tmp", os.W_OK), "add /tmp to sandbox allowWrite")
+sys.path.insert(0, str(ROOT / "tools"))
+try:
+    from xdisplay import virtual_display
+    with virtual_display():
+        pass
+    check("virtual display starts (tools/xdisplay.py)", True)
+except Exception as e:
+    check("virtual display starts (tools/xdisplay.py)", False, str(e).strip()[-200:])
 try:
     r = subprocess.run(["dvc", "status", "-q"], cwd=ROOT, capture_output=True, text=True, timeout=60)
     check("DVC works inside the sandbox", r.returncode == 0, (r.stderr or r.stdout).strip()[-200:])

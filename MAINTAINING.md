@@ -22,8 +22,9 @@ this file wins for you. (CLAUDE.md describes the sandboxed game agents.)
 - `docs/architecture/ARCHITECTURE.md`, `WORKFLOW.md`: module model, task lifecycle, version-control order.
 - Enforcement layers, strongest first:
   1. **Claude Code sandbox** (`.claude/settings.json` → `sandbox`): agents' shell commands can only write inside the
-     project (minus `denyWrite`), can't read `/mnt` or `~/.ssh`, and can only reach `allowedDomains`
-     (GitHub, the project's S3 bucket, `localhost:8188` for ComfyUI). No GPU, no Unix sockets, read-only `/tmp`,
+     project (minus `denyWrite`) and the `allowWrite` folders (Godot's, and `/tmp` because Xvfb writes its
+     keyboard map there), can't read `/mnt` or `~/.ssh`, and can only reach `allowedDomains`
+     (GitHub, the project's S3 bucket, `localhost:8188` for ComfyUI). No GPU, no Unix sockets,
      each command has a private localhost. `failIfUnavailable` and `allowUnsandboxedCommands: false` are mandatory.
   2. **Hooks** (`.claude/hooks/`): `scope_guard.py` (per-agent write scopes for Claude's file tools, from
      `docs/module-map.json`; `module-dev` is scoped by its branch `task/module-dev/<module>/...`), `bash_guard.py`
@@ -46,8 +47,9 @@ this file wins for you. (CLAUDE.md describes the sandboxed game agents.)
 4. **Test before every PR:** `bash tools/tests/run_all.sh` must end with `ALL SUITES PASSED`. Add or update a test for
    every bug you fix (a test that fails without your fix). The render tests run when `godot`, `Xvfb` and user
    namespaces are available (they are in WSL); say so if they were skipped.
-5. **Simulate the sandbox when the bug is sandbox-specific.** `unshare --user --map-root-user --mount --net` with a
-   read-only `/tmp` (see `tools/tests/test_tools.sh`) reproduces the main restrictions. If a fix can only be verified
+5. **Simulate the sandbox when the bug is sandbox-specific.** `unshare --user --map-root-user --mount --net` with
+   `/tmp` writable only if `.claude/settings.json` allows it (see `tools/tests/test_tools.sh`) reproduces the main
+   restrictions. Use `mount -t tmpfs -o ro`: `mount -o remount,ro` fails silently in a user namespace. If a fix can only be verified
    inside the real sandbox, write the exact check the human should ask a game agent to run after merging.
 6. **Keep SETUP.md beginner-proof** when a change affects what the human does. Plain words, exact clicks/commands.
 7. **Line endings stay LF** (`.gitattributes`). Don't reformat unrelated code.
