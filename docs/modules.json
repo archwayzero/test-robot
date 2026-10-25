@@ -1,0 +1,8 @@
+{
+  "modules": {
+    "core": {
+      "description": "Event bus, game state, save/load interfaces",
+      "depends_on": []
+    }
+  }
+}

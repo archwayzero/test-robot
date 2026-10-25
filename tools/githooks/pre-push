@@ -1,0 +1,17 @@
+#!/bin/sh
+# Order enforced here: DVC data goes to the remote BEFORE git refs do.
+ROOT="$(git rev-parse --show-toplevel)"
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/master)
+      if [ "$ALLOW_PROTECTED_PUSH" != "1" ]; then
+        echo "Pushing to $remote_ref is not allowed. Push a task/arch branch and open a PR." >&2
+        exit 1
+      fi ;;
+  esac
+done
+if [ -d "$ROOT/.dvc" ]; then
+  if ! command -v dvc >/dev/null 2>&1; then echo "dvc not installed; cannot push assets." >&2; exit 1; fi
+  dvc push || { echo "dvc push failed; aborting git push so pointers never outrun data." >&2; exit 1; }
+fi
+exit 0
