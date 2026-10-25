@@ -1,0 +1,20 @@
+; Engine configuration file.
+; Pinned engine: Godot 4.7.2.stable.official (ed1daf0bf). Renderer decision and sources:
+; docs/architecture/ARCHITECTURE.md, "Engine and renderer". Owner: orchestrator.
+
+config_version=5
+
+[application]
+
+config/name="Test Robot"
+config/features=PackedStringArray("4.7", "Mobile")
+
+[display]
+
+window/handheld/orientation=0
+
+[rendering]
+
+renderer/rendering_method="mobile"
+renderer/rendering_method.mobile="mobile"
+rendering_device/driver.ios="metal"

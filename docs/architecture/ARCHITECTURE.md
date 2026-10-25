@@ -2,6 +2,39 @@
 
 Goal: any task can be done by reading and changing one folder. Structure exists to make that true.
 
+## Engine and renderer
+Decided at bootstrap (2026-10-25). Use this exact engine everywhere: WSL2 sandbox, PC preview, Mac final build.
+
+- **Engine:** Godot **4.7.2.stable.official**, build `ed1daf0bf`, tag `4.7.2-stable`
+  (commit `ed1daf0bf001b61586d9930840f2f1394092c079`, checked with `git ls-remote`). The binary's
+  `godot --version` and the tag match.
+- **Renderer:** **Mobile** (`rendering/renderer/rendering_method="mobile"`, also `.mobile="mobile"`). Set explicitly,
+  not left to the per-platform default, so PC previews use the same renderer as the device.
+- **iOS driver:** native **Metal** (`rendering/rendering_device/driver.ios="metal"`, the 4.7.2 default; the
+  alternative is Vulkan via MoltenVK).
+- **Orientation:** landscape (`display/window/handheld/orientation=0`), per docs/specs/PLATFORM.md.
+
+Rationale and sources (all at the 4.7 branch / 4.7.2-stable tag):
+1. ProjectSettings reference, `doc/classes/ProjectSettings.xml` @ `4.7.2-stable`:
+   https://github.com/godotengine/godot/blob/4.7.2-stable/doc/classes/ProjectSettings.xml
+   `rendering_method` options: "mobile (Mobile): Modern renderer designed for mobile devices"; `rendering_method.mobile`
+   defaults to `"mobile"`; `driver.ios` default `"metal"` ("Metal from native drivers") or `"vulkan"` (MoltenVK).
+2. Overview of renderers, godot-docs `4.7`, `tutorials/rendering/renderers.rst`:
+   https://github.com/godotengine/godot-docs/blob/4.7/tutorials/rendering/renderers.rst
+   Mobile is "used by default on mobile platforms"; choose it when "developing for newer mobile devices".
+3. System requirements, godot-docs `4.7`, `about/system_requirements.rst`:
+   https://github.com/godotengine/godot-docs/blob/4.7/about/system_requirements.rst
+   Exported projects: Mobile renderer needs "Metal 3 support (iOS/iPadOS)"; minimum OS is **iOS 16.0 for
+   Forward+/Mobile with Metal** (iOS 15.0 with Vulkan). The recommended spec cites "Apple A14 (iPhone 12)" for the
+   Mobile renderer, which is our minimum device.
+4. Exporting for iOS, godot-docs `4.7`, `tutorials/export/exporting_for_ios.rst`:
+   https://github.com/godotengine/godot-docs/blob/4.7/tutorials/export/exporting_for_ios.rst
+   "The iOS simulator only supports the Compatibility renderer." Test on a real device (or natively on an Apple
+   Silicon Mac), not in the simulator.
+
+Consequences: the iOS export's minimum OS must be at least 16.0 (set when the export preset is created on the Mac).
+Headless Godot in the sandbox does not render; renderer behaviour is checked in PC previews and on device.
+
 ## Module model (Godot)
 ```
 godot/modules/<name>/

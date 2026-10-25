@@ -23,7 +23,8 @@ The Mobile renderer is the usual choice for iOS. The orchestrator verifies this 
 **Decision (bootstrap, 2026-10-25):** Mobile renderer, set explicitly so PC previews match the device; native Metal
 driver on iOS (`driver.ios="metal"`, the 4.7.2 default). Verified against the Godot 4.7 docs and the 4.7.2-stable
 ProjectSettings reference; sources in ARCHITECTURE.md, "Engine and renderer". Note: the iOS simulator supports only
-the Compatibility renderer, so test on a real device.
+the Compatibility renderer, so test on a real device. Native Metal requires iOS 16.0 or newer on the device
+(iPhone 12 supports it); set the iOS export minimum OS to 16.0 or later.
 
 ## Budgets
 Not written here. The orchestrator researches budgets for the minimum device, cites sources in
