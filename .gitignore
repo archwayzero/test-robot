@@ -1,0 +1,36 @@
+.godot/
+.claude/logs/
+.claude/state/
+.claude/settings.local.json
+*.blend1
+__pycache__/
+*.pyc
+dist/
+.captures/
+
+# Claude Code sandbox placeholders: inside the sandbox these protected names appear as /dev/null devices at the
+# project root. They are not real files. (A real .mcp.json can still be added with `git add -f .mcp.json`.)
+/.bash_profile
+/.bashrc
+/.profile
+/.zprofile
+/.zshrc
+/.zshenv
+/.gitconfig
+/.gitmodules
+/.mcp.json
+/.ripgreprc
+# No trailing slash: the placeholders are character devices, and "name/" only matches directories.
+/.idea
+/.vscode
+/.kit-update
+
+# Same placeholders inside .claude/ (protected Claude Code paths), plus Claude Code runtime state.
+/.claude/.cc-writes/
+/.claude/commands
+/.claude/launch.json
+/.claude/loop.md
+/.claude/output-styles
+/.claude/routines
+/.claude/scheduled_tasks.json
+/.claude/workflows

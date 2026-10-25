@@ -1,0 +1,7 @@
+#!/bin/sh
+# Restore DVC-tracked files from the local cache after switching branches.
+ROOT="$(git rev-parse --show-toplevel)"
+if [ -d "$ROOT/.dvc" ] && command -v dvc >/dev/null 2>&1; then
+  dvc checkout >&2 || echo "note: some assets missing from local cache; run 'dvc pull'." >&2
+fi
+exit 0

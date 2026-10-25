@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "protected_branches": [
+    "main",
+    "master"
+  ],
+  "binary_extensions": [
+    ".blend",
+    ".blend1",
+    ".glb",
+    ".fbx",
+    ".obj",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".exr",
+    ".hdr",
+    ".tga",
+    ".psd",
+    ".kra",
+    ".wav",
+    ".ogg",
+    ".mp3",
+    ".flac",
+    ".mp4",
+    ".webm",
+    ".ttf",
+    ".otf",
+    ".mov",
+    ".gif",
+    ".webp"
+  ],
+  "locked": [
+    ".claude/settings.json",
+    ".claude/hooks/**",
+    "tools/githooks/**",
+    "tools/scope_lib.py",
+    "tools/precommit_checks.py",
+    "docs/module-map.json",
+    "SETUP.md",
+    "tools/comfy/comfy_client.py",
+    "tools/sandbox_selftest.py",
+    "tools/setup.sh",
+    "tools/envcheck.py",
+    "tools/xdisplay.py",
+    "tools/kit_update.sh"
+  ],
+  "agents": {
+    "orchestrator": {
+      "write": [
+        "CLAUDE.md",
+        "README.md",
+        "PROMPTS.md",
+        "docs/**",
+        "tasks/**",
+        "tools/**",
+        ".claude/agents/**",
+        ".gitignore",
+        ".gitattributes",
+        ".dvcignore",
+        ".github/**",
+        "godot/project.godot",
+        "godot/export_presets.cfg",
+        "godot/addons/**",
+        "godot/modules/*/public/**",
+        "godot/modules/*/CLAUDE.md",
+        "godot/modules/*/internal/.gitkeep",
+        "godot/modules/*/tests/.gitkeep",
+        ".claude/skills/**"
+      ]
+    },
+    "modeler": {
+      "write": [
+        "blender/models/**",
+        "godot/assets/*/model/**"
+      ]
+    },
+    "rigger-animator": {
+      "write": [
+        "blender/rigs/**",
+        "godot/assets/*/rig/**"
+      ]
+    },
+    "reviewer": {
+      "write": []
+    },
+    "reference-director": {
+      "write": [
+        "reference/**"
+      ]
+    },
+    "qa": {
+      "write": [
+        "godot/tests/**",
+        "docs/qa/reports/**",
+        "docs/qa/videos/**"
+      ]
+    },
+    "module-dev": {
+      "write": [],
+      "note": "scoped at runtime to godot/modules/<module>/{internal,tests}/** where <module> comes from the branch task/module-dev/<module>/..."
+    }
+  }
+}

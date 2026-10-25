@@ -1,0 +1,121 @@
+{
+  "agent": "orchestrator",
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "filesystem": {
+      "denyRead": [
+        "/mnt",
+        "~/.ssh"
+      ],
+      "denyWrite": [
+        "./tools/githooks",
+        "./tools/scope_lib.py",
+        "./tools/precommit_checks.py",
+        "./tools/comfy/comfy_client.py",
+        "./tools/sandbox_selftest.py",
+        "./docs/module-map.json",
+        "./SETUP.md",
+        "./.dvc/config",
+        "./.dvc/config.local",
+        "./tools/setup.sh",
+        "./tools/envcheck.py",
+        "./tools/xdisplay.py",
+        "./tools/kit_update.sh"
+      ],
+      "allowWrite": [
+        "~/.local/share/godot",
+        "~/.config/godot",
+        "~/.cache/godot"
+      ]
+    },
+    "network": {
+      "allowedDomains": [
+        "github.com",
+        "api.github.com",
+        "archwayzero-assets.s3.us-east-2.amazonaws.com",
+        "localhost:8188"
+      ]
+    }
+  },
+  "permissions": {
+    "deny": [
+      "Read(//mnt/**)",
+      "Edit(//mnt/**)",
+      "Read(~/.ssh/**)",
+      "Edit(~/.ssh/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/scope_guard.py"
+            ],
+            "onFailure": "block"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/bash_guard.py"
+            ],
+            "onFailure": "block"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/log_event.py"
+            ],
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/completion_gate.py"
+            ]
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/completion_gate.py"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

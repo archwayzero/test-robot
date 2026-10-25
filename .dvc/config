@@ -1,0 +1,7 @@
+[core]
+    autostage = true
+    analytics = false
+    remote = storage
+['remote "storage"']
+    url = s3://archwayzero-assets/dvc
+    region = us-east-2
