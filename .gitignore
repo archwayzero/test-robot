@@ -46,3 +46,4 @@ export_credentials.cfg
 .mono/
 mono_crash.*.json
 *.exe
+/.kit-update/

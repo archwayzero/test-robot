@@ -43,7 +43,11 @@
     "tools/setup.sh",
     "tools/envcheck.py",
     "tools/xdisplay.py",
-    "tools/kit_update.sh"
+    "tools/kit_update.sh",
+    "tools/maintain.sh",
+    "MAINTAINING.md",
+    "tools/tests/**",
+    ".gitattributes"
   ],
   "agents": {
     "orchestrator": {

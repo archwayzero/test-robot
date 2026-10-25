@@ -1,0 +1,17 @@
+{
+  "platform": "ios",
+  "min_device": "iPhone 12",
+  "status": "PLACEHOLDER: the orchestrator replaces every null with a value backed by a cited source (see sources), and the human approves it in a PR. QA agents may not edit this file.",
+  "sources": [],
+  "weights": {"triangles": 0.35, "draw_calls_est": 0.25, "texture_mem_mb": 0.2, "texture_size": 0.1, "joints": 0.1},
+  "defaults": {"max_triangles": null, "max_draw_calls_est": null, "max_joints": null, "max_texture_size": null, "max_texture_mem_mb": null},
+  "categories": {
+    "character": {"max_triangles": null, "max_joints": null},
+    "prop": {"max_triangles": null},
+    "environment": {"max_triangles": null}
+  },
+  "assets": {
+    "example_crate": {"category": "prop", "max_triangles": 300}
+  },
+  "scene_totals": {"max_triangles": null, "max_draw_calls_est": null, "max_texture_mem_mb": null}
+}
