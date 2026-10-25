@@ -9,6 +9,10 @@ config_version=5
 config/name="Test Robot"
 config/features=PackedStringArray("4.7", "Mobile")
 
+[autoload]
+
+Core="*res://modules/core/public/core.gd"
+
 [display]
 
 window/handheld/orientation=0
