@@ -21,7 +21,11 @@ Summarize docs/specs/PLATFORM.md and the approved values in docs/qa/budgets.json
 (One row per M# from docs/specs/MECHANICS.md: test name, steps via automation API, expected state.)
 
 ## Test runner
-(Framework and exact headless command, pinned version, decided at bootstrap.)
+Undecided (bootstrap 2026-10-25). gdUnit4 v6.2.2 was evaluated and not installed: compatibility with Godot 4.7.2
+not confirmed (details: docs/architecture/THIRDPARTY.md). Next options, for the human to choose before the first
+module task: (a) a gdUnit4 release that lists 4.7.2, re-verified the same way; (b) a minimal in-repo runner under
+tools/ (headless `godot --headless --path godot -s <runner> -- --automation`). End-to-end tests use only the core
+Automation API (godot/modules/core/public/automation.gd) either way.
 
 ## Score
 The static budget score (0-100) covers only what the sandbox can measure. Report it with the PASS/FAIL list,
