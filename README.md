@@ -60,6 +60,8 @@ your Windows permissions, outside the sandbox, so only play versions you've revi
 | `tools/qa/record.py` | MP4 gameplay videos of scripted playthroughs, for human review without running code |
 | `tools/qa/capture.py`, `tools/xdisplay.py` | Godot scene screenshots agents can read (works inside the sandbox) |
 | `SETUP.md` | human setup checklist (locked against agents) |
+| `MAINTAINING.md`, `tools/maintain.sh` | how kit fixes are made: a separate, unsandboxed maintenance session in its own clone, via PRs |
+| `tools/tests/run_all.sh` | the kit's test suites (Linux); also run on PRs by `.github/workflows/kit-tests.yml` |
 | `tools/release/make_mac_package.py` | gated release package (Godot project + DVC assets) for the Mac |
 | `tools/githooks/` | pre-commit, pre-push (`dvc push` before git push), post-checkout (`dvc checkout`) |
 | `tools/*.py`, `tools/setup.sh` | scaffolding, task ledger, commit checks, one-time setup + self-test |

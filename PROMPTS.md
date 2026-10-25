@@ -141,7 +141,7 @@ Prepare a release candidate for the Mac/Xcode build. On an arch/release-<version
 ### 4b: build the package (after you merge)
 
 ```
-I merged the release PR. Run: `git switch main && git pull`, then
+I merged the release PR and ran `git pull` on main myself. Confirm `git status` is clean on main, then run
 `python3 tools/release/make_mac_package.py --version <version>`.
 It refuses unless the commit is on main, the tree is clean, budgets are approved and pass, the QA release
 report and the network and data audit both say PASS and are newer than the last game change, and all DVC assets
