@@ -3,6 +3,57 @@
     "core": {
       "description": "Event bus, game state, save/load interfaces",
       "depends_on": []
+    },
+    "maze": {
+      "description": "Maze layout grid (seeded, closed) and building the 3D maze from kit pieces, lights, occluders",
+      "depends_on": [
+        "core"
+      ]
+    },
+    "player": {
+      "description": "Character controller: stances, walk/run/jump, collision, third-person camera, hero animation",
+      "depends_on": [
+        "core"
+      ]
+    },
+    "touch_controls": {
+      "description": "On-screen joystick and buttons that emit the standard input actions",
+      "depends_on": [
+        "core"
+      ]
+    },
+    "exploration": {
+      "description": "Visited maze cells (fog-of-war state), stored in GameState",
+      "depends_on": [
+        "core",
+        "maze"
+      ]
+    },
+    "minimap": {
+      "description": "Top-left fog-of-war mini-map, large map on tap, player marker",
+      "depends_on": [
+        "core",
+        "maze",
+        "exploration"
+      ]
+    },
+    "cloud_save": {
+      "description": "Autosave policy and cloud backend (local + fake in sandbox, iCloud on iOS)",
+      "depends_on": [
+        "core"
+      ]
+    },
+    "game": {
+      "description": "Main scene: composes all modules and owns boot order; no game logic",
+      "depends_on": [
+        "core",
+        "maze",
+        "player",
+        "touch_controls",
+        "exploration",
+        "minimap",
+        "cloud_save"
+      ]
     }
   }
 }
