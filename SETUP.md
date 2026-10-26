@@ -377,6 +377,16 @@ You write the specs; the agents handle git for you. Do these when the agents are
 3. If Claude ever starts without its sandbox, it refuses to run (that's the `failIfUnavailable` setting), so you
    can't accidentally start it unprotected from these.
 
+### Changing the kit itself (fixes to tools, guards, sandbox settings)
+The game agents can't change the kit's rule files, by design. Kit fixes come from a separate **kit-maintenance**
+Claude session that runs outside the sandbox in its own copy of the repo:
+1. **Ubuntu terminal:** `sh ~/game/tools/maintain.sh` (first time, it makes the copy in `~/kit-maint`).
+2. Tell it what's wrong (for example, paste the game agent's report). It fixes it on a `kit/...` branch, runs the
+   kit's tests, and opens a pull request. It isn't sandboxed, so stay with it while it works.
+3. Review and merge the PR on GitHub. Check its description: it must say whether any protection changed.
+4. **Ubuntu terminal** (the agents can't do this part): `cd ~/game && git switch main && git pull`
+5. Ask a game agent to run `python3 tools/sandbox_selftest.py`; every line must say PASS.
+
 ### Reviewing PRs
 Every change reaches `main` only when you merge its PR. On **Files changed**, check the files are where the PR
 title says, and read the agent's summary. If something looks wrong, don't merge: tell the agent what to fix.

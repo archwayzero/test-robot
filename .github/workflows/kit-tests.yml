@@ -1,0 +1,15 @@
+name: kit-tests
+on:
+  pull_request:
+    paths:
+      - ".claude/**"
+      - "tools/**"
+      - "docs/module-map.json"
+      - ".github/workflows/**"
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Kit test suites (render tests are skipped here; they run in WSL)
+        run: bash tools/tests/run_all.sh

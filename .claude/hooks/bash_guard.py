@@ -12,6 +12,7 @@ import sys
 PROTECTED_PATHS = [".claude/settings", ".claude/hooks", "tools/githooks", "tools/scope_lib",
                    "tools/precommit_checks", "tools/comfy/comfy_client", "tools/sandbox_selftest",
                    "tools/setup.sh", "tools/envcheck", "tools/xdisplay", "tools/kit_update", "docs/module-map",
+                   "tools/maintain.sh", "MAINTAINING.md", "tools/tests/", ".gitattributes",
                    ".git/hooks", ".git/config", ".dvc/config"]
 # Commands that change the files named in their arguments.
 WRITING_COMMANDS = {"tee", "mv", "rm", "cp", "chmod", "chown", "truncate", "ln", "dd", "install", "touch", "rsync",

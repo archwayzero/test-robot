@@ -22,12 +22,17 @@
         "./tools/setup.sh",
         "./tools/envcheck.py",
         "./tools/xdisplay.py",
-        "./tools/kit_update.sh"
+        "./tools/kit_update.sh",
+        "./tools/maintain.sh",
+        "./MAINTAINING.md",
+        "./tools/tests",
+        "./.gitattributes"
       ],
       "allowWrite": [
         "~/.local/share/godot",
         "~/.config/godot",
-        "~/.cache/godot"
+        "~/.cache/godot",
+        "/tmp"
       ]
     },
     "network": {
