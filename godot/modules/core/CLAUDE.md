@@ -25,6 +25,13 @@ Signals (each emitted only by the named core service; any module may listen):
 | `state_value_changed(key: StringName, value: Variant)` | GameState impl | a state value changed |
 | `save_finished(slot: int, error: Error)` | SaveService impl | after each save attempt |
 | `load_finished(slot: int, error: Error)` | SaveService impl | after each load attempt |
+| `player_moved(position: Vector3)` | `player` module | player's global position changed (max once per physics frame) |
+
+### Shared constants (no implementation needed)
+- `GameActions` (public/game_actions.gd): InputMap action names `move_left/right/forward/back`, `run`, `jump`,
+  `stance_cycle`, `RUN_THRESHOLD = 0.7`. The actions are defined in project.godot (keyboard defaults for PC preview).
+- `StateKeys` (public/state_keys.gd): GameState keys and their single writer (`player/*`, `exploration/*`,
+  `maze/seed`) and the phases `loading`, `playing`, `map_open` (set by `game`).
 
 New cross-module gameplay signals are added to `core.gd` by the orchestrator (typed arguments, one named emitter).
 
@@ -59,4 +66,6 @@ Observation/control: `snapshot()` (state snapshot + `frame`, `seed`, `scene`), `
   exports exclude `res://modules/core/internal/automation/*` (export filter, set when the Mac export preset is made),
   so no `preload` of it anywhere.
 - Services get the CoreAPI passed in (to emit signals); they must not use `/root/...` node paths.
+- `advance_frames(n)` / `get_frame()` must count `Engine.get_process_frames()`, not `process_frame` signal
+  emissions (awaiting process_frame from code resumed by process_frame can resume in the same frame).
 - Tests live in `tests/` and run headless (test runner: docs/qa/TEST_PLAN.md, "Test runner").

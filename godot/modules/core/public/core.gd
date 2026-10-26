@@ -27,6 +27,10 @@ signal save_finished(slot: int, error: Error)
 ## Emitted by core (SaveService implementation) after a load attempt. `error` is OK on success.
 signal load_finished(slot: int, error: Error)
 
+## Emitted by the `player` module whenever the player's global position changed (at most once per physics frame).
+## Listeners (e.g. exploration) convert it to maze cells themselves.
+signal player_moved(position: Vector3)
+
 # --- Services -------------------------------------------------------------------------------------------
 
 ## Shared game state. Set by the core installer before any other node's _ready().
