@@ -32,7 +32,7 @@ Character controller: stances, walk/run/jump, collision, third-person camera, he
 - Emits `Core.player_moved(global_position)` when moved; writes `StateKeys.PLAYER_POSITION`, `PLAYER_YAW`,
   `PLAYER_STANCE` on stance change and at most every 0.5 s while moving.
 - Visual: capsule placeholder (T004) -> hero rig `res://assets/hero/rig/hero.glb` with an AnimationTree driving
-  idle_loop/walk_loop/jog_loop/crouch_idle_loop/crouch_walk_loop/crawl_idle_loop/crawl_loop/jump (T018), as listed in
+  idle_loop/walk_loop/jog_loop/crouch_idle_loop/crouch_walk_loop/crawl_idle_loop/crawl_loop/jump (T019), as listed in
   docs/contracts/blender-godot-assets.md "Asset: hero".
 - Tests: speeds per stance (+-5%), heights per stance, stand-up refused under a low ceiling, no jump while crawling,
   wall-push at 8 angles never penetrates, emits player_moved.

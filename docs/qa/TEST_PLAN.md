@@ -29,7 +29,7 @@ Mobile renderer, Metal. Static and frame budgets: docs/qa/budgets.json (sources 
 | Network and data audit | contacts, collected data, iOS permissions | qa (+ human) | sandbox (`tools/qa/net_data_audit.py`) | before the device build |
 | Device performance | FPS, thermals, memory on iPhone 12 | human | Mac + Xcode + device | M3 |
 
-Milestones: **M1** greybox playable (T002-T010), **M2** art integrated (T011-T019), **M3** iOS device build (T020+).
+Milestones: **M1** greybox playable (T002-T010), **M2** art integrated (T011-T020), **M3** iOS device build (T021+).
 
 ## Acceptance criteria per mechanic
 All end-to-end tests: `Core.automation.set_seed(1)`, `set_fixed_timestep(60, 30)`, load `GameMain.MAIN_SCENE`, wait

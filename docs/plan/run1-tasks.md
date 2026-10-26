@@ -1,0 +1,38 @@
+# Run 1 task plan
+
+Mirror of the task ledger (`.claude/state/ledger.json`, not versioned). Order of execution follows dependencies;
+one task at a time; a task starts only after its dependencies are merged. Milestone tasks (qa) produce reports in
+`docs/qa/reports/` and videos in `docs/qa/videos/<milestone>/`.
+
+| ID | Agent | Module / asset | Title | Depends on | Milestone |
+|---|---|---|---|---|---|
+| T000 | modeler | hero | Track provided hero model with DVC, unchanged | | done |
+| T001 | reference-director | crypt ref | Track crypt reference image with DVC, unchanged | | done |
+| T002 | module-dev | core | Implement installer, GameState, SaveService, Automation + tests | arch/run1-plan | M1 |
+| T003 | module-dev | maze | Layout generator (seeded, closed, low passages, lamp slots) + greybox world | T002 | M1 |
+| T004 | module-dev | player | Controller, stances, jump, camera, capsule placeholder | T002 | M1 |
+| T005 | module-dev | touch_controls | Joystick + Jump/Stance buttons -> actions | T002 | M1 |
+| T006 | module-dev | exploration | Visited cells, persisted in GameState | T003 | M1 |
+| T007 | module-dev | minimap | Fog-of-war mini-map + large map | T006 | M1 |
+| T008 | module-dev | cloud_save | Autosave policy, local + fake backend | T002 | M1 |
+| T009 | module-dev | game | Main scene composition, environment, phases | T003-T008 | M1 |
+| T010 | qa | - | M1: e2e tests E1-E15, budgets, gameplay videos | T009 | M1 |
+| T011 | modeler | hero | Conform hero (adult height, pivot, -Z, textures <= 2048, PBR) | | M2 |
+| T012 | reference-director | hero | Hero reference clips (8, see asset contract) | T011 | M2 |
+| T013 | rigger-animator | hero | Hero rig (humanoid profile) + 8 clips | T012 | M2 |
+| T014 | qa | hero | Hero budgets + animation vs reference | T013 | M2 |
+| T015 | modeler | crypt_kit | Modular crypt pieces per docs/contracts/crypt-kit.md | arch/run1-plan | M2 |
+| T016 | modeler | wall_lamp | Wall lamp prop | arch/run1-plan | M2 |
+| T017 | qa | crypt_kit, wall_lamp | Kit + lamp budgets and visual check | T015, T016 | M2 |
+| T018 | module-dev | maze | Swap in crypt_kit + lamps, lights/lightmaps, occluders | T010, T017 | M2 |
+| T019 | module-dev | player | Hero rig + AnimationTree | T010, T014 | M2 |
+| T020 | qa | - | M2: e2e, budgets, frame counts P1-P4, videos | T018, T019 | M2 |
+| T021 | orchestrator | - | iOS export preset (min iOS 16, ASTC, exclude automation), Mac package | T020 | M3 |
+| T022 | qa | - | Network/data audit + release checklist | T021 | M3 |
+| T023 | human (Mac) | - | Xcode build, sign (personal team), install on iPhone 12, profile | T022 | M3 |
+| T024 | module-dev | cloud_save | ICloudBackend (native plugin) — only if Apple Developer account + iCloud capability are available | T023 | M3 (optional) |
+
+Notes:
+- T011 and T015/T016 have no code dependencies and may run between M1 tasks (still one task at a time).
+- If lightmaps cannot be baked headless (T018), the fallback is real-time lights; the decision is recorded in the
+  task report and in docs/retrospective/run1-corrections.md Part C.

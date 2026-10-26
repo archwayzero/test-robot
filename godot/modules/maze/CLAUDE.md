@@ -27,9 +27,9 @@ Maze layout grid (seeded, closed) and building the 3D maze from kit pieces, ligh
   reachable only by crouching/crawling). Lamp slots: one wall lamp roughly every 3 cells of corridor.
 - Same (seed, size) must give a byte-identical layout on every platform (no float math in generation).
 - World: greybox first (T003: boxes with the kit dimensions from docs/contracts/crypt-kit.md, one material), then
-  the crypt_kit GLB pieces (T017). Static geometry on physics layer 1 ("world"), collision from the kit's `-col`
+  the crypt_kit GLB pieces (T018). Static geometry on physics layer 1 ("world"), collision from the kit's `-col`
   shapes or simple boxes. Merge or instance per 4x4-cell chunk so no mesh is lit by more than 8 omni lights
-  (Mobile renderer limit). Add OccluderInstance3D per chunk. Lighting (T017): baked LightmapGI if it can be baked
+  (Mobile renderer limit). Add OccluderInstance3D per chunk. Lighting (T018): baked LightmapGI if it can be baked
   headless; otherwise real-time OmniLights at lamp slots (range <= 1.5 cells, no shadows) — report which.
 - Writes `StateKeys.MAZE_SEED` in build().
 - Tests: determinism (same seed twice, different seed differs), connectivity (all cells reachable from start),
