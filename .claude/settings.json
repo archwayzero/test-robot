@@ -31,7 +31,8 @@
       "allowWrite": [
         "~/.local/share/godot",
         "~/.config/godot",
-        "~/.cache/godot"
+        "~/.cache/godot",
+        "/tmp"
       ]
     },
     "network": {
