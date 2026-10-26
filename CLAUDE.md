@@ -11,6 +11,7 @@ if a hook blocks you, do not look for a workaround. Report it.
 - `blender/rigs/`     rig/animation scripts and .blend files (rigger-animator agent)
 - `godot/assets/<asset>/{model,rig}/`  exported .glb files consumed by Godot
 - `reference/<asset>/<clip>/`  generated motion reference videos + notes (reference-director agent)
+- `reference/map/<image>/`  reference map/environment
 - `godot/tests/`      end-to-end tests (qa agent); module unit tests live in each module's `tests/`
 - `docs/qa/`          TEST_PLAN.md + budgets.json (orchestrator, human-approved), reports/ (qa)
 - `docs/`             architecture, workflow, contracts, and the human-written specs in `docs/specs/`

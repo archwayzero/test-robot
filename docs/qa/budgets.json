@@ -1,17 +1,38 @@
 {
   "platform": "ios",
   "min_device": "iPhone 12",
-  "status": "PLACEHOLDER: the orchestrator replaces every null with a value backed by a cited source (see sources), and the human approves it in a PR. QA agents may not edit this file.",
-  "sources": [],
+  "status": "APPROVED FOR RUN 1 ONLY (human, 2026-10-25: 'create the game to the best of your ability'). Values marked estimate in notes have no authoritative source and must be validated on the device (M3). QA agents may not edit this file.",
+  "sources": [
+    {"id": "godot-limits", "title": "Godot 4.7 docs: 3D rendering limitations (texture size limits on mobile)", "url": "https://github.com/godotengine/godot-docs/blob/4.7/tutorials/3d/3d_rendering_limitations.rst", "quote": "Mobile GPUs are typically limited to 4096x4096 textures ... you should avoid using textures larger than 4096x4096"},
+    {"id": "godot-lights", "title": "Godot 4.7 docs: 3D lights and shadows (Mobile renderer light limits)", "url": "https://github.com/godotengine/godot-docs/blob/4.7/tutorials/3d/lights_and_shadows.rst", "quote": "When using the Mobile renderer, there is a limitation of 8 OmniLights + 8 SpotLights per mesh resource"},
+    {"id": "godot-astc", "title": "Godot 4.7 docs: Importing images (VRAM compression uses ASTC on mobile)", "url": "https://github.com/godotengine/godot-docs/blob/4.7/tutorials/assets_pipeline/importing_images.rst"},
+    {"id": "godot-renderers", "title": "Godot 4.7 docs: Overview of renderers (Mobile: no SSR, VoxelGI, SDFGI, volumetric fog; LightmapGI supported)", "url": "https://github.com/godotengine/godot-docs/blob/4.7/tutorials/rendering/renderers.rst"},
+    {"id": "godot-humanoid", "title": "Godot 4.7.2 SkeletonProfileHumanoid: 56 bones (measured with SkeletonProfileHumanoid.new().bone_size on 4.7.2.stable)", "url": "https://github.com/godotengine/godot/blob/4.7.2-stable/doc/classes/SkeletonProfileHumanoid.xml"},
+    {"id": "apple-metal-tables", "title": "Apple Metal Feature Set Tables: A14 Bionic = Apple7 family, max 2D texture 16,384 px, ASTC supported", "url": "https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf"},
+    {"id": "iphone12-ram", "title": "iPhone 12: 4 GB RAM, 2532x1170 display (Wikipedia, citing MacRumors and iFixit)", "url": "https://en.wikipedia.org/wiki/IPhone_12"}
+  ],
+  "notes": {
+    "max_texture_size": "2048: below the 4096 mobile guidance [godot-limits] and far below the A14 hardware limit [apple-metal-tables]; the margin is for memory. Choice = estimate.",
+    "max_texture_mem_mb": "Measured as UNCOMPRESSED upper bound. 64 MB = three 2048x2048 RGBA8 maps with mipmaps (3 x 16 MB x 1.33). On device textures are ASTC 4x4 [godot-astc] = 8 bits/pixel vs 32, i.e. about 1/4.",
+    "character.max_joints": "64 = 56 bones of Godot's humanoid profile [godot-humanoid] + 8 spare.",
+    "character.max_triangles": "Estimate. Godot publishes no triangle budget; the provided hero has 19,001.",
+    "crypt_kit": "Estimate. 7 pieces x ~3,000 tris; 2 materials -> up to 14 primitives.",
+    "scene_totals.max_texture_mem_mb": "Estimate. 512 MB uncompressed ~ 128 MB ASTC, against 4 GB RAM [iphone12-ram]; Apple publishes no per-app memory limit.",
+    "frame_counts": "Per-frame draw calls <= 200 and rendered triangles <= 300,000 at the TEST_PLAN camera points (estimates; counted on the CPU renderer in the sandbox, validated on device).",
+    "lights": "Hard limit: <= 8 omni + 8 spot lights affecting any one mesh [godot-lights]."
+  },
   "weights": {"triangles": 0.35, "draw_calls_est": 0.25, "texture_mem_mb": 0.2, "texture_size": 0.1, "joints": 0.1},
-  "defaults": {"max_triangles": null, "max_draw_calls_est": null, "max_joints": null, "max_texture_size": null, "max_texture_mem_mb": null},
+  "defaults": {"max_triangles": 20000, "max_draw_calls_est": 4, "max_joints": 0, "max_texture_size": 2048, "max_texture_mem_mb": 64},
   "categories": {
-    "character": {"max_triangles": null, "max_joints": null},
-    "prop": {"max_triangles": null},
-    "environment": {"max_triangles": null}
+    "character": {"max_triangles": 20000, "max_joints": 64},
+    "prop": {"max_triangles": 1000, "max_texture_mem_mb": 16},
+    "environment": {"max_triangles": 21000, "max_draw_calls_est": 14}
   },
   "assets": {
-    "example_crate": {"category": "prop", "max_triangles": 300}
+    "hero": {"category": "character"},
+    "crypt_kit": {"category": "environment", "max_texture_mem_mb": 64},
+    "wall_lamp": {"category": "prop", "max_draw_calls_est": 2}
   },
-  "scene_totals": {"max_triangles": null, "max_draw_calls_est": null, "max_texture_mem_mb": null}
+  "scene_totals": {"max_triangles": 150000, "max_draw_calls_est": 32, "max_texture_mem_mb": 512},
+  "frame_budgets": {"max_draw_calls_per_frame": 200, "max_rendered_triangles_per_frame": 300000, "target_fps_device": 30}
 }
