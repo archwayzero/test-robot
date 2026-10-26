@@ -1,0 +1,6 @@
+{
+  "image":   {"node": "137", "input": "image"},
+  "prompt":  {"node": "138", "input": "value"},
+  "seed":    {"node": "129", "input": "noise_seed"},
+  "seconds": {"node": "132", "input": "value"}
+}
