@@ -253,10 +253,6 @@
       "ref_images.ref_image_0": [
         "137",
         0
-      ],
-      "ref_images.ref_image_1": [
-        "139",
-        0
       ]
     },
     "class_type": "MiniMaxH3ReferenceToVideo",
@@ -280,15 +276,6 @@
     "class_type": "PrimitiveStringMultiline",
     "_meta": {
       "title": "Input Text (Prompt)"
-    }
-  },
-  "139": {
-    "inputs": {
-      "image": "mecha_dragon_lightning.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "Load Image"
     }
   },
   "141": {

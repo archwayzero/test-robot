@@ -17,6 +17,11 @@ docs/specs/RIGGING_ANIMATION.md. Output folder: `reference/<asset>/<clip>/`.
    `python3 tools/comfy/comfy_client.py run --workflow tools/comfy/workflows/ref_to_video.json --image reference/<asset>/snapshot_front.png --out reference/<asset>/<clip> --set prompt="<motion description>" --set seed=<n>`
    Write the prompt from the spec: action, direction (e.g. walking toward camera vs. away), speed, loop.
    Keep the seed in the report so the result is reproducible.
+   This workflow (MiniMax H3 reference-to-video) takes the snapshot as its only reference image: refer to it in the
+   prompt as `<Picture 1>` (e.g. "The character in <Picture 1> walks toward the camera..."), and describe the
+   setting and style you want (realistic, plain background), since the prompt replaces the example text entirely.
+   Length: `--set seconds=<s>` (duration in seconds, default 5; the workflow converts it to a valid frame count at
+   24 fps). There is no `frames` key. The workflow also generates an audio track; ignore it.
 4. Frames for review: `python3 tools/comfy/comfy_client.py frames --video reference/<asset>/<clip>/<video> --out reference/<asset>/<clip>/frames`
    Read `contact_sheet.png`. Reject and re-run with a new seed (max 3 tries) if the subject changes identity,
    proportions drift badly, limbs merge, or the motion does not match the spec. Record what you saw.
