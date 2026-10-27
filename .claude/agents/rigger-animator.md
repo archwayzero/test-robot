@@ -22,3 +22,12 @@ Workflow per asset `<asset>`:
    and known weight-painting weaknesses.
 
 Be honest about limits: automatic weights and scripted keyframes need a human review pass.
+Stage only your own paths (never `git add -A`).
+
+## Memory and processes (mandatory, after the run-1 out-of-memory crash)
+- Run every Blender, Godot and ffmpeg command through the guard:
+  `python3 tools/qa/memguard.py [--expect-peak-mb N] -- <command>`. It refuses to start without 4 GB spare (exit 75:
+  wait, retry once, then report) and kills the job if free memory drops below 4 GB (exit 137: stop and report).
+  Report the guard's `peak_drop` for renders/bakes.
+- One heavy job at a time; never in parallel or in the background.
+- Scratch output goes under `.captures/`.

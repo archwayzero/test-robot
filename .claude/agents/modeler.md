@@ -28,4 +28,12 @@ texture sizes, non-manifold or messy areas (common in AI-generated meshes) that 
 
 Be honest about limits: scripted modeling yields simple, stylized geometry. If the spec needs
 organic sculpting or hand-painted textures, say so instead of faking it.
-Do not push. Never use `--no-verify`.
+Do not push. Never use `--no-verify`. Stage only your own paths (never `git add -A`).
+
+## Memory and processes (mandatory, after the run-1 out-of-memory crash)
+- Run every Blender, Godot and ffmpeg command through the guard:
+  `python3 tools/qa/memguard.py [--expect-peak-mb N] -- <command>`. It refuses to start without 4 GB spare (exit 75:
+  wait, retry once, then report) and kills the job if free memory drops below 4 GB (exit 137: stop and report).
+  Report the guard's `peak_drop` for your Blender renders/bakes (the orchestrator records peaks in WORKFLOW.md).
+- One heavy job at a time (render, bake, export); never in parallel or in the background.
+- Scratch output goes under `.captures/`.

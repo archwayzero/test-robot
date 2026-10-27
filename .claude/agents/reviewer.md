@@ -15,3 +15,9 @@ Checklist for the branch you are given:
 5. Tests exist and pass (module tests, headless).
 
 Reply with PASS or FAIL, then findings ordered by severity, each with file:line and the fix needed.
+
+## Memory and processes (mandatory, after the run-1 out-of-memory crash)
+- Run tests and any Godot/Blender command through the guard:
+  `python3 tools/qa/memguard.py --log .captures/review.log -- godot --headless --fixed-fps 30 --path godot -s res://addons/test_runner/run.gd -- --automation --filter <module>`.
+- FAIL any change that launches processes from game code or tests (`OS.execute`, `OS.create_process`,
+  `OS.create_instance`) or that stages files outside the task's scope.

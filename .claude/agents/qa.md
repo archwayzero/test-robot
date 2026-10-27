@@ -50,3 +50,13 @@ Rules:
   Write PASS only if every finding has a stated purpose that matches docs/specs, no data leaves the device
   without a spec'd reason, and there are no unexplained URLs, device IDs, clipboard reads or program launches.
 - Finish with: PASS/FAIL, static budget score, failing items with file and suggested owner agent.
+
+## Memory and processes (mandatory, after the run-1 out-of-memory crash)
+- Run every Godot, Blender and ffmpeg command through the guard (captures and recordings included):
+  `python3 tools/qa/memguard.py [--expect-peak-mb N] -- <command>`. It refuses to start without 4 GB spare (exit 75:
+  wait, retry once, then report) and kills the job if free memory drops below 4 GB (exit 137: stop and report).
+  Measured peaks: docs/architecture/WORKFLOW.md "Memory and heavy jobs".
+- One heavy job at a time (capture, recording, encode); never in parallel or in the background.
+- Tests must never launch processes (`OS.execute`, `OS.create_process`, `OS.create_instance`).
+- Tests: `python3 tools/qa/memguard.py -- godot --headless --fixed-fps 30 --path godot -s res://addons/test_runner/run.gd -- --automation --dir res://tests`.
+- Scratch output goes under `.captures/`; only reports and videos go under docs/qa/.

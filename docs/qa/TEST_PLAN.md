@@ -70,12 +70,20 @@ docs/architecture/THIRDPARTY.md). Test files are `*_test.gd` extending `TestCase
 
 ```
 # everything (module tests + godot/tests e2e)
-godot --headless --path godot -s res://addons/test_runner/run.gd -- --automation
+python3 tools/qa/memguard.py -- godot --headless --fixed-fps 30 --path godot -s res://addons/test_runner/run.gd -- --automation
 # one module / one folder, with a markdown report
-godot --headless --path godot -s res://addons/test_runner/run.gd -- --automation --filter maze
-godot --headless --path godot -s res://addons/test_runner/run.gd -- --automation --dir res://tests --report <file.md>
+python3 tools/qa/memguard.py -- godot --headless --fixed-fps 30 --path godot -s res://addons/test_runner/run.gd -- --automation --filter maze
+python3 tools/qa/memguard.py -- godot --headless --fixed-fps 30 --path godot -s res://addons/test_runner/run.gd -- --automation --dir res://tests --report <file.md>
 ```
-Exit code 0 = all passed, 1 = failures, 2 = nothing found / not a test run. Runner self-test:
+Exit code 0 = all passed, 1 = failures, 2 = nothing found / not a test run.
+- `--fixed-fps 30` (an ENGINE argument, before `-s`) is required: it gives every frame exactly 1/30 s, which the
+  e2e speed/timing assertions need. Godot strips it from `OS.get_cmdline_args()`; core's automation detects it via
+  `/proc/self/cmdline` (Linux only), so exact-timestep tests run in the sandbox, not on the Mac.
+- Always run through `tools/qa/memguard.py` (refuses to start without 4 GB spare, kills the job below 4 GB free).
+- In test runs, Automation resizes the headless root viewport to the project size (1280x590), so screen
+  coordinates in touch tests match the game layout.
+- Tests must never start processes (`OS.execute`, `OS.create_process`, `OS.create_instance`): run 1's first core
+  attempt re-launched Godot recursively and crashed the machine (out of memory). Runner self-test:
 `--dir res://addons/test_runner/selftest` must report 4 passed, 2 failed (intentional), exit 1.
 
 ## Score

@@ -21,5 +21,15 @@ Rules:
   `python3 tools/qa/capture.py --scene res://... --mode fast` and Read the contact sheet before reporting.
   Use `--mode accurate` when lighting/materials matter. Frame rates here say nothing about iPhone performance.
 - Binary files are never committed to git: `dvc add` them first. Never use `--no-verify`.
-- Commit when done (`git add -A && git commit -m "<id>: ..."`). Do not push; the orchestrator does.
+- Commit when done, staging only your module's paths (`git add godot/modules/<module>/internal godot/modules/<module>/tests`
+  then `git commit -m "<id>: ..."`); never `git add -A` (other tasks' files may be in the working tree). Do not push.
 - Finish with a short report: what changed, files touched, tests run, open questions.
+
+## Memory and processes (mandatory, after the run-1 out-of-memory crash)
+- Run every Godot, Blender and ffmpeg command through the guard:
+  `python3 tools/qa/memguard.py [--expect-peak-mb N] -- <command>`. It refuses to start without 4 GB spare (exit 75:
+  wait, retry once, then report) and kills the job if free memory drops below 4 GB (exit 137: stop and report).
+- One heavy job at a time (render, capture, recording, bake, encode); never in parallel or in the background.
+- Code and tests must never launch processes (`OS.execute`, `OS.create_process`, `OS.create_instance`).
+- Tests: `python3 tools/qa/memguard.py -- godot --headless --fixed-fps 30 --path godot -s res://addons/test_runner/run.gd -- --automation --filter <module>`.
+- Scratch output (captures, logs) goes under `.captures/`.

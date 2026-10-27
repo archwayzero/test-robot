@@ -1,4 +1,4 @@
-## Self-test of the runner. Run: godot --headless --path godot -s res://addons/test_runner/run.gd -- --automation
+## Self-test of the runner. Run: godot --headless --fixed-fps 30 --path godot -s res://addons/test_runner/run.gd -- --automation
 ##   --dir res://addons/test_runner/selftest
 ## Expected: 4 passed, 2 failed (the two `test_expected_failure_*`), exit code 1.
 extends TestCase
