@@ -192,7 +192,17 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
 - Budgets are estimates where no authoritative source exists (marked in docs/qa/budgets.json); validate on device.
 
 ### M1 greybox
-(to be filled in)
+- **Out-of-memory crash (T002, first attempt).** A core test re-launched Godot (`OS.execute`) to get an exact
+  fixed timestep; the child judged "exact" from an early frame's delta (under `--fixed-fps 30` the first deltas are
+  0.025 / 0.0333 / 0.0417 s), so it re-launched again, recursively, ~300 MB/s until the OOM killer ended the session.
+  Fixes: no process spawning in code/tests (agent rules + review check); `tools/qa/memguard.py` around every heavy
+  command; memory rule in WORKFLOW.md. Next game: put memguard and the no-spawn rule in the kit from day one.
+- **`--fixed-fps` is stripped from `OS.get_cmdline_args()`** in Godot 4.7.2; core detects it via `/proc/self/cmdline`
+  (Linux only). Next game: pass the value as a user argument too (after `--`) so detection is portable.
+- **Measured job peaks** on the 28 GB dev machine: capture ~0.5 GB, 20 s recording ~0.3 GB, test suites < 0.1 GB
+  (WORKFLOW.md). Godot jobs are cheap; the risk is runaway code, not rendering.
+- **`.claude/agents/` is read-only to shell commands** in the sandbox (like `.claude/skills/`); the orchestrator edits
+  them with the file-edit tool, which the scope hook governs.
 
 ### M2 art
 (to be filled in)

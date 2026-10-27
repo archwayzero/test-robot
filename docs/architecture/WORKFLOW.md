@@ -39,3 +39,20 @@ so merge architecture changes to main first.
 ## What is not enforced
 Quality, correctness, art direction, and anything a shell command can do that the guards do not recognize.
 Human PR review is the final gate.
+
+## Memory and heavy jobs
+Rule (human, 2026-10-26): start a render-heavy job only if available memory minus its measured peak leaves >= 4 GB
+spare; otherwise wait for the running job. All Godot/Blender/ffmpeg commands go through `tools/qa/memguard.py`, which
+enforces that check and kills runaway jobs. Scratch output (captures, benchmarks, logs) goes under `.captures/`.
+
+Measured peaks (dev machine: 28 GB RAM, 24 GB swap, 28 threads; each job run alone, sampled every second):
+| Job | Peak (drop in available memory / process RSS) | Duration |
+|---|---|---|
+| Godot capture, accurate, maze-sized test scene | ~0.5 GB / 0.7 GB | 6 s |
+| Godot recording, 20 s, accurate | ~0.3 GB / 0.5 GB | 16 s |
+| Godot `--import` | ~0.6 GB | ~10 s |
+| Headless test suite (core) | < 0.1 GB | 1 s |
+| Blender render | (to be measured before the first Blender task) | |
+
+Incident: run 1's first core test re-launched Godot recursively (~300 MB/s) and the session was killed by the OOM
+killer. Since then: no process spawning in code or tests, and every heavy command runs under memguard.

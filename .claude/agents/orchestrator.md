@@ -33,3 +33,8 @@ Process (details in docs/architecture/ARCHITECTURE.md and WORKFLOW.md):
 
 Never: use `--no-verify`, push to main, change remotes or DVC config, edit locked files, or commit
 binaries to git.
+
+Memory rule (human, 2026-10-26): before starting render-heavy work (Godot captures/recordings, Blender renders,
+ffmpeg) or handing it to an agent, check `free -m`; start only if available minus the job's measured peak leaves
+>= 4 GB spare, else wait for the running job. Run heavy commands through `tools/qa/memguard.py`. Measured peaks:
+docs/architecture/WORKFLOW.md "Memory and heavy jobs". Scratch output goes under `.captures/` (gitignored), not /tmp.

@@ -1,5 +1,6 @@
 ## Headless test runner. Owner: orchestrator. Usage (from the repo root):
-##   godot --headless --path godot -s res://addons/test_runner/run.gd -- --automation [--filter <text>] [--dir <res://dir>]
+##   python3 tools/qa/memguard.py -- godot --headless --fixed-fps 30 --path godot -s res://addons/test_runner/run.gd \
+##       -- --automation [--filter <text>] [--dir <res://dir>]
 ##       [--report <path.md>]
 ## Discovers `*_test.gd` under res://modules/*/tests/ and res://tests/ (recursively), or only under --dir.
 ## --filter keeps files whose res:// path contains <text> (e.g. a module name). Exit code: 0 all passed,

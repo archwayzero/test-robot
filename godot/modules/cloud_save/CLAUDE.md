@@ -37,6 +37,6 @@ Autosave policy and cloud backend (local + fake in sandbox, iCloud on iOS)
   rejects their use). Construct other modules only through their public factories.
 - Implementations extend the `@abstract` classes in `public/` and live in `internal/` at the paths the factories load.
 - Gameplay randomness: `Core.rng` only. No `/root/...` paths. No `preload` of other modules' internals.
-- Tests: `tests/*_test.gd`, run with `godot --headless --path godot -s res://addons/test_runner/run.gd -- --automation --filter <module>`
+- Tests: `tests/*_test.gd`, run with `python3 tools/qa/memguard.py -- godot --headless --fixed-fps 30 --path godot -s res://addons/test_runner/run.gd -- --automation --filter <module>`
   (format: docs/qa/TEST_PLAN.md "Test runner"). All tests must pass headless before you commit.
 - Approved deviations from the human specs for this game: docs/architecture/DECISIONS.md.

@@ -42,5 +42,6 @@ const PHASE_BOOT := &"boot"
 @abstract func snapshot() -> Dictionary
 
 
-## Replaces the whole state from a snapshot() result. Emits the change signals for what changed.
+## Replaces the whole state from a snapshot() result. Emits the change signals for what changed; a key that
+## exists now but not in `data` is removed and reported as Core.state_value_changed(key, null).
 @abstract func restore(data: Dictionary) -> void
