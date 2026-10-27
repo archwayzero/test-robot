@@ -48,7 +48,7 @@ Unit tests (module-dev) cover the same rules at module level; the module CLAUDE.
 | E8 | M3 | minimap_fresh | fresh save, look at exploration + minimap | exactly 1 explored cell (start); marker in start cell |
 | E9 | M3 | minimap_reveal | scripted walk through 5 open cells | exactly those 6 cells explored, each `cell_explored` once |
 | E10 | M3 | large_map | tap `get_small_rect()` centre; then tap screen centre | opens (phase map_open, tree paused, controls hidden); closes (phase playing) |
-| E11 | M4 | autosave_throttle | explore 2 cells within 10 s, wait 12 s game time | 1 save immediately, 1 after the interval; fake backend got identical bytes |
+| E11 | M4 | autosave_throttle | explore 2 cells within 10 s, wait 12 s game time | 1 save immediately, 1 after the interval; fake backend got an envelope whose snapshot equals the state |
 | E12 | M4 | save_restore | explore, `save_now()`, reload main scene | same explored set, position within 0.1 m, same stance |
 | E13 | M4 | cloud_unavailable | unavailable fake backend, explore a cell | local save OK, `cloud_error == ERR_UNAVAILABLE`, no visible error |
 | E14 | M5 | touch_joystick | `drag()` from left-half point by 45 px and 90 px | `move_forward` strength ~0.5 then ~1.0; running only at ~1.0 |
@@ -79,12 +79,15 @@ Exit code 0 = all passed, 1 = failures, 2 = nothing found / not a test run.
 - `--fixed-fps 30` (an ENGINE argument, before `-s`) is required: it gives every frame exactly 1/30 s, which the
   e2e speed/timing assertions need. Godot strips it from `OS.get_cmdline_args()`; core's automation detects it via
   `/proc/self/cmdline` (Linux only), so exact-timestep tests run in the sandbox, not on the Mac.
+- The runner fails a test on any runtime SCRIPT error during it (a crash used to abort the test silently and pass);
+  `push_error()` lines are allowed (tests use them to check rejection of bad input).
+- Captures and videos of anything with UI use `--resolution 1280x590` (the default 960x540 crops the bottom).
 - Always run through `tools/qa/memguard.py` (refuses to start without 4 GB spare, kills the job below 4 GB free).
 - In test runs, Automation resizes the headless root viewport to the project size (1280x590), so screen
   coordinates in touch tests match the game layout.
 - Tests must never start processes (`OS.execute`, `OS.create_process`, `OS.create_instance`): run 1's first core
   attempt re-launched Godot recursively and crashed the machine (out of memory). Runner self-test:
-`--dir res://addons/test_runner/selftest` must report 4 passed, 2 failed (intentional), exit 1.
+`--dir res://addons/test_runner/selftest` must report 5 passed, 3 failed (intentional), exit 1.
 
 ## Score
 The static budget score (0-100) covers only what the sandbox can measure. Report it with the PASS/FAIL list,

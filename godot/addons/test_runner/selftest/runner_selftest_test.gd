@@ -1,6 +1,6 @@
 ## Self-test of the runner. Run: godot --headless --fixed-fps 30 --path godot -s res://addons/test_runner/run.gd -- --automation
 ##   --dir res://addons/test_runner/selftest
-## Expected: 4 passed, 2 failed (the two `test_expected_failure_*`), exit code 1.
+## Expected: 5 passed, 3 failed (the three `test_expected_failure_*`), exit code 1.
 extends TestCase
 
 
@@ -38,3 +38,13 @@ func test_expected_failure_assert() -> void:
 
 func test_expected_failure_timeout() -> void:
 	await wait_frames(100)
+
+
+func test_expected_failure_script_error() -> void:
+	var n: Variant = null
+	n.call("does_not_exist")  # runtime script error: aborts this function without any failed assert
+
+
+func test_push_error_is_not_a_failure() -> void:
+	push_error("intentional push_error (tests use this to check rejection of bad input)")
+	assert_true(true)

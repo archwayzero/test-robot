@@ -201,6 +201,18 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
   (Linux only). Next game: pass the value as a user argument too (after `--`) so detection is portable.
 - **Measured job peaks** on the 28 GB dev machine: capture ~0.5 GB, 20 s recording ~0.3 GB, test suites < 0.1 GB
   (WORKFLOW.md). Godot jobs are cheap; the risk is runaway code, not rendering.
+- **The in-house test runner reported crashed tests as PASS** (found by module-dev in T008): a runtime script error
+  aborts the test function without a failed assert. Fixed: the runner registers a Godot `Logger` (4.5+) and fails a
+  test on any SCRIPT-type error; intentional `push_error` stays allowed. Next game: start with this (or gdUnit4).
+- **Security review of cloud data paid off (T008).** `str_to_var` on untrusted data can instantiate objects; a
+  substring filter was bypassed with whitespace/comments. Fixed with `JSON.from_native`/`to_native(allow_objects=false)`
+  plus a type whitelist and a null-count check. Next game: rule in the kit "never str_to_var untrusted data".
+- **A newer but invalid cloud snapshot could overwrite the local save** (T008): Core's `restore()` is void and silently
+  ignores invalid data. Fixed by verifying the state after restore. Next game: make `restore()` return an Error.
+- **Contract gaps found by reviewers:** stance ints shared across modules without a constant (now `StateKeys.STANCE_*`);
+  camera orbit must ignore emulated mouse events; boot order for autosave (`setup` before `restore`).
+- **Keyboard always runs in the PC preview:** WASD is full joystick deflection, so walk needs a modifier. Next game:
+  specify keyboard controls separately (e.g. Shift = run, default walk).
 - **`.claude/agents/` is read-only to shell commands** in the sandbox (like `.claude/skills/`); the orchestrator edits
   them with the file-edit tool, which the scope hook governs.
 

@@ -23,14 +23,19 @@ Autosave policy and cloud backend (local + fake in sandbox, iCloud on iOS)
 - Trigger: `Core.state_value_changed` for `StateKeys.EXPLORATION_COUNT`, throttled to one save per 10 s of game time
   (pending trigger saved when the interval ends); `save_now()` on NOTIFICATION_APPLICATION_PAUSED and
   NOTIFICATION_WM_CLOSE_REQUEST.
-- Save via `Core.saves.save_game(SAVE_SLOT)`; then push the saved bytes (plus a UTC timestamp header) to the backend.
-  Local save never waits for or depends on the cloud.
-- `restore()`: pull cloud + read local, load the newer one (cloud bytes are written to the local slot first).
+- Save via `Core.saves.save_game(SAVE_SLOT)`; then push cloud_save's OWN envelope to the backend (never core's save
+  file or path): v2 = `JSON.stringify(JSON.from_native({format, version, saved_at_unix, snapshot}, false))`, decoded
+  with `JSON.to_native(..., false)` plus a type whitelist, a decoded-type walk (no Object/Callable/Signal/RID),
+  depth and size limits. The local timestamp is kept in cloud_save's sidecar `user://cloud_save/meta.cfg`.
+  Local save never waits for or depends on the cloud. If the local save fails, nothing is pushed (cloud_error ERR_SKIP).
+- `restore()`: pull cloud + read the sidecar, load the newer one; a newer cloud snapshot is applied with
+  `Core.state.restore()` and saved locally ONLY after verifying Core accepted it (otherwise keep the local save).
+  Ties go to local. cloud_save is the only writer of slot 0.
 - Backends now: LocalOnlyBackend, FakeCloudBackend. ICloudBackend is added at the Mac stage (M3): it must detect the
   plugin with `Engine.has_singleton(...)` and fall back to LocalOnly when absent; keep that seam ready.
 - No network calls of its own (iCloud is the OS's). Nothing else leaves the device.
-- Tests: throttle (two cells within 10 s -> one save, then one more after the interval), fake backend receives bytes
-  equal to the local file, unavailable backend -> local OK + cloud_error ERR_UNAVAILABLE, restore picks the newer.
+- Tests: throttle (two cells within 10 s -> one save, then one more after the interval), fake backend receives an
+  envelope whose snapshot equals Core.state at save time, unavailable backend -> local OK + cloud_error ERR_UNAVAILABLE, restore picks the newer.
 
 ### Rules that apply to every module
 - Global `class_name`s of modules NOT in depends_on are off-limits too (GDScript makes them visible; the reviewer

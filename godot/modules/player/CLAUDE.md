@@ -28,7 +28,11 @@ Character controller: stances, walk/run/jump, collision, third-person camera, he
   STAND (skipping refused steps). No jump while crawling or under a low ceiling. No running except in STAND.
 - Body on layer 2 ("player"), mask 1. Never tunnels through walls at RUN_SPEED (use move_and_slide; physics 60 Hz).
 - Camera: third-person, behind and above (SpringArm3D, collision mask 1, length 2.5 m stand / 1.8 crouch / 1.2 crawl),
-  never inside walls. Orbit with touch drag on the right half of the screen outside buttons (and mouse on desktop).
+  never inside walls. Orbit with touch drag on the right half of the screen outside buttons, handled ONLY as
+  InputEventScreenTouch/ScreenDrag in `_unhandled_input` (never mouse events: emulated mouse events from touches are
+  not consumed by touch_controls; on desktop the mouse arrives as touch via emulate_touch_from_mouse).
+- Write `PLAYER_YAW` wrapped to [-PI, PI] (`wrapf`). Jumping from CROUCH first stands up (emits stance_changed(STAND)
+  before jumped) and is refused under a low ceiling.
 - Emits `Core.player_moved(global_position)` when moved; writes `StateKeys.PLAYER_POSITION`, `PLAYER_YAW`,
   `PLAYER_STANCE` on stance change and at most every 0.5 s while moving.
 - Visual: capsule placeholder (T004) -> hero rig `res://assets/hero/rig/hero.glb` with an AnimationTree driving

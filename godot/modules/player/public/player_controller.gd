@@ -8,7 +8,8 @@
 class_name PlayerController
 extends CharacterBody3D
 
-enum Stance { STAND, CROUCH, CRAWL }
+## Values are fixed and equal StateKeys.STANCE_STAND/CROUCH/CRAWL (0/1/2); do not reorder.
+enum Stance { STAND = 0, CROUCH = 1, CRAWL = 2 }
 
 ## Emitted after the stance changed (including when a stand-up is refused it is NOT emitted).
 signal stance_changed(stance: Stance)
