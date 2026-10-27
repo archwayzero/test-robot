@@ -221,6 +221,9 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
 - **Small modules should resync on re-entering the tree** (exploration, minimap reviews): both reconnect signals but
   miss changes made while detached. Harmless with the current boot order; next game: put "resync on enter_tree"
   in the module template.
+- **Abstract signature changes cannot land before their implementation:** GDScript rejects an override whose
+  signature differs from the `@abstract` parent, which breaks every test that loads core. Workflow: the orchestrator
+  commits such a public change as the first commit on the implementing task branch, not in a separate arch PR.
 
 ### M2 art
 (to be filled in)

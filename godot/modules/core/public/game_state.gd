@@ -6,6 +6,10 @@
 class_name GameState
 extends RefCounted
 
+## Valid state keys: `<module>/<name>`, lower-case letters, digits and `_`, more `/` segments allowed (e.g.
+## `player/position`). set_value() and restore() reject other keys.
+const KEY_PATTERN := "^[a-z0-9_]+(/[a-z0-9_]+)+$"
+
 ## Phase used before anything sets one.
 const PHASE_BOOT := &"boot"
 
@@ -44,4 +48,7 @@ const PHASE_BOOT := &"boot"
 
 ## Replaces the whole state from a snapshot() result. Emits the change signals for what changed; a key that
 ## exists now but not in `data` is removed and reported as Core.state_value_changed(key, null).
+## An invalid snapshot (wrong shape, non-plain values, or any key not matching KEY_PATTERN) leaves the state
+## completely unchanged (no signals). T025 changes the return type to Error (OK / ERR_INVALID_DATA); the signature
+## change is committed together with the implementation on the T025 branch, because the override must match.
 @abstract func restore(data: Dictionary) -> void
