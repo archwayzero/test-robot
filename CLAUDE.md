@@ -5,6 +5,13 @@ Windows drives, and can only reach GitHub, the project's S3 bucket and ComfyUI (
 inside the sandbox. Enforcement is done by the sandbox and hooks, not by this file:
 if a hook blocks you, do not look for a workaround. Report it.
 
+## Scratch output and memory
+- Put screenshots, benchmarks and any other scratch files under `.captures/` in the project (gitignored), never
+  `/tmp`: files outside the project can't be read back without asking the human.
+- Ubuntu has a fixed memory limit (`free -m` shows it). Measured peaks: Godot capture ~X GB, recording ~Y GB,
+  Blender render ~Z GB. Before starting render-heavy work or a background agent that does it, check `free -m` and
+  start only if at least 4 GB stay spare after its peak; otherwise wait. If unsure, run it alone.
+
 ## Structure
 - `godot/`            Godot project. Code lives in decoupled modules: `godot/modules/<name>/{public,internal,tests}`.
 - `blender/models/`   model generator scripts and .blend files (modeler agent)
@@ -55,7 +62,4 @@ sandbox FPS or GPU cost as device performance. Push with `git push origin <branc
 - Headless Blender: `blender -b <file.blend> -P <script.py> -- <args>`
 - Headless Godot: `godot --headless --path godot ...`
 
-## Memory
-Ubuntu has a fixed memory limit (`free -m` shows it). Measured peaks: Godot capture ~X GB, recording ~Y GB,
-Blender render ~Z GB. Before starting render-heavy work or a background agent that does it, check `free -m` and
-start only if at least 4 GB stay spare after its peak; otherwise wait. If unsure, run it alone.
+
