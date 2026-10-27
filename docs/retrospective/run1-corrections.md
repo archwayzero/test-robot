@@ -215,6 +215,15 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
   specify keyboard controls separately (e.g. Shift = run, default walk).
 - **`.claude/agents/` is read-only to shell commands** in the sandbox (like `.claude/skills/`); the orchestrator edits
   them with the file-edit tool, which the scope hook governs.
+- **Safe area not specified** (found reviewing T007): a 16 px HUD margin puts the mini-map under the landscape notch
+  of iPhone 12. Run 1 lays the HUD inside `DisplayServer.get_display_safe_area()` (D17). Next game: PLATFORM.md
+  should state orientation, safe-area handling and which side the notch may be on.
+- **Small modules should resync on re-entering the tree** (exploration, minimap reviews): both reconnect signals but
+  miss changes made while detached. Harmless with the current boot order; next game: put "resync on enter_tree"
+  in the module template.
+- **Abstract signature changes cannot land before their implementation:** GDScript rejects an override whose
+  signature differs from the `@abstract` parent, which breaks every test that loads core. Workflow: the orchestrator
+  commits such a public change as the first commit on the implementing task branch, not in a separate arch PR.
 
 ### M2 art
 (to be filled in)

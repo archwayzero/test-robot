@@ -56,6 +56,13 @@ static func is_test_run() -> bool:
 	return OS.is_debug_build() and TEST_RUN_ARG in OS.get_cmdline_user_args()
 
 
+## Root for every file a module writes under user:// (saves, sidecars, caches): `user://` in normal play,
+## `user://automation/` in test runs, so tests never touch the player's data. Always ends with `/`.
+## Build paths as `CoreAPI.user_data_dir() + "<module>/..."`; never hard-code `user://` in module code.
+static func user_data_dir() -> String:
+	return "user://automation/" if is_test_run() else "user://"
+
+
 func _enter_tree() -> void:
 	if ResourceLoader.exists(_INSTALLER_PATH):
 		load(_INSTALLER_PATH).install(self)

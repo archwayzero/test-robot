@@ -9,7 +9,8 @@
 - After: prints one line to stderr: `memguard: exit=.. killed=.. duration=..s peak_drop=..MB peak_rss=..MB`.
 - Exit code: the command's exit code (or 75 refused / 137 killed).
 Measured peaks on the dev machine (28 GB, 2026-10-26): Godot capture (accurate) ~0.5 GB, Godot 20 s recording
-~0.3 GB, headless test suites < 0.1 GB, Godot --import ~0.6 GB. Blender render: measure before first use.
+~0.3 GB, headless test suites < 0.1 GB, Godot --import ~0.6 GB, Blender Cycles CPU render/bake
+~1.2 GB (use --expect-peak-mb 2000).
 """
 import argparse
 import os

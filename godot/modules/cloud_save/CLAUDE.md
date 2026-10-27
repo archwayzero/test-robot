@@ -26,7 +26,8 @@ Autosave policy and cloud backend (local + fake in sandbox, iCloud on iOS)
 - Save via `Core.saves.save_game(SAVE_SLOT)`; then push cloud_save's OWN envelope to the backend (never core's save
   file or path): v2 = `JSON.stringify(JSON.from_native({format, version, saved_at_unix, snapshot}, false))`, decoded
   with `JSON.to_native(..., false)` plus a type whitelist, a decoded-type walk (no Object/Callable/Signal/RID),
-  depth and size limits. The local timestamp is kept in cloud_save's sidecar `user://cloud_save/meta.cfg`.
+  depth and size limits. The local timestamp is kept in cloud_save's sidecar `CoreAPI.user_data_dir() + "cloud_save/meta.cfg"`
+  (test runs: under `user://automation/`; task T026). After T025, `Core.state.restore()` returns an Error.
   Local save never waits for or depends on the cloud. If the local save fails, nothing is pushed (cloud_error ERR_SKIP).
 - `restore()`: pull cloud + read the sidecar, load the newer one; a newer cloud snapshot is applied with
   `Core.state.restore()` and saved locally ONLY after verifying Core accepted it (otherwise keep the local save).

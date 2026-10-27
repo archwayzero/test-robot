@@ -3,8 +3,9 @@
 ##   1. phase "loading"; maze layout (MazeFactory.GAME_SEED) + MazeWorld.build()
 ##   2. Exploration.setup(layout); AutoSave.setup(platform backend); AutoSave.restore()
 ##   3. Player spawned at the saved position (StateKeys.PLAYER_*) or the layout's start cell
-##   4. HUD: Minimap.setup(layout, exploration) top-left, TouchControls on top (hidden on desktop unless
-##      touch emulation is on)
+##   4. HUD inside the display safe area (DECISIONS.md D17): TouchControls, then Minimap.setup(layout, exploration)
+##      top-left above them (map taps never reach the joystick); TouchControls hidden on desktop unless touch
+##      emulation is on
 ##   5. phase "playing"; large map open -> phase "map_open" + TouchControls hidden + SceneTree paused (minimap and
 ##      controls run with PROCESS_MODE_ALWAYS); closed -> back to "playing".
 ## No gameplay logic lives here.

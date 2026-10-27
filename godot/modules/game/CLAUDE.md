@@ -20,10 +20,15 @@ Main scene: composes all modules and owns boot order; no game logic
 ### Implementation requirements
 - Exactly the boot order documented in public/game_main.gd. Uses only the public factories of its dependencies.
   Call `AutoSave.setup(backend)` BEFORE `AutoSave.restore()` (restore needs the backend to compare cloud vs local).
+- HUD safe area (DECISIONS.md D17): put the Minimap and TouchControls under one full-screen HUD Control (CanvasLayer)
+  whose offsets are the display safe-area insets (`DisplayServer.get_display_safe_area()` vs `DisplayServer.screen_get_size()`,
+  scaled to the 1280x590 viewport; zero insets on desktop). Re-apply on `get_viewport().size_changed`. The Minimap
+  must be above TouchControls in draw/input order so map taps never reach the joystick.
 - Owns WorldEnvironment for now (dark ambient, depth fog, tonemap filmic, glow on) and the phase changes.
 - On iOS: `Engine.max_fps = 30` (PLATFORM.md target). Desktop preview: uncapped.
 - Tests (end-to-end smoke, headless): main scene reaches `ready_to_play` within 300 frames; player stands in the start
-  cell; minimap shows 1 visited cell; opening the large map pauses the tree and sets phase map_open.
+  cell; minimap shows 1 visited cell; opening the large map pauses the tree and sets phase map_open;
+  HUD insets are zero on desktop and applied when a fake safe area is injected (make the inset source overridable in tests).
 
 ### Rules that apply to every module
 - Global `class_name`s of modules NOT in depends_on are off-limits too (GDScript makes them visible; the reviewer

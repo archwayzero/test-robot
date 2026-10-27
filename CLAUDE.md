@@ -9,8 +9,8 @@ if a hook blocks you, do not look for a workaround. Report it.
 - Put screenshots, benchmarks and any other scratch files under `.captures/` in the project (gitignored), never
   `/tmp`: files outside the project can't be read back without asking the human.
 - Ubuntu has a fixed memory limit (`free -m` shows it; 28 GB on the dev machine). Measured peaks: Godot capture
-  ~0.5 GB, recording (20 s) ~0.3 GB, Godot --import ~0.6 GB, Blender render: not measured yet (measured before the
-  first Blender task; see docs/architecture/WORKFLOW.md "Memory and heavy jobs"). Before starting render-heavy work
+  ~0.5 GB, recording (20 s) ~0.3 GB, Godot --import ~0.6 GB, Blender Cycles render/bake ~1.2 GB (use
+  `--expect-peak-mb 2000`; see docs/architecture/WORKFLOW.md "Memory and heavy jobs"). Before starting render-heavy work
   or a background agent that does it, check `free -m` and start only if at least 4 GB stay spare after its peak;
   otherwise wait. If unsure, run it alone. Run heavy commands through `python3 tools/qa/memguard.py -- <cmd>`.
 
