@@ -10,9 +10,37 @@ extends SceneTree
 var _passed := 0
 var _failed := 0
 var _lines: PackedStringArray = []
+var _catcher := ScriptErrorCatcher.new()
+
+
+## Records runtime SCRIPT errors (e.g. "Invalid call", null access). A script error aborts the running function
+## without failing an assert, so without this a crashed test would be reported as PASS. Errors from push_error()
+## (type ERROR) are not counted: tests use them on purpose to check that bad input is rejected.
+class ScriptErrorCatcher extends Logger:
+	var _mutex := Mutex.new()
+	var _errors: PackedStringArray = []
+
+	func _log_error(function: String, file: String, line: int, code: String, rationale: String,
+			_editor_notify: bool, error_type: int, _script_backtraces: Array[ScriptBacktrace]) -> void:
+		if error_type != ERROR_TYPE_SCRIPT:
+			return
+		_mutex.lock()
+		_errors.append("script error: %s %s (%s:%d in %s)" % [code, rationale, file, line, function])
+		_mutex.unlock()
+
+	func _log_message(_message: String, _error: bool) -> void:
+		pass
+
+	func take() -> PackedStringArray:
+		_mutex.lock()
+		var e := _errors
+		_errors = []
+		_mutex.unlock()
+		return e
 
 
 func _initialize() -> void:
+	OS.add_logger(_catcher)
 	_run.call_deferred()
 
 
@@ -67,8 +95,12 @@ func _run_file(path: String) -> void:
 			names.append(m.name)
 	if names.is_empty():
 		_record(path, "<discover>", ["no test_* methods"])
+	_catcher.take()
 	if test.has_method("before_all"):
 		await _call_with_timeout(test, "before_all")
+	var setup_errors := _catcher.take()
+	if not setup_errors.is_empty():
+		_record(path, "<before_all>", setup_errors)
 	for n in names:
 		if test.has_method("before_each"):
 			await _call_with_timeout(test, "before_each")
@@ -76,11 +108,15 @@ func _run_file(path: String) -> void:
 		if test.has_method("after_each"):
 			await _call_with_timeout(test, "after_each")
 		var failures := test._take_failures()
+		failures.append_array(_catcher.take())
 		if timed_out:
 			failures.append("timed out after %d frames" % test.timeout_frames)
 		_record(path, n, failures)
 	if test.has_method("after_all"):
 		await _call_with_timeout(test, "after_all")
+	var teardown_errors := _catcher.take()
+	if not teardown_errors.is_empty():
+		_record(path, "<after_all>", teardown_errors)
 	test.queue_free()
 	await process_frame
 

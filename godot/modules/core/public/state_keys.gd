@@ -10,8 +10,13 @@ const PLAYER_POSITION := &"player/position"
 ## float, player's yaw in radians. Written by player together with PLAYER_POSITION.
 const PLAYER_YAW := &"player/yaw"
 
-## int, PlayerController.Stance value. Written by player.
+## int stance: STANCE_STAND / STANCE_CROUCH / STANCE_CRAWL (equal to PlayerController.Stance). Written by player.
 const PLAYER_STANCE := &"player/stance"
+
+## Values of PLAYER_STANCE, so modules that do not depend on `player` (e.g. touch_controls) can read it.
+const STANCE_STAND := 0
+const STANCE_CROUCH := 1
+const STANCE_CRAWL := 2
 
 ## String, visited cells as a Base64 bitset (row-major, bit (y * width + x)). Written by exploration.
 const EXPLORATION_VISITED := &"exploration/visited"

@@ -19,6 +19,7 @@ Main scene: composes all modules and owns boot order; no game logic
 
 ### Implementation requirements
 - Exactly the boot order documented in public/game_main.gd. Uses only the public factories of its dependencies.
+  Call `AutoSave.setup(backend)` BEFORE `AutoSave.restore()` (restore needs the backend to compare cloud vs local).
 - Owns WorldEnvironment for now (dark ambient, depth fog, tonemap filmic, glow on) and the phase changes.
 - On iOS: `Engine.max_fps = 30` (PLATFORM.md target). Desktop preview: uncapped.
 - Tests (end-to-end smoke, headless): main scene reaches `ready_to_play` within 300 frames; player stands in the start

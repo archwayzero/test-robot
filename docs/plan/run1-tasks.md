@@ -30,6 +30,7 @@ one task at a time; a task starts only after its dependencies are merged. Milest
 | T021 | orchestrator | - | iOS export preset (min iOS 16, ASTC, exclude automation), Mac package | T020 | M3 |
 | T022 | qa | - | Network/data audit + release checklist | T021 | M3 |
 | T023 | human (Mac) | - | Xcode build, sign (personal team), install on iPhone 12, profile | T022 | M3 |
+| T025 | module-dev | core | Hardening: restore() validates key namespaces (found in T008 review); test runs save to a separate dir so tests never touch the player's slot 0 | | M1 (before T010) |
 | T024 | module-dev | cloud_save | ICloudBackend (native plugin) — only if Apple Developer account + iCloud capability are available | T023 | M3 (optional) |
 
 Notes:
