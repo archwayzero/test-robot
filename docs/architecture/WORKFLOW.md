@@ -52,7 +52,11 @@ Measured peaks (dev machine: 28 GB RAM, 24 GB swap, 28 threads; each job run alo
 | Godot recording, 20 s, accurate | ~0.3 GB / 0.5 GB | 16 s |
 | Godot `--import` | ~0.6 GB | ~10 s |
 | Headless test suite (core) | < 0.1 GB | 1 s |
-| Blender render | (to be measured before the first Blender task) | |
+| Blender 5.2.3 Cycles CPU still, 1024 px, 32 samples, provided hero.glb (9.7 MB) | ~1.0 GB / 1.15 GB | 5 s |
+| Blender 5.2.3 Cycles CPU bake, 3 passes at 2048x2048, 16 samples, procedural material | ~0.8 GB / 1.0 GB | 16 s |
+
+Use `--expect-peak-mb 2000` for Blender jobs (headroom for larger scenes and 4096 px bakes; re-measure if a
+job's `peak_drop` exceeds 1.5 GB). Measured 2026-10-27 before T011.
 
 Incident: run 1's first core test re-launched Godot recursively (~300 MB/s) and the session was killed by the OOM
 killer. Since then: no process spawning in code or tests, and every heavy command runs under memguard.
