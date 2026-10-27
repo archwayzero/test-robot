@@ -27,11 +27,13 @@ func after_all() -> void:
 
 func before_each() -> void:
 	_cleanup_files()
+	Core.state.restore(_initial_state)
 	Core.state.set_value(COUNT, 0)
 	events.clear()
 
 
 func after_each() -> void:
+	get_tree().paused = false
 	if auto_save != null:
 		remove_child(auto_save)
 		auto_save.free()
@@ -127,6 +129,21 @@ func test_pause_notification_triggers_save() -> void:
 	assert_eq(events.size(), 2, "pending was satisfied by the background save")
 
 
+func test_throttle_does_not_advance_while_tree_paused() -> void:
+	_start()
+	_bump()
+	_bump()  # pending
+	assert_eq(events.size(), 1)
+	get_tree().paused = true
+	await wait_frames(400)  # ~13 s of wall frames, but no game time for the PAUSABLE autosave
+	assert_eq(events.size(), 1, "no save while the tree is paused")
+	get_tree().paused = false
+	await wait_frames(280)  # ~9.3 s of game time since the first save
+	assert_eq(events.size(), 1, "interval counts only unpaused time")
+	await wait_frames(30)
+	assert_eq(events.size(), 2, "pending saved once 10 s of game time passed")
+
+
 func test_close_request_triggers_save() -> void:
 	_start()
 	auto_save.notification(Node.NOTIFICATION_WM_CLOSE_REQUEST)
@@ -145,10 +162,10 @@ func test_fake_backend_receives_envelope_of_saved_state() -> void:
 	assert_eq(fake.pushes.size(), 1)
 	assert_eq(fake.pushes[0].slot, SLOT)
 	var text: String = (fake.pushes[0].data as PackedByteArray).get_string_from_utf8()
-	var raw: Variant = str_to_var(text)
+	var raw: Variant = JSON.to_native(JSON.parse_string(text), false)
 	assert_eq(typeof(raw), TYPE_DICTIONARY)
 	assert_eq(raw.format, "cloud_save")
-	assert_eq(raw.version, 1)
+	assert_eq(raw.version, 2)
 	assert_eq(typeof(raw.saved_at_unix), TYPE_INT)
 	assert_almost_eq(raw.saved_at_unix, Time.get_unix_time_from_system(), 5.0)
 	assert_eq(raw.snapshot, expected, "snapshot equals Core.state.snapshot() at save time")
@@ -259,22 +276,132 @@ func test_restore_same_time_prefers_local() -> void:
 func test_restore_corrupt_cloud_local_wins() -> void:
 	_start()
 	_local_save_of_five()
+	var good_snap := {"phase": &"boot", "paused": false, "values": {COUNT: 9}}
 	var corrupt: Array[PackedByteArray] = [
 		PackedByteArray([0xFF, 0x00, 0x13, 0x37]),
 		"{ not a dictionary".to_utf8_buffer(),
-		var_to_str({"format": "other", "version": 1, "saved_at_unix": 9999999999, "snapshot": {}}).to_utf8_buffer(),
-		var_to_str({"format": "cloud_save", "version": 2, "saved_at_unix": 9999999999,
-				"snapshot": {"values": {}}}).to_utf8_buffer(),
-		var_to_str({"format": "cloud_save", "version": 1, "saved_at_unix": "soon",
-				"snapshot": {"values": {}}}).to_utf8_buffer(),
-		('{"format": "cloud_save", "version": 1, "saved_at_unix": 9999999999, "snapshot": '
-				+ '{"values": {"x": Object(Node,"name":"evil")}}}').to_utf8_buffer(),
+		_json({"format": "other", "version": 2, "saved_at_unix": 9999999999, "snapshot": good_snap}),
+		_json({"format": "cloud_save", "version": 1, "saved_at_unix": 9999999999, "snapshot": good_snap}),
+		_json({"format": "cloud_save", "version": 2, "saved_at_unix": "soon", "snapshot": good_snap}),
+		_json({"format": "cloud_save", "version": 2, "saved_at_unix": 9999999999, "snapshot": {"values": {}}}),
+		_json({"format": "cloud_save", "version": 2, "saved_at_unix": 9999999999,
+				"snapshot": {"phase": &"boot", "paused": "no", "values": {}}}),
+		# version-1 (var_to_str) payload of an otherwise valid, newer envelope
+		var_to_str({"format": "cloud_save", "version": 1, "saved_at_unix": 9999999999,
+				"snapshot": good_snap}).to_utf8_buffer(),
+		# plain JSON (not from_native encoded)
+		'{"format": "cloud_save", "version": 2, "saved_at_unix": 9999999999, "snapshot": {}}'.to_utf8_buffer(),
+		PackedByteArray(),
 	]
 	for data in corrupt:
 		fake.store[SLOT] = data
 		Core.state.set_value(COUNT, 0)
 		assert_eq(auto_save.restore(), OK)
 		assert_eq(Core.state.get_value(COUNT), 5, "local wins over corrupt cloud %s" % data)
+
+
+func _json(envelope: Dictionary, allow_objects := false) -> PackedByteArray:
+	return JSON.stringify(JSON.from_native(envelope, allow_objects)).to_utf8_buffer()
+
+
+## Instances of the probe script count themselves, so a test can prove no object was created from cloud data.
+const ObjectProbe := preload("res://modules/cloud_save/tests/object_probe.gd")
+
+
+func test_restore_rejects_json_encoded_object() -> void:
+	_start()
+	_local_save_of_five()
+	var probe := ObjectProbe.new()
+	var created_before := ObjectProbe.created
+	var payloads: Array[PackedByteArray] = [
+		_json({"format": "cloud_save", "version": 2, "saved_at_unix": 9999999999,
+				"snapshot": {"phase": &"boot", "paused": false, "values": {COUNT: 9, &"x/evil": probe}}}, true),
+		_json({"format": "cloud_save", "version": 2, "saved_at_unix": 9999999999,
+				"snapshot": {"phase": &"boot", "paused": false, "values": {COUNT: 9, &"x/evil": RefCounted.new()}}}, true),
+		_json({"format": "cloud_save", "version": 2, "saved_at_unix": 9999999999,
+				"snapshot": {"phase": &"boot", "paused": false, "values": {COUNT: 9, &"x/evil": [1, [probe]]}}}, true),
+	]
+	assert_true(payloads[0].get_string_from_utf8().contains("object_probe.gd"), "encoder really embedded the object")
+	for data in payloads:
+		assert_true(AutoSaveImpl.parse_envelope(data).is_empty(), "object payload rejected")
+		fake.store[SLOT] = data
+		Core.state.set_value(COUNT, 0)
+		assert_eq(auto_save.restore(), OK)
+		assert_eq(Core.state.get_value(COUNT), 5, "local wins over object payload")
+		assert_false(Core.state.has_value(&"x/evil"))
+	assert_eq(ObjectProbe.created, created_before, "no object created from cloud data")
+	probe = null
+
+
+func test_restore_rejects_var_to_str_object_bypasses() -> void:
+	_start()
+	_local_save_of_five()
+	var head := '{"format": "cloud_save", "version": 1, "saved_at_unix": 9999999999, "snapshot": '
+	head += '{"phase": &"boot", "paused": false, "values": {&"x/evil": '
+	var bodies: Array[String] = [
+		'Object (RefCounted,"script":null)',
+		'Object\t(RefCounted,"script":null)',
+		'Object;c\n(RefCounted,"script":null)',
+		'Object(RefCounted,"script":null)',
+		'Resource ("res://modules/cloud_save/tests/auto_save_test.gd")',
+	]
+	for body in bodies:
+		var data := (head + body + ', &"exploration/count": 9}}}').to_utf8_buffer()
+		assert_true(AutoSaveImpl.parse_envelope(data).is_empty(), "rejected: %s" % body.c_escape())
+		fake.store[SLOT] = data
+		Core.state.set_value(COUNT, 0)
+		assert_eq(auto_save.restore(), OK)
+		assert_eq(Core.state.get_value(COUNT), 5, "local wins over %s" % body.c_escape())
+		assert_false(Core.state.has_value(&"x/evil"))
+
+
+func test_envelope_round_trips_native_types_exactly() -> void:
+	var snap := {"phase": &"playing", "paused": true, "values": {
+		COUNT: 12,
+		StateKeys.PLAYER_POSITION: Vector3(1.5, 0.25, -3.75),
+		&"x/name": &"cell_a",
+		&"x/text": "s:not a prefix",
+		&"x/yaw": 1.25,
+		&"x/list": [1, "two", &"three", Vector2i(4, 5), null],
+	}}
+	var env := AutoSaveImpl.parse_envelope(AutoSaveImpl.make_envelope(snap, 1700000000))
+	assert_eq(env.saved_at_unix, 1700000000)
+	assert_eq(typeof(env.saved_at_unix), TYPE_INT)
+	assert_eq(env.snapshot, snap)
+	assert_eq(typeof(env.snapshot.phase), TYPE_STRING_NAME)
+	var pos: Variant = env.snapshot.values[StateKeys.PLAYER_POSITION]
+	assert_eq(typeof(pos), TYPE_VECTOR3)
+	assert_eq(pos, Vector3(1.5, 0.25, -3.75))
+	assert_eq(typeof(env.snapshot.values[&"x/name"]), TYPE_STRING_NAME)
+	assert_eq(typeof(env.snapshot.values[&"x/text"]), TYPE_STRING)
+	assert_eq(typeof(env.snapshot.values[COUNT]), TYPE_INT)
+	for key: Variant in env.snapshot.values:
+		assert_eq(typeof(key), TYPE_STRING_NAME, "key %s stays StringName" % key)
+
+
+func test_restore_cloud_snapshot_rejected_by_core_keeps_local() -> void:
+	_start()
+	var local_ts := _local_save_of_five()
+	# Well-formed envelope, but Core.state.restore() rejects a non-string key and leaves the state unchanged.
+	var bad_snap := {"phase": &"boot", "paused": false, "values": {1: 2, COUNT: 9}}
+	fake.store[SLOT] = AutoSaveImpl.make_envelope(bad_snap, local_ts + 100)
+	assert_false(AutoSaveImpl.parse_envelope(fake.store[SLOT]).is_empty(), "envelope itself is valid")
+	assert_eq(auto_save.restore(), OK)
+	assert_eq(Core.state.get_value(COUNT), 5, "local state loaded")
+	assert_eq(AutoSaveImpl.read_local_saved_at(SLOT), local_ts, "sidecar unchanged")
+	remove_child(auto_save)  # stop the policy so the checks below do not autosave
+	Core.state.set_value(COUNT, 0)
+	assert_eq(Core.saves.load_game(SLOT), OK)
+	assert_eq(Core.state.get_value(COUNT), 5, "local slot still holds the local save")
+	add_child(auto_save)
+
+
+func test_restore_cloud_snapshot_rejected_by_core_without_local() -> void:
+	_start()
+	fake.store[SLOT] = AutoSaveImpl.make_envelope({"phase": &"boot", "paused": false, "values": {1: 2}}, 1000)
+	assert_eq(auto_save.restore(), ERR_FILE_NOT_FOUND)
+	assert_false(Core.saves.has_save(SLOT), "nothing written")
+	assert_eq(AutoSaveImpl.read_local_saved_at(SLOT), -1, "no sidecar")
 
 
 func test_restore_corrupt_cloud_without_local_is_fresh_game() -> void:

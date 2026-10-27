@@ -4,21 +4,27 @@
 ## envelope (see make_envelope()) to the backend. The local save never waits for the cloud.
 ## Throttle: game time (sum of _process deltas, PROCESS_MODE_PAUSABLE so it stops while the tree is paused).
 ## Restore: the cloud envelope wins only if it is valid and strictly newer than the local sidecar timestamp (or no
-## local save exists); otherwise the local slot is loaded.
+## local save exists) and Core actually accepts its snapshot; otherwise the local slot is loaded.
 ## This module never reads core's save file; it only uses Core.state / Core.saves.
+##
+## Cloud data is untrusted: the envelope is JSON in Godot's JSON.from_native() encoding, decoded with
+## allow_objects = false, and rejected if it carries (or tried to carry) objects, callables, signals or RIDs.
 extends AutoSave
 
 const META_DIR := "user://cloud_save"
 const META_PATH := "user://cloud_save/meta.cfg"
 const META_KEY := "saved_at_unix"
 const ENVELOPE_FORMAT := "cloud_save"
-const ENVELOPE_VERSION := 1
+## 2 = JSON.from_native encoding. Version 1 (var_to_str text) is no longer accepted.
+const ENVELOPE_VERSION := 2
 ## Upper bound for a cloud payload we are willing to parse (iCloud key-value store limits a value to 1 MB).
 const MAX_PAYLOAD_BYTES := 1024 * 1024
+## Deepest container nesting accepted in a cloud payload (raw JSON levels; a snapshot needs far fewer).
+const MAX_DEPTH := 64
 ## Tolerance for float accumulation of frame deltas (300 * 1/30 may sum to 9.99999...).
 const _EPSILON := 0.0001
-## var_to_str constructors that would instantiate objects/resources; never parsed from cloud data.
-const _FORBIDDEN_TOKENS: Array[String] = ["Object(", "Resource(", "SubResource(", "ExtResource("]
+## Variant types that must never come out of cloud data.
+const _FORBIDDEN_TYPES: Array[int] = [TYPE_OBJECT, TYPE_CALLABLE, TYPE_SIGNAL, TYPE_RID]
 
 var _backend: CloudBackend
 var _active := false
@@ -108,45 +114,142 @@ func _restore() -> Error:
 			return error
 		# Local slot unreadable but the cloud has a valid (older) copy: better than nothing.
 	Core.state.restore(cloud.snapshot)
+	if not _state_matches(cloud.snapshot):
+		# Core rejected the snapshot (restore() leaves the state unchanged): keep the local save and sidecar as is.
+		push_warning("cloud_save: Core rejected the cloud snapshot; keeping the local save")
+		return Core.saves.load_game(SAVE_SLOT) if has_local else ERR_FILE_NOT_FOUND
 	var save_error := Core.saves.save_game(SAVE_SLOT)
 	if save_error == OK:
 		_write_local_saved_at(SAVE_SLOT, cloud.saved_at_unix)
+	else:
+		push_warning("cloud_save: restored the cloud state but could not save it locally (%s)" % error_string(save_error))
 	return OK
+
+
+## True if Core.state now holds `snapshot` (phase, paused flag and values).
+static func _state_matches(snapshot: Dictionary) -> bool:
+	var current := Core.state.snapshot()
+	return StringName(current.get("phase", &"")) == StringName(snapshot.phase) \
+			and current.get("paused") == snapshot.paused \
+			and current.get("values") == snapshot.values
 
 
 # --- Envelope -------------------------------------------------------------------------------------------
 
-## The cloud payload: var_to_str({"format", "version", "saved_at_unix", "snapshot"}) as UTF-8.
+## The cloud payload, UTF-8 JSON of JSON.from_native({"format", "version", "saved_at_unix", "snapshot"}, false).
 static func make_envelope(snapshot: Dictionary, saved_at_unix: int) -> PackedByteArray:
-	return var_to_str({
+	var envelope := {
 		"format": ENVELOPE_FORMAT,
 		"version": ENVELOPE_VERSION,
 		"saved_at_unix": saved_at_unix,
 		"snapshot": snapshot,
-	}).to_utf8_buffer()
+	}
+	return JSON.stringify(JSON.from_native(envelope, false)).to_utf8_buffer()
 
 
-## Returns {"saved_at_unix": int, "snapshot": Dictionary}, or {} if `data` is empty, corrupt or not ours.
+## Returns {"saved_at_unix": int, "snapshot": Dictionary}, or {} if `data` is empty, corrupt, not ours, or carries
+## anything that is not plain data.
 static func parse_envelope(data: PackedByteArray) -> Dictionary:
-	if data.is_empty() or data.size() > MAX_PAYLOAD_BYTES or data[0] != 0x7B:  # '{'
+	if data.is_empty() or data.size() > MAX_PAYLOAD_BYTES:
 		return {}
-	var text := data.get_string_from_utf8()
-	for token in _FORBIDDEN_TOKENS:
-		if text.contains(token):
-			return {}
-	var parsed: Variant = str_to_var(text)
+	var json := JSON.new()
+	if json.parse(data.get_string_from_utf8()) != OK:
+		return {}
+	var raw: Variant = json.data
+	# Encoded objects ({"type": <class>, "props": [...]}) and unknown types are refused before decoding, because
+	# to_native(allow_objects = false) would silently turn them into null.
+	var raw_nulls := _check_raw(raw, 0)
+	if raw_nulls < 0:
+		return {}
+	var parsed: Variant = JSON.to_native(raw, false)
+	# Every null in the result must come from a JSON null; extra nulls mean part of the payload failed to decode.
+	var decoded_nulls := _check_decoded(parsed, 0)
+	if decoded_nulls < 0 or decoded_nulls != raw_nulls:
+		return {}
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return {}
 	var env: Dictionary = parsed
-	if env.get("format") != ENVELOPE_FORMAT or typeof(env.get("version")) != TYPE_INT \
+	if env.size() != 4 or env.get("format") != ENVELOPE_FORMAT or typeof(env.get("version")) != TYPE_INT \
 			or env.version != ENVELOPE_VERSION:
 		return {}
 	if typeof(env.get("saved_at_unix")) != TYPE_INT or typeof(env.get("snapshot")) != TYPE_DICTIONARY:
 		return {}
 	var snapshot: Dictionary = env.snapshot
-	if typeof(snapshot.get("values")) != TYPE_DICTIONARY:
+	if not (typeof(snapshot.get("phase")) in [TYPE_STRING_NAME, TYPE_STRING]) \
+			or typeof(snapshot.get("paused")) != TYPE_BOOL or typeof(snapshot.get("values")) != TYPE_DICTIONARY:
 		return {}
 	return {"saved_at_unix": env.saved_at_unix, "snapshot": snapshot}
+
+
+## Walks raw parsed JSON. Returns the number of JSON nulls, or -1 if it is too deep or a typed node names a type
+## that is not an allowed built-in (objects, callables, signals, RIDs, class names) or carries object properties.
+static func _check_raw(value: Variant, depth: int) -> int:
+	if depth > MAX_DEPTH:
+		return -1
+	match typeof(value):
+		TYPE_NIL:
+			return 1
+		TYPE_ARRAY:
+			var nulls := 0
+			for item: Variant in value:
+				var n := _check_raw(item, depth + 1)
+				if n < 0:
+					return -1
+				nulls += n
+			return nulls
+		TYPE_DICTIONARY:
+			var dict: Dictionary = value
+			if dict.has("props") or (dict.has("type") and not _is_allowed_type_name(dict.type)):
+				return -1
+			var nulls := 0
+			for key: Variant in dict:
+				var n := _check_raw(dict[key], depth + 1)
+				if n < 0:
+					return -1
+				nulls += n
+			return nulls
+	return 0
+
+
+static func _is_allowed_type_name(type_name: Variant) -> bool:
+	if typeof(type_name) != TYPE_STRING:
+		return false
+	for t in TYPE_MAX:
+		if t != TYPE_NIL and not (t in _FORBIDDEN_TYPES) and type_string(t) == type_name:
+			return true
+	return false
+
+
+## Walks the decoded value. Returns the number of nulls (array items, dictionary keys and values), or -1 if it is
+## too deep or contains a forbidden type.
+static func _check_decoded(value: Variant, depth: int) -> int:
+	if depth > MAX_DEPTH:
+		return -1
+	var type := typeof(value)
+	if type in _FORBIDDEN_TYPES:
+		return -1
+	match type:
+		TYPE_NIL:
+			return 1
+		TYPE_ARRAY:
+			var nulls := 0
+			for item: Variant in value:
+				var n := _check_decoded(item, depth + 1)
+				if n < 0:
+					return -1
+				nulls += n
+			return nulls
+		TYPE_DICTIONARY:
+			var dict: Dictionary = value
+			var nulls := 0
+			for key: Variant in dict:
+				var nk := _check_decoded(key, depth + 1)
+				var nv := _check_decoded(dict[key], depth + 1)
+				if nk < 0 or nv < 0:
+					return -1
+				nulls += nk + nv
+			return nulls
+	return 0
 
 
 # --- Local timestamp sidecar ----------------------------------------------------------------------------
