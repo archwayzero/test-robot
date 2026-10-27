@@ -54,3 +54,8 @@ sandbox FPS or GPU cost as device performance. Push with `git push origin <branc
 - `python3 tools/release/make_mac_package.py --version X` (only on merged main; see PROMPTS.md Prompt 4b)
 - Headless Blender: `blender -b <file.blend> -P <script.py> -- <args>`
 - Headless Godot: `godot --headless --path godot ...`
+
+## Memory
+Ubuntu has a fixed memory limit (`free -m` shows it). Measured peaks: Godot capture ~X GB, recording ~Y GB,
+Blender render ~Z GB. Before starting render-heavy work or a background agent that does it, check `free -m` and
+start only if at least 4 GB stay spare after its peak; otherwise wait. If unsure, run it alone.
