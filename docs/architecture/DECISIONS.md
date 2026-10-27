@@ -23,3 +23,4 @@ file where it differs from docs/specs/.
 | D14 | Hero animation | 5 clips | Scripted rig + 8 scripted clips from reference videos (expect stiff motion, especially crawl and jump) |
 | D15 | Mechanic ids | not numbered | M1 movement, M2 maze, M3 mini-map, M4 save, M5 controls |
 | D16 | Budgets | from platform budgets | docs/qa/budgets.json values as proposed in Phase A, approved for run 1 only; estimates are marked there |
+| D17 | HUD safe area | (nothing; PLATFORM.md is silent on the notch) | HUD (mini-map, touch controls) is laid out inside the display safe area (`DisplayServer.get_display_safe_area()`, converted to viewport coordinates); module MARGIN constants apply inside it. Landscape iPhone 12 has the notch on one side and rounded corners plus the home indicator at the bottom |
