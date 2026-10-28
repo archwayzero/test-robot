@@ -43,8 +43,8 @@ Members: `state: GameState`, `saves: SaveService`, `automation: Automation` (nul
 `get_phase()/set_phase(StringName)` (starts at `GameState.PHASE_BOOT`), `is_paused()/set_paused(bool)`,
 `get_value(key, default)/set_value(key, value)/has_value(key)` with keys namespaced `&"<module>/<name>"` (a module
 writes only its own namespace; values must survive `var_to_str`), `snapshot() -> Dictionary`
-(`{"phase", "paused", "values"}`, deep copy), `restore(Dictionary) -> Error` (ERR_INVALID_DATA and no change on a
-bad snapshot or a key not matching `GameState.KEY_PATTERN`). Setters emit the Core signals only on change.
+(`{"phase", "paused", "values"}`, deep copy), `restore(Dictionary)` (no change and push_error on a bad snapshot or a key
+not matching `GameState.KEY_PATTERN`). Setters emit the Core signals only on change.
 
 ### `SaveService` (public/save_service.gd)
 `save_game(slot) -> Error`, `load_game(slot) -> Error`, `has_save(slot) -> bool`, `delete_save(slot) -> Error`.
@@ -68,9 +68,9 @@ Observation/control: `snapshot()` (state snapshot + `frame`, `seed`, `scene`), `
   so no `preload` of it anywhere.
 - Services get the CoreAPI passed in (to emit signals); they must not use `/root/...` node paths.
 - T025 hardening: `set_value()` and `restore()` reject keys not matching `GameState.KEY_PATTERN` (push_error, no
-  change); `restore()` returns ERR_INVALID_DATA for anything parse_snapshot rejects; the installer creates the
-  SaveService with dir `CoreAPI.user_data_dir() + "saves"`. Tests: non-namespaced key rejected in both, restore
-  return codes, a test run never writes under `user://saves/`.
+  change); `restore()` rejects the whole snapshot if any key is invalid; the installer creates the
+  SaveService with dir `CoreAPI.user_data_dir() + "saves"`. Tests: non-namespaced key rejected in both (state and
+  signals unchanged), a test run never writes under `user://saves/`.
 - `advance_frames(n)` / `get_frame()` must count `Engine.get_process_frames()`, not `process_frame` signal
   emissions (awaiting process_frame from code resumed by process_frame can resume in the same frame).
 - Tests live in `tests/` and run headless (test runner: docs/qa/TEST_PLAN.md, "Test runner").

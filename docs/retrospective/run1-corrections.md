@@ -222,8 +222,10 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
   miss changes made while detached. Harmless with the current boot order; next game: put "resync on enter_tree"
   in the module template.
 - **Abstract signature changes cannot land before their implementation:** GDScript rejects an override whose
-  signature differs from the `@abstract` parent, which breaks every test that loads core. Workflow: the orchestrator
-  commits such a public change as the first commit on the implementing task branch, not in a separate arch PR.
+  signature differs from the `@abstract` parent, which breaks every test that loads core. An arch PR first breaks main;
+  committing the public change on the task branch is blocked by the commit hook (orchestrator's paths are outside
+  module-dev's scope). Run 1 kept `restore() -> void`. Next game (kit): either let the commit hook accept the
+  module's own `public/` from the orchestrator on a task branch, or design `restore() -> Error` from day one.
 
 ### M2 art
 (to be filled in)
