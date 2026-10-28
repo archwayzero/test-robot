@@ -63,6 +63,7 @@ func test_e6_maze_layout() -> void:
 	assert_eq(_fingerprint(layout()), first, "same layout on the second run")
 	assert_eq(_fingerprint(MazeFactory.create().make_layout()), first, "same layout from MazeFactory")
 	print("E6 measured: start %s, %d low-passage cells" % [l.start_cell(), low_cells])
+	checkpoint("end")
 
 
 func test_e7_world_matches_layout() -> void:
@@ -105,3 +106,4 @@ func test_e7_world_matches_layout() -> void:
 			mismatches.append("%s %s: has_wall=%s hit=%s" % [c, e[1], expected, hit.get("position")])
 	assert_eq(mismatches, [], "ray hit iff has_wall")
 	print("E7 measured: %d edges (%d walls), %d mismatches" % [edges.size(), walls, mismatches.size()])
+	checkpoint("end")

@@ -103,9 +103,9 @@ func play() -> void:
 	for i in 30:
 		hold_move(dir, 0.5)
 		if i == 8:
-			Input.action_press(GameActions.JUMP)
+			automation().press_action(GameActions.JUMP)
 		if i == 11:
-			Input.action_release(GameActions.JUMP)
+			automation().release_action(GameActions.JUMP)
 		await wait(1)
 	release_move()
 	await wait_s(0.5)
