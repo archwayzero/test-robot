@@ -10,6 +10,8 @@ const STEP_EXPLORATION_SETUP := &"exploration_setup"
 const STEP_AUTOSAVE_SETUP := &"autosave_setup"
 const STEP_AUTOSAVE_RESTORE := &"autosave_restore"
 const STEP_PLAYER_SPAWNED := &"player_spawned"
+## Logged only when restore_stance() was called (saved position used and a valid saved stance value).
+const STEP_STANCE_RESTORED := &"stance_restored"
 const STEP_TOUCH_CONTROLS := &"touch_controls"
 const STEP_MINIMAP := &"minimap"
 const STEP_PLAYING := &"playing"
@@ -139,12 +141,16 @@ func _boot() -> void:
 	_auto_save.restore()
 	_log(STEP_AUTOSAVE_RESTORE)
 
-	# 3. Player at the saved position, or at the start cell.
+	# 3. Player at the saved position, or at the start cell, then the saved stance. Read the saved stance first:
+	# the player writes PLAYER_STANCE (STAND) itself once it enters the tree.
+	var saved_stance: Variant = Core.state.get_value(StateKeys.PLAYER_STANCE)
 	_player = PlayerFactory.create_player()
 	_player.name = "Player"
 	add_child(_player)
 	_spawn_player()
 	_log(STEP_PLAYER_SPAWNED)
+	if _spawned_from_save:
+		_restore_saved_stance(saved_stance)
 
 	# 4. HUD inside the safe area: touch controls first, minimap above them (drawn later, gets input first).
 	_build_hud()
@@ -170,8 +176,23 @@ func _spawn_player() -> void:
 		if (saved_yaw is float or saved_yaw is int) and is_finite(float(saved_yaw)):
 			spawn_yaw = float(saved_yaw)
 		_spawned_from_save = true
-	# Stance: PlayerController has no public way to set it (see the T009 report); only position and yaw apply.
 	_player.spawn_at(spawn_position, spawn_yaw)
+
+
+## Applies `saved` (StateKeys.PLAYER_STANCE as restored from the save, read before the player entered the tree);
+## only after a spawn at a saved position, with the player in the tree.
+## Accepts an int, or a float with an integral value (JSON-style saves); anything else leaves the default STAND.
+## Out-of-range ints are passed on: restore_stance() treats them as STAND.
+func _restore_saved_stance(saved: Variant) -> void:
+	var stance: int
+	if saved is int:
+		stance = saved
+	elif saved is float and is_finite(saved) and float(saved) == floorf(saved) and absf(saved) < 1.0e9:
+		stance = int(saved)
+	else:
+		return
+	_player.restore_stance(stance as PlayerController.Stance)
+	_log(STEP_STANCE_RESTORED)
 
 
 ## A saved position is usable only if it is a finite Vector3 at a sane height inside the maze bounds.
