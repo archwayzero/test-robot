@@ -88,6 +88,12 @@ Exit code 0 = all passed, 1 = failures, 2 = nothing found / not a test run.
 - Always run through `tools/qa/memguard.py` (refuses to start without 4 GB spare, kills the job below 4 GB free).
 - In test runs, Automation resizes the headless root viewport to the project size (1280x590), so screen
   coordinates in touch tests match the game layout.
+- **Assertions after an `await` go in a plain (non-coroutine) helper function** (M1 finding N1, Godot 4.7.2 VM bug):
+  after `await <coroutine>` in a test whose lambdas capture locals, an `if` body that declares a local can be skipped
+  silently, and the condition can evaluate to a `GDScriptFunctionState`. Pattern: `await` the condition, then call
+  `_check_xxx(values...)` which holds the `if`s/loops and asserts. Where that is impractical, guard the block with
+  `expect_checkpoint(name, count)` / `checkpoint(name)` (e2e: `godot/tests/e2e/e2e_base.gd`). Reviewers reject
+  conditional or loop assertions written inline after an `await`. Repro: docs/retrospective/upstream/godot-4.7.2-await-if-skip.md.
 - Tests must never start processes (`OS.execute`, `OS.create_process`, `OS.create_instance`): run 1's first core
   attempt re-launched Godot recursively and crashed the machine (out of memory). Runner self-test:
 `--dir res://addons/test_runner/selftest` must report 5 passed, 3 failed (intentional), exit 1.

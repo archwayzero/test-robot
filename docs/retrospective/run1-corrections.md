@@ -240,6 +240,16 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
   specify binary save payloads from the start, and keep e2e tests format-agnostic via a public decode hook.
 - **Desktop focus-out must not pause previews/recordings;** only mobile pauses on focus loss (D12 in run 1).
 
+- **Godot 4.7.2 VM bug can make tests pass without asserting (N1, found in T032, reproduced by the reviewer):** after
+  `await wait_until(<lambda>)` in a coroutine whose lambdas capture locals, an `if` body that declares a local is
+  skipped although its condition is true; a probe showed the condition expression evaluating to a
+  `GDScriptFunctionState`. T010's E11 gap check sat in such a block, so it never ran (it would have caught F2 earlier).
+  Run 1: TEST_PLAN rule "assertions after an await go in a plain helper", a checkpoint guard in the e2e base, audit
+  tasks T033-T036, upstream report drafted (docs/retrospective/upstream/). Next game: put the checkpoint guard in the
+  test runner itself (every test must reach its end, counted outside the coroutine), and add the rule to the kit.
+- **M1 QA re-run (T032): 15/15 e2e, 230/230 overall;** fixes verified by numbers (exact float round-trip, 300-frame
+  throttle gap, player 4-7% of the frame in low passages). Two QA rounds per milestone are normal; budget for them.
+
 ### M2 art
 (to be filled in)
 
