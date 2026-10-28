@@ -41,6 +41,8 @@ var _backgrounded := false
 ## Test seam: when valid, returns {"safe_area": Rect2i, "screen_size": Vector2i} instead of the DisplayServer
 ## values, and is used on every platform (desktop included).
 var _safe_area_source: Callable
+## Test seam: when valid, returns a bool replacing OS.has_feature("mobile") for the focus-loss pause (D12).
+var _mobile_source: Callable
 var _insets := {"left": 0.0, "top": 0.0, "right": 0.0, "bottom": 0.0}
 
 
@@ -63,12 +65,32 @@ func _exit_tree() -> void:
 
 ## DECISIONS.md D12: pause while the app is backgrounded. Notifications reach every node regardless of pause, so
 ## AutoSave's own save on NOTIFICATION_APPLICATION_PAUSED still runs (whatever the order).
+## APPLICATION_PAUSED/RESUMED act on every platform; FOCUS_OUT/FOCUS_IN only on mobile, so the desktop preview
+## (and QA recordings in a window that loses focus) keeps running.
 func _notification(what: int) -> void:
 	match what:
-		NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_APPLICATION_FOCUS_OUT:
+		NOTIFICATION_APPLICATION_PAUSED:
 			_on_backgrounded()
-		NOTIFICATION_APPLICATION_RESUMED, NOTIFICATION_APPLICATION_FOCUS_IN:
+		NOTIFICATION_APPLICATION_RESUMED:
 			_on_foregrounded()
+		NOTIFICATION_APPLICATION_FOCUS_OUT:
+			if _is_mobile():
+				_on_backgrounded()
+		NOTIFICATION_APPLICATION_FOCUS_IN:
+			if _is_mobile():
+				_on_foregrounded()
+
+
+func _is_mobile() -> bool:
+	if _mobile_source.is_valid():
+		return bool(_mobile_source.call())
+	return OS.has_feature("mobile")
+
+
+## Test seam: replaces OS.has_feature("mobile") for the focus-loss pause. `source` returns a bool; pass an
+## invalid Callable to go back to the platform check.
+func set_mobile_source(source: Callable) -> void:
+	_mobile_source = source
 
 
 func _on_backgrounded() -> void:

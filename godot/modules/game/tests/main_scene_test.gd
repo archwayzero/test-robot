@@ -170,6 +170,7 @@ func test_saved_position_invalid_values_fall_back_to_start() -> void:
 
 func test_backgrounding_pauses_and_resume_unpauses() -> void:
 	assert_true(await _start())
+	main.call("set_mobile_source", func() -> bool: return true)  # simulate mobile: focus loss pauses too
 	for pair: Array in [[Node.NOTIFICATION_APPLICATION_PAUSED, Node.NOTIFICATION_APPLICATION_RESUMED],
 			[Node.NOTIFICATION_APPLICATION_FOCUS_OUT, Node.NOTIFICATION_APPLICATION_FOCUS_IN]]:
 		main.notification(pair[0])
@@ -180,6 +181,22 @@ func test_backgrounding_pauses_and_resume_unpauses() -> void:
 		assert_false(get_tree().paused, "unpaused on %d" % pair[1])
 		assert_false(Core.state.is_paused())
 		assert_eq(Core.state.get_phase(), StateKeys.PHASE_PLAYING)
+
+
+func test_desktop_focus_out_does_not_pause() -> void:
+	assert_true(await _start())
+	main.call("set_mobile_source", func() -> bool: return false)  # desktop preview / QA recording window
+	main.notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
+	assert_false(get_tree().paused, "desktop: focus loss does not pause")
+	assert_false(Core.state.is_paused())
+	assert_false(main.is_backgrounded())
+	main.notification(Node.NOTIFICATION_APPLICATION_FOCUS_IN)
+	assert_false(get_tree().paused)
+	# APPLICATION_PAUSED still pauses on desktop.
+	main.notification(Node.NOTIFICATION_APPLICATION_PAUSED)
+	assert_true(get_tree().paused, "desktop: APPLICATION_PAUSED pauses")
+	main.notification(Node.NOTIFICATION_APPLICATION_RESUMED)
+	assert_false(get_tree().paused)
 
 
 func test_resume_with_map_open_stays_paused() -> void:
@@ -195,6 +212,7 @@ func test_resume_with_map_open_stays_paused() -> void:
 	assert_false(get_tree().paused)
 	assert_eq(Core.state.get_phase(), StateKeys.PHASE_PLAYING)
 	# Map closed while backgrounded: stays paused until resumed.
+	main.call("set_mobile_source", func() -> bool: return true)  # simulate mobile: focus loss backgrounds
 	minimap.open_large_map()
 	main.notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
 	minimap.close_large_map()
