@@ -95,6 +95,7 @@ func test_rejects_non_serializable_and_bad_keys() -> void:
 	state.set_value(&"test/nested", {"a": [n]})
 	state.set_value(&"test/callable", func(): pass)
 	state.set_value(&"nonamespace", 1)
+	state.set_value(&"Player/x", 1)
 	n.free()
 	assert_false(state.has_value(&"test/node"))
 	assert_false(state.has_value(&"test/nested"))
@@ -176,3 +177,69 @@ func test_restore_rejects_invalid_and_copies_input() -> void:
 	assert_true(state.has_value(&"test/a"), "String keys converted")
 	data.values["test/a"].append(2)
 	assert_eq(state.get_value(&"test/a"), [1], "restore copies its input")
+
+
+const BAD_KEYS := ["foo", "/x", "Player/x", "a/", "a//b", "a b/c", "", "/", "a/b/", "a/B", "a-b/c", "a/b\n", "a/b c"]
+const GOOD_KEYS := ["a/b", "player/position", "maze/seed", "a1/b_2/c3", "test/x/y/z", "_/_"]
+
+
+func test_set_value_rejects_non_namespaced_keys() -> void:
+	for k in BAD_KEYS:
+		state.set_value(StringName(k), 1)  # StringName key
+		state.set_value(k, 2)  # String key, converted by the typed parameter
+		assert_false(state.has_value(StringName(k)), "'%s' rejected" % k)
+	assert_eq(state.snapshot().values, {}, "nothing stored")
+	assert_eq(events, [], "no signal for rejected keys")
+
+
+func test_set_value_accepts_multi_segment_keys() -> void:
+	for k in GOOD_KEYS:
+		state.set_value(k, 1)
+		assert_true(state.has_value(StringName(k)), "'%s' accepted" % k)
+	assert_eq(events.size(), GOOD_KEYS.size())
+
+
+func test_restore_rejects_snapshot_with_any_bad_key() -> void:
+	state.set_phase(&"menu")
+	state.set_value(&"test/a", 1)
+	var before := state.snapshot()
+	events.clear()
+	for k in BAD_KEYS:
+		# One bad key among valid ones rejects the whole snapshot, String or StringName key.
+		state.restore({"phase": &"playing", "paused": true, "values": {&"test/a": 2, &"test/b": 3, k: 4}})
+		state.restore({"phase": &"playing", "paused": true, "values": {&"test/a": 2, StringName(k): 4}})
+		assert_eq(state.snapshot(), before, "state unchanged for '%s'" % k)
+	assert_eq(events, [], "no signals for rejected snapshots")
+	var good := {}
+	for k in GOOD_KEYS:
+		good[k] = 5
+	state.restore({"phase": &"playing", "paused": false, "values": good})
+	assert_eq(state.get_phase(), &"playing")
+	for k in GOOD_KEYS:
+		assert_eq(state.get_value(StringName(k)), 5, "'%s' restored" % k)
+	assert_false(state.has_value(&"test/a"))
+
+
+func test_parse_snapshot_rejects_bad_keys() -> void:
+	var impl: Script = load(IMPL)
+	assert_eq(impl.parse_snapshot({"phase": &"x", "paused": false, "values": {"foo": 1}}), {})
+	assert_eq(impl.parse_snapshot({"phase": &"x", "paused": false, "values": {"a/b": 1, "Player/x": 1}}), {})
+	var ok: Dictionary = impl.parse_snapshot({"phase": &"x", "paused": false, "values": {"a/b/c": 1}})
+	assert_eq(ok.get("values"), {&"a/b/c": 1})
+
+
+func test_state_keys_match_key_pattern() -> void:
+	var re := RegEx.create_from_string(GameState.KEY_PATTERN)
+	var consts: Dictionary = (load("res://modules/core/public/state_keys.gd") as Script).get_script_constant_map()
+	var checked := 0
+	for name in consts:
+		if String(name).begins_with("PHASE_"):
+			continue
+		var v: Variant = consts[name]
+		if not (typeof(v) in [TYPE_STRING, TYPE_STRING_NAME]):
+			continue  # STANCE_* values are ints, not keys
+		var m := re.search(String(v))
+		assert_true(m != null and m.get_string() == String(v), "StateKeys.%s = '%s' matches KEY_PATTERN" % [name, v])
+		assert_true(load(IMPL).is_valid_key(v), "StateKeys.%s accepted by set_value" % name)
+		checked += 1
+	assert_true(checked >= 6, "checked %d StateKeys constants" % checked)

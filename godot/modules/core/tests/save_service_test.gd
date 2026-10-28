@@ -3,7 +3,9 @@ extends TestCase
 const STATE_IMPL := "res://modules/core/internal/game_state_impl.gd"
 const SAVE_IMPL := "res://modules/core/internal/save_service_impl.gd"
 const TEST_DIR := "user://core_test_saves"
-const CORE_SLOT := 9901  # used once against the real Core.saves (user://saves), cleaned up
+const CORE_SLOT := 9901  # used against the real Core.saves (user://automation/saves in a test run), cleaned up
+const PLAYER_SAVES := "user://saves"
+const AUTOMATION_SAVES := "user://automation/saves"
 
 var fake: CoreAPI
 var saves: SaveService
@@ -29,8 +31,16 @@ func after_each() -> void:
 	_wipe(TEST_DIR)
 
 
+var _core_slot_preexisted := false
+
+
+func before_all() -> void:
+	_core_slot_preexisted = FileAccess.file_exists(AUTOMATION_SAVES.path_join("slot_%d.save" % CORE_SLOT))
+
+
 func after_all() -> void:
-	core().saves.delete_save(CORE_SLOT)
+	if not _core_slot_preexisted:
+		core().saves.delete_save(CORE_SLOT)
 
 
 func _fill() -> void:
@@ -160,13 +170,53 @@ func test_delete_and_invalid_slots() -> void:
 	assert_eq(loaded.back(), [-1, ERR_INVALID_PARAMETER])
 
 
-func test_core_saves_uses_user_saves_dir() -> void:
+func test_bad_key_in_file_is_corrupt() -> void:
+	_fill()
+	var snap := fake.state.snapshot()
+	var header := {"format": "core_save", "version": 1, "saved_at_unix": 1.0}
+	for k in ["foo", "Player/x", "a//b", "a/"]:
+		var values: Dictionary = snap.values.duplicate(true)
+		values[k] = 1
+		_write(5, var_to_str({"header": header, "state": {"phase": &"menu", "paused": true, "values": values}}))
+		assert_eq(saves.load_game(5), ERR_FILE_CORRUPT, "key '%s'" % k)
+		assert_eq(fake.state.snapshot(), snap, "state unchanged, key '%s'" % k)
+
+
+func test_creates_missing_dir_on_first_save() -> void:
+	var nested := TEST_DIR.path_join("a/b")
+	var deep: SaveService = load(SAVE_IMPL).new(fake, nested)
+	assert_false(DirAccess.dir_exists_absolute(nested))
+	assert_eq(deep.save_game(1), OK)
+	assert_true(FileAccess.file_exists(nested.path_join("slot_1.save")))
+	assert_eq(deep.delete_save(1), OK)
+	DirAccess.remove_absolute(nested)
+	DirAccess.remove_absolute(TEST_DIR.path_join("a"))
+
+
+func test_core_saves_uses_automation_dir_in_test_runs() -> void:
+	assert_eq(CoreAPI.user_data_dir(), "user://automation/")
+	var player_before := _listing(PLAYER_SAVES)
 	var got := []
 	var cb := func(slot, err): got.append([slot, err])
 	core().save_finished.connect(cb)
 	assert_eq(core().saves.save_game(CORE_SLOT), OK)
 	core().save_finished.disconnect(cb)
 	assert_eq(got, [[CORE_SLOT, OK]])
-	assert_true(FileAccess.file_exists("user://saves/slot_%d.save" % CORE_SLOT))
-	assert_eq(core().saves.delete_save(CORE_SLOT), OK)
-	assert_false(FileAccess.file_exists("user://saves/slot_%d.save" % CORE_SLOT))
+	assert_true(FileAccess.file_exists(AUTOMATION_SAVES.path_join("slot_%d.save" % CORE_SLOT)), "written under automation")
+	assert_true(core().saves.has_save(CORE_SLOT))
+	assert_eq(_listing(PLAYER_SAVES), player_before, "nothing new in user://saves/")
+	assert_false(FileAccess.file_exists(PLAYER_SAVES.path_join("slot_%d.save" % CORE_SLOT)))
+	assert_eq(core().saves.load_game(CORE_SLOT), OK)
+	if not _core_slot_preexisted:
+		assert_eq(core().saves.delete_save(CORE_SLOT), OK)
+		assert_false(FileAccess.file_exists(AUTOMATION_SAVES.path_join("slot_%d.save" % CORE_SLOT)))
+	assert_eq(_listing(PLAYER_SAVES), player_before, "still nothing new in user://saves/")
+
+
+## Sorted file list of `dir` ([] if it does not exist).
+func _listing(dir: String) -> Array:
+	if not DirAccess.dir_exists_absolute(dir):
+		return []
+	var files := Array(DirAccess.get_files_at(dir))
+	files.sort()
+	return files

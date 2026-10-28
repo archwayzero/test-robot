@@ -1,4 +1,6 @@
-## SaveService implementation: one text file per slot, `<dir>/slot_<n>.save` (default dir user://saves).
+## SaveService implementation: one text file per slot, `<dir>/slot_<n>.save`. The installer passes
+## `CoreAPI.user_data_dir() + "saves"` (user://saves in normal play, user://automation/saves in test runs); the
+## directory is created on the first save.
 ##
 ## File format (self-describing, text): var_to_str() of
 ##   {"header": {"format": "core_save", "version": 1, "saved_at_unix": float (UTC unix time, seconds)},

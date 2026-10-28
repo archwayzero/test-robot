@@ -15,7 +15,7 @@ static func install(core: CoreAPI) -> void:
 ## install() with the test-run decision passed in (lets unit tests cover the non-test-run path in-process).
 static func install_with(core: CoreAPI, test_run: bool) -> void:
 	core.state = load(_GAME_STATE_PATH).new(core)
-	core.saves = load(_SAVE_SERVICE_PATH).new(core)
+	core.saves = load(_SAVE_SERVICE_PATH).new(core, CoreAPI.user_data_dir() + "saves")
 	core.automation = null
 	if test_run:
 		var script: Script = load(_AUTOMATION_PATH)
