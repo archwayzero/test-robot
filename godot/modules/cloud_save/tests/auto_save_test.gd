@@ -11,18 +11,36 @@ var auto_save: AutoSave
 var fake: CloudBackend
 var events: Array = []  # [error, cloud_error] per autosaved emission
 var _initial_state: Dictionary
+## The player's (non-test) sidecar directory. Spelled out only here, to prove test runs never touch it.
+const PLAYER_META_DIR := "user://cloud_save/"
+var _player_dir_before: Dictionary
+## True if this test file created the automation sidecar dir (only then is it removed in after_all).
+var _created_meta_dir := false
 
 
 func before_all() -> void:
 	factory = CloudSaveFactory.create()
 	_initial_state = Core.state.snapshot()
+	_player_dir_before = _listing(PLAYER_META_DIR)
+	_created_meta_dir = not DirAccess.dir_exists_absolute(AutoSaveImpl.meta_dir())
 
 
 func after_all() -> void:
 	_cleanup_files()
-	if DirAccess.dir_exists_absolute(AutoSaveImpl.META_DIR):
-		DirAccess.remove_absolute(AutoSaveImpl.META_DIR)
+	if _created_meta_dir and DirAccess.dir_exists_absolute(AutoSaveImpl.meta_dir()) \
+			and DirAccess.get_files_at(AutoSaveImpl.meta_dir()).is_empty():
+		DirAccess.remove_absolute(AutoSaveImpl.meta_dir())
 	Core.state.restore(_initial_state)
+
+
+## {"exists": bool, "files": {name: mtime}} for a directory, without changing anything.
+static func _listing(dir: String) -> Dictionary:
+	var files := {}
+	var exists := DirAccess.dir_exists_absolute(dir)
+	if exists:
+		for f in DirAccess.get_files_at(dir):
+			files[f] = FileAccess.get_modified_time(dir + f)
+	return {"exists": exists, "files": files}
 
 
 func before_each() -> void:
@@ -45,8 +63,8 @@ func after_each() -> void:
 func _cleanup_files() -> void:
 	if Core.saves.has_save(SLOT):
 		Core.saves.delete_save(SLOT)
-	if FileAccess.file_exists(AutoSaveImpl.META_PATH):
-		DirAccess.remove_absolute(AutoSaveImpl.META_PATH)
+	if FileAccess.file_exists(AutoSaveImpl.meta_path()):
+		DirAccess.remove_absolute(AutoSaveImpl.meta_path())
 
 
 func _start(available := true) -> void:
@@ -417,3 +435,21 @@ func test_restore_ignores_cloud_when_unavailable() -> void:
 	fake.available = false
 	assert_eq(auto_save.restore(), OK)
 	assert_eq(Core.state.get_value(COUNT), 5)
+
+
+# --- sidecar location (T026) ----------------------------------------------------------------------------
+
+func test_sidecar_lives_under_core_user_data_dir() -> void:
+	assert_eq(CoreAPI.user_data_dir(), "user://automation/", "runner is a test run")
+	assert_eq(AutoSaveImpl.meta_path(), CoreAPI.user_data_dir() + "cloud_save/meta.cfg")
+	_start()
+	_bump()
+	assert_eq(events.size(), 1)
+	assert_true(FileAccess.file_exists("user://automation/cloud_save/meta.cfg"), "sidecar written in test dir")
+	assert_ne(AutoSaveImpl.read_local_saved_at(SLOT), -1, "timestamp readable from the test sidecar")
+	assert_eq(_listing(PLAYER_META_DIR), _player_dir_before, "player sidecar dir untouched by a save")
+
+
+## Declared last so it runs after every other test in this file.
+func test_player_sidecar_dir_unchanged_by_whole_file() -> void:
+	assert_eq(_listing(PLAYER_META_DIR), _player_dir_before, "user://cloud_save/ listing + mtimes unchanged")
