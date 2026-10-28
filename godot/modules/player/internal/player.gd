@@ -30,21 +30,31 @@ const PITCH_MAX := 0.35
 const ORBIT_SENSITIVITY := 0.006
 const CAMERA_SMOOTHING := 8.0
 ## Low passages (T030, M1 finding F6). A ceiling lower than LOW_CEILING_MAX above the feet (below the kit's FULL
-## clearance 2.2 m, so open cells and vaults never trigger it) moves the pivot to just below the ceiling and
-## flattens the pitch so the arm stays long along the passage instead of collapsing onto the player.
-const LOW_CEILING_MAX := 2.0
+## clearance 2.2 m and pier capitals at 1.9-2.2 m, above the CROUCH clearance 1.3 m) moves the pivot to just below
+## the ceiling and flattens the pitch so the arm stays long along the passage instead of collapsing onto the player.
+const LOW_CEILING_MAX := 1.8
 ## Pivot/camera centre stays this far below a low ceiling (arm probe radius 0.15 + spring margin 0.1 + slack).
 const CEILING_MARGIN := 0.3
 ## Under a low ceiling the pivot may rise at most this much above the stance pivot (to see over the body).
 const LOW_PIVOT_RAISE := 0.15
 const LOW_PIVOT_MIN := 0.25
+## When the ceiling ends the pitch limit relaxes at this fraction of CAMERA_SMOOTHING (the arm swings back up
+## at its full length, so a slower glide keeps the view step per frame small).
+const PITCH_RELEASE_RATE := 0.5
 ## Under a low ceiling the camera sits at head height straight behind the player, so the body would hide the
 ## passage's vanishing point: shift the view sideways (Camera3D.h_offset, over the right shoulder) by up to this
 ## much, limited by a sideways ray so the shifted view never enters a wall.
 const SHOULDER_OFFSET := 0.5
 const SHOULDER_WALL_MARGIN := 0.25
-## Ceiling probes start this far above the feet.
+## Ceiling probes start this far above the feet. Hits closer than CEILING_MIN_GAP to the probe start, or on a
+## surface not facing down (normal.y > CEILING_NORMAL_MAX_Y: a wall face grazed by the probe), are not ceilings.
 const CEILING_PROBE_LIFT := 0.1
+const CEILING_MIN_GAP := 0.01
+const CEILING_NORMAL_MAX_Y := -0.5
+## Arm-path ceiling samples stay this far in front of the first wall behind (never on the wall face itself), or
+## reach this far past the end of a clear arm.
+const ARM_SAMPLE_WALL_PULL := 0.3
+const ARM_SAMPLE_END_EXTRA := 0.2
 ## Player visual fades out when the camera gets closer to the head than FADE_START (m), hidden at FADE_END.
 const FADE_START := 0.8
 const FADE_END := 0.5
@@ -69,8 +79,13 @@ var _pivot_height := 1.5
 var _pitch_limit := PITCH_MIN
 ## Smoothed fade of the player visual: 0 opaque .. 1 hidden.
 var _visual_fade := 0.0
-## Smoothed sideways view offset (m) under low ceilings.
+## Smoothed sideways view offset (m) under low ceilings (target before the wall clamp in _place_rig()).
 var _shoulder := 0.0
+## GeometryInstance3D nodes under $Visual (rebuilt when its children change, e.g. the T019 hero swap) and the
+## transparency last applied to them (-1 = never / list rebuilt).
+var _fade_geoms: Array[GeometryInstance3D] = []
+var _fade_geoms_dirty := true
+var _applied_fade := -1.0
 var _orbit_finger := -1
 var _shapes := {}
 var _clearance_shapes := {}
@@ -104,6 +119,8 @@ func _ready() -> void:
 		probe.radius = 0.15
 		_arm.shape = probe
 	_cam_yaw = rotation.y
+	_visual.child_entered_tree.connect(_on_visual_children_changed)
+	_visual.child_exiting_tree.connect(_on_visual_children_changed)
 	_apply_shape()
 	_arm_length = ARM_LENGTHS[_stance]
 	_pivot_height = _height_of(_stance) * PIVOT_FRACTION
@@ -363,7 +380,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if d.index == _orbit_finger:
 			_cam_yaw = wrapf(_cam_yaw - d.relative.x * ORBIT_SENSITIVITY, -PI, PI)
 			_cam_pitch = clampf(_cam_pitch - d.relative.y * ORBIT_SENSITIVITY, PITCH_MIN, PITCH_MAX)
-			_place_rig()  # orbit applies at once; smoothed values (arm, pivot, ceiling limit) keep gliding
+			_place_rig()  # orbit applies at once (re-clamping the shoulder shift); smoothed values keep gliding
 
 
 ## Places the camera rig at the player's head. delta = 0 snaps the smoothed values.
@@ -382,24 +399,33 @@ func _update_rig(delta: float) -> void:
 		var back := Basis(Vector3.UP, _cam_yaw) * Vector3.BACK
 		var pivot_world := global_position + Vector3(0.0, _pivot_height, 0.0)
 		var reach := _ray_distance(pivot_world, pivot_world + back * target_len, target_len)
+		# Clear arm: sample up to just past its end (the camera probe's reach). Arm hitting a wall: samples pulled off
+		# that wall (a probe on its face would graze the face, not a ceiling).
+		var span := target_len + ARM_SAMPLE_END_EXTRA if reach >= target_len else maxf(reach - ARM_SAMPLE_WALL_PULL, 0.0)
 		for f in [0.5, 1.0]:
-			lowest = minf(lowest, _ceiling_above(global_position + back * reach * f))
+			lowest = minf(lowest, _ceiling_above(global_position + back * span * f))
 		if lowest < LOW_CEILING_MAX:
 			var rise := clampf((lowest - CEILING_MARGIN - target_pivot) / target_len, 0.0, 1.0)
 			target_limit = -asin(rise)
-			# Room to the right of the camera (from last frame's camera position; at most 1 frame stale).
-			var right := Basis(Vector3.UP, _cam_yaw) * Vector3.RIGHT
-			var cam := _camera.global_position
-			var side := _ray_distance(cam, cam + right * (SHOULDER_OFFSET + SHOULDER_WALL_MARGIN),
-					SHOULDER_OFFSET + SHOULDER_WALL_MARGIN)
-			target_shoulder = clampf(side - SHOULDER_WALL_MARGIN, 0.0, SHOULDER_OFFSET)
+			target_shoulder = SHOULDER_OFFSET
 	if delta > 0.0:
 		var k := 1.0 - exp(-CAMERA_SMOOTHING * delta)
 		_arm_length = lerpf(_arm_length, target_len, k)
 		_pivot_height = lerpf(_pivot_height, target_pivot, k)
-		_pitch_limit = lerpf(_pitch_limit, target_limit, k)
-		# Shrinking toward a wall is immediate (never render inside it); growing is smoothed.
-		_shoulder = target_shoulder if target_shoulder < _shoulder else lerpf(_shoulder, target_shoulder, k)
+		if target_limit > PITCH_MIN:
+			_pitch_limit = lerpf(_pitch_limit, target_limit, k)
+		elif _pitch_limit > _cam_pitch:
+			# Ceiling ended: relax toward the orbit pitch (not PITCH_MIN, which would swing the pitch down at the
+			# rate of a 1.2 rad lerp), then release the limit entirely.
+			_pitch_limit = lerpf(_pitch_limit, _cam_pitch, 1.0 - exp(-CAMERA_SMOOTHING * PITCH_RELEASE_RATE * delta))
+			if _pitch_limit - _cam_pitch < 1e-3:
+				_pitch_limit = PITCH_MIN
+		else:
+			_pitch_limit = PITCH_MIN
+		# Smoothed both ways (also when a passage ends); a wall to the side clamps it at once in _place_rig().
+		_shoulder = lerpf(_shoulder, target_shoulder, k)
+		if target_shoulder == 0.0 and _shoulder < 1e-3:
+			_shoulder = 0.0
 	else:
 		_arm_length = target_len
 		_pivot_height = target_pivot
@@ -413,11 +439,20 @@ func _place_rig() -> void:
 	_rig.global_transform = Transform3D(Basis(Vector3.UP, _cam_yaw), global_position + Vector3(0.0, _pivot_height, 0.0))
 	_arm.rotation = Vector3(get_camera_pitch(), 0.0, 0.0)
 	_arm.spring_length = _arm_length
+	if _shoulder > 0.0 and is_inside_tree():
+		# Room to the right of the camera at the current yaw (the arm length is at most 1 frame stale). Limiting is
+		# immediate so the shifted view never enters a wall; _shoulder keeps the clamped value and regrows smoothly.
+		var right := Basis(Vector3.UP, _cam_yaw) * Vector3.RIGHT
+		var cam := _camera.global_position
+		var probe := SHOULDER_OFFSET + SHOULDER_WALL_MARGIN
+		var side := _ray_distance(cam, cam + right * probe, probe)
+		_shoulder = minf(_shoulder, clampf(side - SHOULDER_WALL_MARGIN, 0.0, SHOULDER_OFFSET))
 	_camera.h_offset = _shoulder
 
 
 ## Height of the lowest layer-1 surface above the feet at `at` (x, z), INF if none below LOW_CEILING_MAX.
-## A probe starting inside a wall reports nothing (rays do not hit from inside).
+## A probe starting inside a wall reports nothing (rays do not hit from inside); a hit at the probe start or on a
+## surface not facing down (a wall face the probe grazes) is not a ceiling either.
 func _ceiling_above(at: Vector3) -> float:
 	var base := Vector3(at.x, global_position.y + CEILING_PROBE_LIFT, at.z)
 	var top := Vector3(at.x, global_position.y + LOW_CEILING_MAX, at.z)
@@ -425,7 +460,10 @@ func _ceiling_above(at: Vector3) -> float:
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	if hit.is_empty():
 		return INF
-	return (hit["position"] as Vector3).y - global_position.y
+	var pos := hit["position"] as Vector3
+	if (hit["normal"] as Vector3).y > CEILING_NORMAL_MAX_Y or pos.y - base.y < CEILING_MIN_GAP:
+		return INF
+	return pos.y - global_position.y
 
 
 ## Distance along from -> to before a layer-1 hit (`full` if clear).
@@ -451,15 +489,38 @@ func _update_fade(delta: float) -> void:
 		_visual_fade = lerpf(_visual_fade, target, 1.0 - exp(-FADE_SMOOTHING * delta))
 		if target == 0.0 and _visual_fade < 0.01:
 			_visual_fade = 0.0
-	_apply_fade(_visual, _visual_fade)
-	_visual.visible = _visual_fade < 0.99
+		elif target == 1.0 and _visual_fade > 0.99:
+			_visual_fade = 1.0
+	_apply_fade(_visual_fade)
+	var show := _visual_fade < 0.99
+	if _visual.visible != show:
+		_visual.visible = show
 
 
-func _apply_fade(node: Node, fade: float) -> void:
+## Sets the transparency of the cached GeometryInstance3D list, only when the value (or the list) changed.
+func _apply_fade(fade: float) -> void:
+	if _fade_geoms_dirty:
+		_fade_geoms.clear()
+		_collect_geoms(_visual)
+		_fade_geoms_dirty = false
+		_applied_fade = -1.0
+	if fade == _applied_fade:
+		return
+	_applied_fade = fade
+	for g in _fade_geoms:
+		if is_instance_valid(g):
+			g.transparency = fade
+
+
+func _collect_geoms(node: Node) -> void:
 	if node is GeometryInstance3D:
-		(node as GeometryInstance3D).transparency = fade
+		_fade_geoms.append(node as GeometryInstance3D)
 	for c in node.get_children():
-		_apply_fade(c, fade)
+		_collect_geoms(c)
+
+
+func _on_visual_children_changed(_node: Node) -> void:
+	_fade_geoms_dirty = true
 
 
 ## Effective camera pitch: the orbit pitch, raised toward horizontal under low ceilings.
