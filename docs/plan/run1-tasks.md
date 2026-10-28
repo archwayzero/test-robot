@@ -34,6 +34,10 @@ one task at a time; a task starts only after its dependencies are merged. Milest
 | T026 | module-dev | cloud_save | Sidecar meta under `CoreAPI.user_data_dir()` (tests never touch the player's files) | T025 | M1 (before T010) |
 | T027 | module-dev | player | Implement `PlayerController.restore_stance()` (saved stance on load; found in T009) | | M1 (before T010) |
 | T028 | module-dev | game | Call `restore_stance()` after spawn from a save; E12 stance check | T027 | M1 (before T010) |
+| T029 | module-dev | cloud_save | Envelope float precision (E11, F1); throttle not 1 frame early (F2) | T010 | M1 fix |
+| T030 | module-dev | player | Camera in low passages keeps the passage visible (F6) | T010 | M1 fix |
+| T031 | module-dev | touch_controls | `get_jump_rect()`/`get_stance_rect()` test hooks (F4) | T010 | M1 fix |
+| T032 | qa | - | M1 re-run: E1-E15 via public hooks, playthroughs in automation mode, re-record videos | T029-T031 | M1 |
 | T024 | module-dev | cloud_save | ICloudBackend (native plugin) — only if Apple Developer account + iCloud capability are available | T023 | M3 (optional) |
 
 Notes:

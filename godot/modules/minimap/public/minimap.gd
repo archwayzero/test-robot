@@ -30,3 +30,17 @@ const MARGIN := Vector2(16, 16)
 
 ## Screen rectangle of the small map (for tests to tap it).
 @abstract func get_small_rect() -> Rect2
+
+
+## Test hook: the cell the player marker is drawn in.
+## Not @abstract (added after the implementation shipped; the implementation overrides it).
+func get_marker_cell() -> Vector2i:
+	push_error("Minimap.get_marker_cell() not implemented")
+	return Vector2i(-1, -1)
+
+
+## Test hook: what the map draws per cell: {Vector2i cell: Color} for VISITED cells only (unvisited = black, absent).
+## Not @abstract (added after the implementation shipped; the implementation overrides it).
+func get_cell_color_model() -> Dictionary:
+	push_error("Minimap.get_cell_color_model() not implemented")
+	return {}

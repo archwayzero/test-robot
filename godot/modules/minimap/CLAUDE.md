@@ -15,7 +15,7 @@ Top-left fog-of-war mini-map, large map on tap, player marker
 ## Public interface
 - `MinimapFactory.create() -> Minimap` (loads internal/minimap.tscn).
 - `Minimap` (public/minimap.gd, Control): `setup(layout, exploration)`, `open_large_map()`, `close_large_map()`,
-  `is_large_map_open()`, `get_small_rect()`; signal `large_map_toggled(open)`; `SMALL_SIZE 200x200`, `MARGIN 16`.
+  `is_large_map_open()`, `get_small_rect()`, test hooks `get_marker_cell()`, `get_cell_color_model()`; signal `large_map_toggled(open)`; `SMALL_SIZE 200x200`, `MARGIN 16`.
 
 ### Implementation requirements
 - Small map top-left, centred on the player, showing ~9x9 cells; large map full screen showing the whole maze.

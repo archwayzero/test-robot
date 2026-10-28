@@ -165,6 +165,9 @@ func _arg(args: PackedStringArray, name: String) -> String:
 
 
 func _write_report(path: String, summary: String) -> void:
+	# Relative paths are relative to the repository root (the parent of the Godot project), not Godot's cwd.
+	if path.is_relative_path() and not path.begins_with("res://") and not path.begins_with("user://"):
+		path = ProjectSettings.globalize_path("res://").path_join("..").path_join(path).simplify_path()
 	var fa := FileAccess.open(path, FileAccess.WRITE)
 	if fa == null:
 		printerr("test_runner: cannot write report ", path)

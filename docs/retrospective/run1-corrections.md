@@ -230,6 +230,10 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
   body push_error()s, merge that, then the module task overrides it. Used for `PlayerController.restore_stance()`.
 - **Interface gap found by composition (T009):** the player had no way to apply a saved stance, so "same stance after
   reload" (E12) was impossible. Next game: derive the public API from the save/restore test cases up front.
+- **M1 QA (T010) found:** float rounding in the cloud JSON envelope (`JSON.stringify` defaults to non-full precision);
+  the low-passage camera collapsing onto the player (visible only in videos, not in unit tests); and that the
+  recording tool ran without test mode, so playthroughs deleted the real save slot 0. Next game: capture/record
+  tools start in test mode from day one, and every test hook QA needs is in the public API before QA starts.
 - **Desktop focus-out must not pause previews/recordings;** only mobile pauses on focus loss (D12 in run 1).
 
 ### M2 art

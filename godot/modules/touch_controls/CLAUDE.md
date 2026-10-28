@@ -15,6 +15,7 @@ On-screen joystick and buttons that emit the standard input actions
 ## Public interface
 - `TouchControlsFactory.create() -> TouchControls` (loads internal/touch_controls.tscn).
 - `TouchControls` (public/touch_controls.gd, Control): `set_controls_visible(show)`, `get_stick_vector() -> Vector2`,
+  test hooks `get_jump_rect()`, `get_stance_rect()` (T031: override the public defaults; viewport coordinates),
   signal `visibility_toggled(visible_now)`.
 
 ### Implementation requirements

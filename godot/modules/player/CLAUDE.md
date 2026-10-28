@@ -28,7 +28,12 @@ Character controller: stances, walk/run/jump, collision, third-person camera, he
   STAND (skipping refused steps). No jump while crawling or under a low ceiling. No running except in STAND.
 - Body on layer 2 ("player"), mask 1. Never tunnels through walls at RUN_SPEED (use move_and_slide; physics 60 Hz).
 - Camera: third-person, behind and above (SpringArm3D, collision mask 1, length 2.5 m stand / 1.8 crouch / 1.2 crawl),
-  never inside walls. Orbit with touch drag on the right half of the screen outside buttons, handled ONLY as
+  never inside walls. Low passages (T030, M1 finding F6: in CROUCH/CRAWL cells the arm collapsed onto the player and
+  the passage was not visible): keep the pivot just below the ceiling, pitch the camera down the passage behind the
+  player (arm can't rise; it should extend along the passage instead of shrinking to ~0), and when the camera is
+  closer than ~0.6 m to the player hide or fade the player mesh so the view ahead stays visible. Acceptance: in the
+  M1 stances playthrough the passage ahead is visible and the player covers less than ~1/3 of the frame.
+  Orbit with touch drag on the right half of the screen outside buttons, handled ONLY as
   InputEventScreenTouch/ScreenDrag in `_unhandled_input` (never mouse events: emulated mouse events from touches are
   not consumed by touch_controls; on desktop the mouse arrives as touch via emulate_touch_from_mouse).
 - Write `PLAYER_YAW` wrapped to [-PI, PI] (`wrapf`). Jumping from CROUCH first stands up (emits stance_changed(STAND)

@@ -18,7 +18,8 @@ const SAVE_SLOT := 0
 const MIN_INTERVAL_S := 10.0
 
 
-## Starts the policy with `backend`. Call once, after the maze and exploration are set up.
+## Starts the policy with `backend`. The game calls it once, after the maze and exploration are set up. Calling it
+## again replaces the backend (end-to-end tests swap in CloudSaveFactory.make_fake_backend()); the throttle state is kept.
 @abstract func setup(backend: CloudBackend) -> void
 
 

@@ -63,7 +63,8 @@ def main():
         env.pop("WAYLAND_DISPLAY", None)
         cmd = [godot, "--path", str(root / "godot"), *args, "--display-driver", "x11", "--resolution", a.resolution,
                "--fixed-fps", "30", "--disable-vsync", "--audio-driver", "Dummy",
-               "--write-movie", str(Path(tmp) / "frame.png"), "--quit-after", str(a.frames), a.scene]
+               "--write-movie", str(Path(tmp) / "frame.png"), "--quit-after", str(a.frames), a.scene,
+               "--", "--automation"]  # test-run mode: Core.automation available, user:// data under automation/
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=a.timeout, env=env)
         except subprocess.TimeoutExpired:
