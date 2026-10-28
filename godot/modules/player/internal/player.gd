@@ -123,6 +123,35 @@ func spawn_at(spawn_position: Vector3, yaw: float = 0.0) -> void:
 		_write_state()
 
 
+## Load/restore (T027): goes straight to the saved stance if it fits here, otherwise the tallest one that fits
+## (STAND > CROUCH > CRAWL; CRAWL always fits). Out-of-range values count as STAND. Valid in the same frame as
+## spawn_at() (the clearance probe is forced at the current transform). Emits stance_changed only on a change.
+func restore_stance(stance: Stance) -> void:
+	var wanted := int(stance)
+	if wanted < int(Stance.STAND) or wanted > int(Stance.CRAWL):
+		wanted = int(Stance.STAND)
+	var target: Stance = Stance.CRAWL
+	for s in range(wanted, int(Stance.CRAWL) + 1):
+		if s == int(Stance.CRAWL) or not is_inside_tree() or has_clearance_for(s as Stance):
+			target = s as Stance
+			break
+	if not is_node_ready():
+		_stance = target  # _ready() applies shape and camera
+		return
+	var changed := target != _stance
+	if changed:
+		_stance = target
+		_apply_shape()
+		# Snap the camera like spawn_at() does (no glide from the previous stance height after a load).
+		_arm_length = ARM_LENGTHS[_stance]
+		_pivot_height = _height_of(_stance) * PIVOT_FRACTION
+		_update_rig(0.0)
+	if is_inside_tree():
+		_write_state()
+	if changed:
+		stance_changed.emit(_stance)
+
+
 func get_collision_height() -> float:
 	return _height_of(_stance)
 
