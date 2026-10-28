@@ -1,6 +1,6 @@
 ## AutoSave implementation (created by internal/cloud_save_factory_impl.gd).
 ##
-## Save: Core.saves.save_game(SAVE_SLOT); on OK, record the UTC time in our own sidecar (META_PATH) and push our own
+## Save: Core.saves.save_game(SAVE_SLOT); on OK, record the UTC time in our own sidecar (meta_path()) and push our own
 ## envelope (see make_envelope()) to the backend. The local save never waits for the cloud.
 ## Throttle: game time (sum of _process deltas, PROCESS_MODE_PAUSABLE so it stops while the tree is paused).
 ## Restore: the cloud envelope wins only if it is valid and strictly newer than the local sidecar timestamp (or no
@@ -11,8 +11,9 @@
 ## allow_objects = false, and rejected if it carries (or tried to carry) objects, callables, signals or RIDs.
 extends AutoSave
 
-const META_DIR := "user://cloud_save"
-const META_PATH := "user://cloud_save/meta.cfg"
+## Sidecar location relative to CoreAPI.user_data_dir() (user:// in play, user://automation/ in test runs).
+const META_SUBDIR := "cloud_save/"
+const META_FILE := "meta.cfg"
 const META_KEY := "saved_at_unix"
 const ENVELOPE_FORMAT := "cloud_save"
 ## 2 = JSON.from_native encoding. Version 1 (var_to_str text) is no longer accepted.
@@ -254,23 +255,36 @@ static func _check_decoded(value: Variant, depth: int) -> int:
 
 # --- Local timestamp sidecar ----------------------------------------------------------------------------
 
+## Directory of the sidecar, resolved at call time: CoreAPI.user_data_dir() + "cloud_save/".
+static func meta_dir() -> String:
+	return CoreAPI.user_data_dir() + META_SUBDIR
+
+
+## Full sidecar path: CoreAPI.user_data_dir() + "cloud_save/meta.cfg".
+static func meta_path() -> String:
+	return meta_dir() + META_FILE
+
+
 ## UTC unix time of the last local save made by cloud_save for `slot`, or -1 if unknown.
 static func read_local_saved_at(slot: int) -> int:
 	var cfg := ConfigFile.new()
-	if cfg.load(META_PATH) != OK:
+	if cfg.load(meta_path()) != OK:
 		return -1
 	var value: Variant = cfg.get_value(_section(slot), META_KEY, -1)
 	return value if typeof(value) == TYPE_INT else -1
 
 
 static func _write_local_saved_at(slot: int, saved_at_unix: int) -> void:
-	DirAccess.make_dir_recursive_absolute(META_DIR)
+	var path := meta_path()
+	var dir_error := DirAccess.make_dir_recursive_absolute(meta_dir())
+	if dir_error != OK:
+		push_warning("cloud_save: cannot create %s (%s)" % [meta_dir(), error_string(dir_error)])
 	var cfg := ConfigFile.new()
-	cfg.load(META_PATH)  # missing/corrupt file: start fresh
+	cfg.load(path)  # missing/corrupt file: start fresh
 	cfg.set_value(_section(slot), META_KEY, saved_at_unix)
-	var error := cfg.save(META_PATH)
+	var error := cfg.save(path)
 	if error != OK:
-		push_warning("cloud_save: cannot write %s (%s)" % [META_PATH, error_string(error)])
+		push_warning("cloud_save: cannot write %s (%s)" % [path, error_string(error)])
 
 
 static func _section(slot: int) -> String:
