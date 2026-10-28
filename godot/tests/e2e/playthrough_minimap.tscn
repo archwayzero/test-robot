@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://tests/e2e/playthrough_minimap.gd" id="1_minimap"]
+
+[node name="PlaythroughMinimap" type="Node"]
+script = ExtResource("1_minimap")
