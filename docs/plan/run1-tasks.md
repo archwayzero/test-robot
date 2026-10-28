@@ -38,6 +38,10 @@ one task at a time; a task starts only after its dependencies are merged. Milest
 | T030 | module-dev | player | Camera in low passages keeps the passage visible (F6) | T010 | M1 fix |
 | T031 | module-dev | touch_controls | `get_jump_rect()`/`get_stance_rect()` test hooks (F4) | T010 | M1 fix |
 | T032 | qa | - | M1 re-run: E1-E15 via public hooks (E11 via `AutoSave.decode_cloud_payload`), playthroughs in automation mode, re-record videos | T029-T031 | M1 |
+| T033 | qa | - | e2e N1 hardening: E9 colour loop, E5/E7 failure branches into plain helpers | T032 | M1 follow-up |
+| T034 | module-dev | player | Tests N1 audit: post-await assertions into plain helpers | T032 | M1 follow-up |
+| T035 | module-dev | game | Tests N1 audit: post-await assertions into plain helpers | T032 | M1 follow-up |
+| T036 | module-dev | core | Tests N1 audit (automation_test, others using await) | T032 | M1 follow-up |
 | T024 | module-dev | cloud_save | ICloudBackend (native plugin) — only if Apple Developer account + iCloud capability are available | T023 | M3 (optional) |
 
 Notes:

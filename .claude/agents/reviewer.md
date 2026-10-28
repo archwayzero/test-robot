@@ -12,7 +12,9 @@ Checklist for the branch you are given:
 2. Does the work match the task and spec text? List gaps.
 3. Decoupling: only `public/` of declared dependencies referenced? No new autoloads or global state?
 4. Order: binaries tracked by DVC (`dvc status` clean), `.dvc` pointers committed, no `--no-verify` traces.
-5. Tests exist and pass (module tests, headless).
+5. Tests exist and pass (module tests, headless). Reject conditional or loop assertions written inline after an
+   `await` in a coroutine test (Godot 4.7.2 can skip them silently, M1 finding N1); they belong in a plain helper or
+   behind a checkpoint guard (docs/qa/TEST_PLAN.md "Test runner").
 
 Reply with PASS or FAIL, then findings ordered by severity, each with file:line and the fix needed.
 
