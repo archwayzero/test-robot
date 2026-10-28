@@ -84,6 +84,23 @@ func get_stick_vector() -> Vector2:
 	return _stick_vector
 
 
+## Test hook: bounding square of the Jump button in viewport coordinates (the space of input events and
+## Core.automation.touch()). Derived from the live layout and canvas transform, so it follows offset parents
+## (HUD safe area) and viewport resizes. A touch at its centre presses jump.
+func get_jump_rect() -> Rect2:
+	return _viewport_rect(jump_center(), JUMP_RADIUS)
+
+
+## Test hook: bounding square of the Stance button in viewport coordinates. Same rules as get_jump_rect().
+func get_stance_rect() -> Rect2:
+	return _viewport_rect(stance_center(), STANCE_RADIUS)
+
+
+func _viewport_rect(local_center: Vector2, radius: float) -> Rect2:
+	var local := Rect2(local_center - Vector2(radius, radius), Vector2(radius, radius) * 2.0)
+	return get_global_transform_with_canvas() * local
+
+
 # --- layout (local coordinates; the root fills the viewport) ------------------------------------------------
 
 func jump_center() -> Vector2:

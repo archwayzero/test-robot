@@ -221,3 +221,69 @@ func test_does_not_release_keyboard_actions() -> void:
 	controls.set_controls_visible(false)
 	assert_true(Input.is_action_pressed(GameActions.MOVE_FORWARD), "only its own actions are released")
 	Input.action_release(GameActions.MOVE_FORWARD)
+
+
+# --- T031: get_jump_rect() / get_stance_rect() test hooks ------------------------------------------------------
+
+func _assert_rect_hooks(c, area: Rect2, msg: String) -> void:
+	var j: Rect2 = c.get_jump_rect()
+	var s: Rect2 = c.get_stance_rect()
+	assert_true(j.has_area() and s.has_area(), "%s: rects non-empty %s %s" % [msg, j, s])
+	assert_true(area.encloses(j) and area.encloses(s), "%s: inside %s: %s %s" % [msg, area, j, s])
+	var mid := area.get_center()
+	for r in [j, s]:
+		assert_true(r.position.x > mid.x and r.position.y > mid.y, "%s: bottom-right %s" % [msg, r])
+	assert_true(j.get_area() > s.get_area(), "%s: jump larger than stance" % msg)
+	assert_false(j.intersects(s), "%s: no overlap" % msg)
+
+
+func _assert_fires_at(pos: Vector2, action: StringName, msg: String) -> void:
+	auto.touch(pos, true, 0)
+	await auto.advance_frames(1)
+	assert_true(Input.is_action_pressed(action), "%s: %s pressed at %s" % [msg, action, pos])
+	auto.touch(pos, false, 0)
+	await auto.advance_frames(1)
+	assert_false(Input.is_action_pressed(action), "%s: %s released" % [msg, action])
+
+
+func test_rect_hooks_at_base_resolution() -> void:
+	var vp := Rect2(Vector2.ZERO, get_viewport().get_visible_rect().size)
+	_assert_rect_hooks(controls, vp, "base")
+	assert_almost_eq(controls.get_jump_rect().get_center().distance_to(controls.jump_center()), 0.0, 1e-3,
+			"no offset at the root")
+	await _assert_fires_at(controls.get_jump_rect().get_center(), GameActions.JUMP, "base")
+	await _assert_fires_at(controls.get_stance_rect().get_center(), GameActions.STANCE_CYCLE, "base")
+	assert_eq(probe.events.size(), 0, "button touches are consumed")
+
+
+func test_rect_hooks_inside_offset_parent() -> void:
+	var base_j: Rect2 = controls.get_jump_rect()
+	var base_s: Rect2 = controls.get_stance_rect()
+	controls.queue_free()
+	var parent := Control.new()
+	parent.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(parent)
+	parent.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	parent.offset_left = 47  # safe-area left inset
+	parent.offset_right = -47
+	parent.offset_bottom = -21
+	controls = TouchControlsFactory.create()
+	parent.add_child(controls)
+	controls.set_controls_visible(true)
+	await auto.advance_frames(1)
+	var area := parent.get_global_rect()
+	_assert_rect_hooks(controls, area, "offset parent")
+	assert_almost_eq(controls.get_jump_rect().position.x, base_j.position.x - 47.0, 1e-3, "jump shifts by the inset")
+	assert_almost_eq(controls.get_stance_rect().end.y, base_s.end.y - 21.0, 1e-3, "stance shifts up")
+	await _assert_fires_at(controls.get_jump_rect().get_center(), GameActions.JUMP, "offset parent")
+	await _assert_fires_at(controls.get_stance_rect().get_center(), GameActions.STANCE_CYCLE, "offset parent")
+	# Resize of the container (as after a viewport resize with stretch aspect expand): rects follow.
+	parent.offset_right = -147
+	await auto.advance_frames(1)
+	assert_almost_eq(controls.get_jump_rect().position.x, base_j.position.x - 147.0, 1e-3, "follows resize")
+	_assert_rect_hooks(controls, parent.get_global_rect(), "resized parent")
+	await _assert_fires_at(controls.get_jump_rect().get_center(), GameActions.JUMP, "resized parent")
+	await _assert_fires_at(controls.get_stance_rect().get_center(), GameActions.STANCE_CYCLE, "resized parent")
+	assert_eq(probe.events.size(), 0, "button touches are consumed")
+	# after_each frees `controls`; the parent goes too.
+	parent.queue_free()
