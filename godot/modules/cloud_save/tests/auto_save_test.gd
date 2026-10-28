@@ -99,6 +99,65 @@ func test_throttle_one_immediate_then_one_after_interval() -> void:
 	assert_eq(events.size(), 2, "no save without a pending trigger")
 
 
+## Frames (Engine.get_process_frames()) at which `autosaved` fired.
+var save_frames: Array[int] = []
+
+
+func _start_recording_frames() -> void:
+	save_frames.clear()
+	auto_save.autosaved.connect(func(_e: Error, _ce: Error) -> void: save_frames.append(Engine.get_process_frames()))
+
+
+## M1 QA F2: the deferred save comes >= 10 s of game time after the first (300 frames at 30 fps), at most a frame later.
+## The first save here is triggered from the test coroutine (resumed on process_frame, before AutoSave._process).
+func test_throttle_deferred_save_after_full_interval_from_process() -> void:
+	_start()
+	_start_recording_frames()
+	await wait_frames(1)
+	_bump()
+	await wait_frames(3)
+	_bump()  # pending
+	await wait_frames(310)
+	assert_eq(save_frames.size(), 2, "immediate + deferred save")
+	if save_frames.size() == 2:
+		var gap := save_frames[1] - save_frames[0]
+		assert_between(gap, 300, 301, "deferred save gap %d frames (>= 10 s at 30 fps)" % gap)
+
+
+## Same, with the first save triggered during the physics step (as exploration does in the game).
+func test_throttle_deferred_save_after_full_interval_from_physics() -> void:
+	_start()
+	_start_recording_frames()
+	var bumps := [0]
+	var on_physics := func() -> void:
+		if bumps[0] < 2:
+			bumps[0] += 1
+			_bump()  # first: immediate save; second (next physics step): pending
+	get_tree().physics_frame.connect(on_physics)
+	await wait_frames(320)
+	get_tree().physics_frame.disconnect(on_physics)
+	assert_eq(bumps[0], 2)
+	assert_eq(save_frames.size(), 2, "immediate + deferred save")
+	if save_frames.size() == 2:
+		var gap := save_frames[1] - save_frames[0]
+		assert_between(gap, 300, 301, "deferred save gap %d frames (>= 10 s at 30 fps)" % gap)
+
+
+## A trigger at 299 frames is still inside the interval; it is saved exactly 300 frames after the first save.
+func test_throttle_trigger_just_before_interval_end_is_deferred_one_frame() -> void:
+	_start()
+	_start_recording_frames()
+	await wait_frames(1)
+	_bump()
+	await wait_frames(299)
+	_bump()
+	assert_eq(save_frames.size(), 1, "299 frames (9.97 s) is still inside the interval")
+	await wait_frames(3)
+	assert_eq(save_frames.size(), 2, "pending saved when the interval ended")
+	if save_frames.size() == 2:
+		assert_eq(save_frames[1] - save_frames[0], 300)
+
+
 func test_many_triggers_in_interval_give_one_pending_save() -> void:
 	_start()
 	_bump()
@@ -179,15 +238,45 @@ func test_fake_backend_receives_envelope_of_saved_state() -> void:
 	assert_eq(events, [[OK, OK]])
 	assert_eq(fake.pushes.size(), 1)
 	assert_eq(fake.pushes[0].slot, SLOT)
-	var text: String = (fake.pushes[0].data as PackedByteArray).get_string_from_utf8()
-	var raw: Variant = JSON.to_native(JSON.parse_string(text), false)
+	# Decoded by hand from the documented v3 format (not through parse_envelope()).
+	var raw: Variant = JSON.parse_string((fake.pushes[0].data as PackedByteArray).get_string_from_utf8())
 	assert_eq(typeof(raw), TYPE_DICTIONARY)
+	var keys: Array = raw.keys()
+	keys.sort()
+	assert_eq(keys, ["format", "saved_at_unix", "snapshot_b64", "version"])
 	assert_eq(raw.format, "cloud_save")
-	assert_eq(raw.version, 2)
-	assert_eq(typeof(raw.saved_at_unix), TYPE_INT)
+	assert_eq(raw.version, 3.0)
+	assert_eq(raw.saved_at_unix, floorf(raw.saved_at_unix), "whole-second timestamp")
 	assert_almost_eq(raw.saved_at_unix, Time.get_unix_time_from_system(), 5.0)
-	assert_eq(raw.snapshot, expected, "snapshot equals Core.state.snapshot() at save time")
-	assert_eq(raw.saved_at_unix, AutoSaveImpl.read_local_saved_at(SLOT), "sidecar matches the envelope")
+	assert_eq(bytes_to_var(Marshalls.base64_to_raw(raw.snapshot_b64)), expected,
+			"snapshot equals Core.state.snapshot() at save time")
+	assert_eq(int(raw.saved_at_unix), AutoSaveImpl.read_local_saved_at(SLOT), "sidecar matches the envelope")
+	Core.state.set_value(StateKeys.PLAYER_POSITION, null)
+
+
+## Public test hook decode_cloud_payload(): called dynamically so this file parses before public/ declares it.
+func test_decode_cloud_payload_hook() -> void:
+	_start()
+	Core.state.set_value(StateKeys.PLAYER_POSITION, Vector3(0.1, 0.2, -0.3))
+	_bump()
+	var expected := Core.state.snapshot()
+	assert_eq(fake.pushes.size(), 1)
+	var decoded: Dictionary = auto_save.call("decode_cloud_payload", fake.pushes[0].data)
+	var keys: Array = decoded.keys()
+	keys.sort()
+	assert_eq(keys, ["saved_at_unix", "snapshot"], "exactly the two documented keys")
+	assert_eq(typeof(decoded.get("saved_at_unix")), TYPE_INT)
+	assert_eq(decoded.get("saved_at_unix"), AutoSaveImpl.read_local_saved_at(SLOT))
+	assert_eq(decoded.get("snapshot"), expected, "v3 payload decodes to the state snapshot at save time")
+	# Garbage -> {}
+	for junk: PackedByteArray in [PackedByteArray(), PackedByteArray([0xFF, 0x00, 0x13]),
+			"{ nope".to_utf8_buffer(), '{"format": "cloud_save", "version": 3}'.to_utf8_buffer()]:
+		assert_eq(auto_save.call("decode_cloud_payload", junk), {}, "garbage %s -> {}" % junk)
+	# v2 (older builds) still decodes.
+	var v2_snap := {"phase": &"boot", "paused": false, "values": {COUNT: 7}}
+	var v2: Dictionary = auto_save.call("decode_cloud_payload",
+			_json({"format": "cloud_save", "version": 2, "saved_at_unix": 1700000000, "snapshot": v2_snap}))
+	assert_eq(v2, {"saved_at_unix": 1700000000, "snapshot": v2_snap}, "v2 payload decodes")
 	Core.state.set_value(StateKeys.PLAYER_POSITION, null)
 
 
@@ -395,6 +484,331 @@ func test_envelope_round_trips_native_types_exactly() -> void:
 	assert_eq(typeof(env.snapshot.values[COUNT]), TYPE_INT)
 	for key: Variant in env.snapshot.values:
 		assert_eq(typeof(key), TYPE_STRING_NAME, "key %s stays StringName" % key)
+
+
+## Decodes `values` through make_envelope() + parse_envelope(); returns the decoded values, or null if rejected.
+func _round_trip_values(values: Dictionary) -> Variant:
+	var snap := {"phase": &"playing", "paused": false, "values": values}
+	var env := AutoSaveImpl.parse_envelope(AutoSaveImpl.make_envelope(snap, 1700000000))
+	return null if env.is_empty() else env.snapshot.values
+
+
+## Exact float equality that also tells -0.0 from 0.0 (== does not).
+static func _same_float(a: Variant, b: Variant) -> bool:
+	return typeof(a) == TYPE_FLOAT and typeof(b) == TYPE_FLOAT and a == b and var_to_bytes(a) == var_to_bytes(b)
+
+
+## M1 QA F1 / T029 review: the reviewer's counterexamples for the decimal (v2) encoding round-trip exactly in v3.
+func test_v3_round_trips_review_counterexamples() -> void:
+	var values := {&"x/eleventh": 1.0 / 11.0, StateKeys.PLAYER_YAW: -1.5142379999160767,
+			StateKeys.PLAYER_POSITION: Vector3(1.0 / 3.0, -2.0 / 3.0, 10.1)}
+	var got: Variant = _round_trip_values(values)
+	assert_true(got is Dictionary, "envelope parsed")
+	if not got is Dictionary:
+		return
+	assert_eq(got, values)
+	assert_true(_same_float(got[&"x/eleventh"], 1.0 / 11.0), "1/11: %s" % var_to_str(got[&"x/eleventh"]))
+	assert_true(_same_float(got[StateKeys.PLAYER_YAW], -1.5142379999160767))
+	assert_eq(got[StateKeys.PLAYER_POSITION], Vector3(1.0 / 3.0, -2.0 / 3.0, 10.1))
+
+
+## 10k float32-widened yaws in [-PI, PI], each in its own envelope as the player writes it (fixed seed, local RNG).
+func test_v3_round_trips_10k_float32_yaws() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20291
+	var wrong := 0
+	var first_wrong := ""
+	for i in 10000:
+		var yaw: float = PackedFloat32Array([rng.randf_range(-PI, PI)])[0]
+		var got: Variant = _round_trip_values({StateKeys.PLAYER_YAW: yaw})
+		if not (got is Dictionary and _same_float(got.get(StateKeys.PLAYER_YAW), yaw)):
+			wrong += 1
+			if first_wrong.is_empty():
+				first_wrong = "%s -> %s" % [var_to_str(yaw), var_to_str(got)]
+	assert_eq(wrong, 0, "yaws not exact (first: %s)" % first_wrong)
+
+
+## 10k random doubles: 5k from random bit patterns (every exponent, subnormals) and 5k uniform in +-1e6.
+func test_v3_round_trips_10k_random_doubles() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20292
+	var bits := PackedByteArray()
+	bits.resize(8)
+	var wrong := 0
+	var first_wrong := ""
+	var tested := 0
+	while tested < 10000:
+		var x: float
+		if tested < 5000:
+			bits.encode_u32(0, rng.randi())
+			bits.encode_u32(4, rng.randi())
+			x = bits.decode_double(0)
+			if not is_finite(x):
+				continue
+		else:
+			x = rng.randf_range(-1e6, 1e6)
+		tested += 1
+		var got: Variant = _round_trip_values({&"x/d": x, &"x/l": [x]})
+		if not (got is Dictionary and _same_float(got.get(&"x/d"), x) and _same_float(got.get(&"x/l")[0], x)):
+			wrong += 1
+			if first_wrong.is_empty():
+				first_wrong = "%s -> %s" % [var_to_str(x), var_to_str(got)]
+	assert_eq(wrong, 0, "doubles not exact (first: %s)" % first_wrong)
+
+
+func test_v3_round_trips_special_floats_and_containers() -> void:
+	var values := {
+		&"x/nan": NAN,
+		&"x/inf": INF,
+		&"x/ninf": -INF,
+		&"x/neg_zero": -0.0,
+		&"x/nan_vec": Vector3(NAN, 1.0 / 3.0, INF),
+		&"x/third_vec": Vector3(1.0 / 3.0, -1.0 / 3.0, 0.1),
+		&"x/tiny": 5e-324,
+		&"x/huge": 1.7976931348623157e308,
+		&"x/f64": PackedFloat64Array([1.0 / 3.0, -PI, 1.0 / 11.0]),
+		&"x/f32": PackedFloat32Array([1.0 / 3.0, -PI]),
+		&"x/i64": PackedInt64Array([-9223372036854775807, 9007199254740993]),
+		&"x/i32": PackedInt32Array([-2147483648, 7]),
+		&"x/bytes": PackedByteArray([0, 255, 3]),
+		&"x/strings": PackedStringArray(["a", "", "ü"]),
+		&"x/v3s": PackedVector3Array([Vector3(1.0 / 7.0, 0.1, -0.2)]),
+		&"x/typed": [1.0 / 7.0] as Array[float],
+		&"x/nested": {"k": {1.0 / 9.0: [2.0 / 3.0, {&"deep": Vector2i(4, 5)}]}},
+		&"x/name": &"cell_a",
+		&"x/text": "s:not a prefix",
+		&"x/big_int": 1234567890123,
+		&"x/null": null,
+	}
+	var got: Variant = _round_trip_values(values)
+	assert_true(got is Dictionary, "envelope parsed")
+	if not got is Dictionary:
+		return
+	assert_true(is_nan(got[&"x/nan"]), "NaN stays NaN")
+	assert_true(is_inf(got[&"x/inf"]) and got[&"x/inf"] > 0, "+INF")
+	assert_true(is_inf(got[&"x/ninf"]) and got[&"x/ninf"] < 0, "-INF")
+	assert_true(_same_float(got[&"x/neg_zero"], -0.0) and 1.0 / got[&"x/neg_zero"] < 0, "-0.0 keeps its sign")
+	var v: Vector3 = got[&"x/nan_vec"]
+	var v_in: Vector3 = values[&"x/nan_vec"]
+	assert_true(is_nan(v.x) and v.y == v_in.y and is_inf(v.z) and v.z > 0, "NaN/INF in a vector")
+	for key: Variant in values:
+		if key in [&"x/nan", &"x/nan_vec"]:
+			continue
+		assert_eq(typeof(got[key]), typeof(values[key]), "type of %s" % key)
+		assert_true(got[key] == values[key], "%s: %s vs %s" % [key, var_to_str(got[key]), var_to_str(values[key])])
+	for key: Variant in values:
+		assert_eq(var_to_bytes(got[key]), var_to_bytes(values[key]), "%s bit-exact" % key)
+	assert_eq((got[&"x/typed"] as Array).get_typed_builtin(), TYPE_FLOAT, "typed array stays typed")
+	for key: Variant in got:
+		assert_eq(typeof(key), TYPE_STRING_NAME, "key %s stays StringName" % key)
+
+
+func test_envelope_matches_is_nan_aware_and_refuses_undecodable() -> void:
+	var nan_snap := {"phase": &"playing", "paused": false, "values": {StateKeys.PLAYER_POSITION: Vector3(NAN, 0, 0)}}
+	assert_true(AutoSaveImpl.envelope_matches(AutoSaveImpl.make_envelope(nan_snap, 1), nan_snap), "NaN round-trips")
+	for bad: Variant in [RefCounted.new(), Callable(self, "after_each"), RID()]:
+		var snap := {"phase": &"playing", "paused": false, "values": {&"x/bad": bad}}
+		assert_false(AutoSaveImpl.envelope_matches(AutoSaveImpl.make_envelope(snap, 1), snap),
+				"%s refused" % type_string(typeof(bad)))
+
+
+## The real autosave path with an awkward float32-widened yaw, then a NaN vector: pushed envelope == state.
+func test_autosave_envelope_equals_state_with_awkward_floats() -> void:
+	_start()
+	Core.state.set_value(StateKeys.PLAYER_YAW, -1.5142379999160767)
+	Core.state.set_value(StateKeys.PLAYER_POSITION, Vector3(1.0 / 3.0, 0.1, -7.0 / 3.0))
+	_bump()
+	var expected := Core.state.snapshot()
+	assert_eq(events, [[OK, OK]])
+	assert_eq(fake.pushes.size(), 1)
+	var env := AutoSaveImpl.parse_envelope(fake.pushes[0].data)
+	assert_false(env.is_empty())
+	if not env.is_empty():
+		assert_eq(env.snapshot, expected, "envelope snapshot == Core.state.snapshot()")
+		assert_true(_same_float(env.snapshot.values[StateKeys.PLAYER_YAW], -1.5142379999160767), "yaw bit-exact")
+	Core.state.set_value(StateKeys.PLAYER_POSITION, Vector3(NAN, 0.0, 1.0 / 3.0))
+	auto_save.save_now()
+	assert_eq(events.size(), 2)
+	if events.size() == 2:
+		assert_eq(events[1], [OK, OK], "NaN vector state is pushed (it round-trips bit-exactly)")
+	if fake.pushes.size() == 2:
+		var env2 := AutoSaveImpl.parse_envelope(fake.pushes[1].data)
+		assert_false(env2.is_empty())
+		if not env2.is_empty():
+			assert_eq(var_to_bytes(env2.snapshot), var_to_bytes(Core.state.snapshot()), "bit-exact incl. NaN")
+	Core.state.set_value(StateKeys.PLAYER_YAW, null)
+	Core.state.set_value(StateKeys.PLAYER_POSITION, null)
+
+
+## A full 20x20 maze state stays far below MAX_PAYLOAD_BYTES and parses back exactly.
+func test_envelope_size_for_20x20_maze() -> void:
+	var bits := PackedByteArray()
+	bits.resize(int(ceil(20 * 20 / 8.0)))
+	bits.fill(0xFF)
+	var snap := {"phase": &"playing", "paused": false, "values": {
+		StateKeys.PLAYER_POSITION: Vector3(1.0 / 3.0, 0.1, -7.0 / 3.0),
+		StateKeys.PLAYER_YAW: -1.5142379999160767,
+		StateKeys.PLAYER_STANCE: StateKeys.STANCE_CRAWL,
+		StateKeys.EXPLORATION_VISITED: Marshalls.raw_to_base64(bits),
+		StateKeys.EXPLORATION_COUNT: 400,
+		StateKeys.MAZE_SEED: 1234567890123,
+	}}
+	var data := AutoSaveImpl.make_envelope(snap, 1700000000)
+	print("cloud_save: 20x20 maze v3 envelope = %d bytes" % data.size())
+	assert_true(data.size() < 4096, "20x20 envelope is %d bytes" % data.size())
+	assert_eq(AutoSaveImpl.parse_envelope(data).get("snapshot"), snap)
+
+
+# --- v2 backward compatibility --------------------------------------------------------------------------
+
+## A v2 envelope exactly as the previous build wrote it (JSON.from_native, default JSON.stringify).
+static func _v2_envelope(snapshot: Dictionary, saved_at_unix: int) -> PackedByteArray:
+	return JSON.stringify(JSON.from_native({"format": "cloud_save", "version": 2, "saved_at_unix": saved_at_unix,
+			"snapshot": snapshot}, false)).to_utf8_buffer()
+
+
+func test_v2_envelope_still_decodes() -> void:
+	var snap := {"phase": &"playing", "paused": true, "values": {
+		COUNT: 12,
+		StateKeys.PLAYER_POSITION: Vector3(1.5, 0.25, -3.75),
+		StateKeys.PLAYER_YAW: 1.25,
+		&"x/name": &"cell_a",
+		&"x/list": [1, "two", &"three", Vector2i(4, 5), null],
+	}}
+	var env := AutoSaveImpl.parse_envelope(_v2_envelope(snap, 1700000000))
+	assert_false(env.is_empty(), "v2 parsed")
+	if env.is_empty():
+		return
+	assert_eq(env.saved_at_unix, 1700000000)
+	assert_eq(typeof(env.saved_at_unix), TYPE_INT)
+	assert_eq(env.snapshot, snap)
+	assert_eq(typeof(env.snapshot.phase), TYPE_STRING_NAME)
+
+
+func test_restore_from_newer_v2_cloud() -> void:
+	_start()
+	var local_ts := _local_save_of_five()
+	var snap := Core.state.snapshot()
+	snap.values[COUNT] = 9
+	fake.store[SLOT] = _v2_envelope(snap, local_ts + 100)
+	assert_eq(auto_save.restore(), OK)
+	assert_eq(Core.state.get_value(COUNT), 9, "v2 cloud snapshot restored")
+	assert_eq(AutoSaveImpl.read_local_saved_at(SLOT), local_ts + 100)
+
+
+# --- v3 security ----------------------------------------------------------------------------------------
+
+## A v3 envelope with arbitrary top-level fields (defaults: a valid, very new envelope of good_snap()).
+static func _v3(overrides: Dictionary = {}, remove: Array = []) -> PackedByteArray:
+	var env := {"format": "cloud_save", "version": 3, "saved_at_unix": 9999999999,
+			"snapshot_b64": Marshalls.raw_to_base64(var_to_bytes(_good_snap()))}
+	env.merge(overrides, true)
+	for k: String in remove:
+		env.erase(k)
+	return JSON.stringify(env).to_utf8_buffer()
+
+
+static func _good_snap() -> Dictionary:
+	return {"phase": &"boot", "paused": false, "values": {COUNT: 9}}
+
+
+static func _v3_bytes(bytes: PackedByteArray) -> PackedByteArray:
+	return _v3({"snapshot_b64": Marshalls.raw_to_base64(bytes)})
+
+
+static func _snap_with(evil: Variant) -> Dictionary:
+	return {"phase": &"boot", "paused": false, "values": {COUNT: 9, &"x/evil": evil}}
+
+
+## Variant header of `type` followed by a huge declared element count / length and nothing else.
+static func _huge_header(type: int) -> PackedByteArray:
+	var b := PackedByteArray()
+	b.resize(8)
+	b.encode_u32(0, type)
+	b.encode_u32(4, 0x7FFFFFFF)
+	return b
+
+
+func test_v3_valid_helper_payload_is_accepted() -> void:
+	var env := AutoSaveImpl.parse_envelope(_v3())
+	assert_eq(env.get("snapshot"), _good_snap(), "baseline: the crafted-payload helper makes a valid envelope")
+	assert_eq(env.get("saved_at_unix"), 9999999999)
+
+
+func test_v3_crafted_payloads_rejected_without_objects() -> void:
+	_start()
+	_local_save_of_five()
+	var probe := ObjectProbe.new()
+	var good_bytes := var_to_bytes(_good_snap())
+	var with_objects := var_to_bytes_with_objects(_snap_with(probe))
+	assert_true(_contains(with_objects, "object_probe.gd"),
+			"encoder really embedded the object's script")
+	var deep: Variant = 1
+	for i in 100:
+		deep = [deep]
+	var oversized := _v3({"snapshot_b64": "A".repeat(AutoSaveImpl.MAX_PAYLOAD_BYTES)})
+	var payloads := {
+		"full object": _v3_bytes(with_objects),
+		"full RefCounted": _v3_bytes(var_to_bytes_with_objects(_snap_with(RefCounted.new()))),
+		"object as id": _v3_bytes(var_to_bytes(_snap_with(probe))),
+		"object id nested in array": _v3_bytes(var_to_bytes(_snap_with([1, [probe]]))),
+		"callable": _v3_bytes(var_to_bytes(_snap_with(Callable(probe, "free")))),
+		"signal": _v3_bytes(var_to_bytes(_snap_with(Signal(probe, "x")))),
+		"rid": _v3_bytes(var_to_bytes(_snap_with(RID()))),
+		"too deep": _v3_bytes(var_to_bytes(_snap_with(deep))),
+		"truncated": _v3_bytes(good_bytes.slice(0, good_bytes.size() - 5)),
+		"trailing bytes": _v3_bytes(good_bytes + PackedByteArray([0, 0, 0, 0])),
+		"huge array": _v3_bytes(_huge_header(TYPE_ARRAY)),
+		"huge dictionary": _v3_bytes(_huge_header(TYPE_DICTIONARY)),
+		"huge packed bytes": _v3_bytes(_huge_header(TYPE_PACKED_BYTE_ARRAY)),
+		"huge string": _v3_bytes(_huge_header(TYPE_STRING)),
+		"array top level": _v3_bytes(var_to_bytes([_good_snap()])),
+		"string top level": _v3_bytes(var_to_bytes("snapshot")),
+		"bad snapshot shape": _v3_bytes(var_to_bytes({"values": {}})),
+		"empty base64": _v3({"snapshot_b64": ""}),
+		"bad base64": _v3({"snapshot_b64": "!!!!"}),
+		"base64 with newline": _v3({"snapshot_b64": Marshalls.raw_to_base64(good_bytes) + "\n"}),
+		"base64 wrong length": _v3({"snapshot_b64": Marshalls.raw_to_base64(good_bytes) + "A"}),
+		"base64 non-canonical": _v3({"snapshot_b64": "QUJ="}),
+		"base64 not a string": _v3({"snapshot_b64": [1, 2]}),
+		"oversized payload": oversized,
+		"version 4": _v3({"version": 4}),
+		"version 2 with v3 shape": _v3({"version": 2}),
+		"version string": _v3({"version": "3"}),
+		"version fraction": _v3({"version": 3.5}),
+		"other format": _v3({"format": "other"}),
+		"timestamp string": _v3({"saved_at_unix": "soon"}),
+		"timestamp fraction": _v3({"saved_at_unix": 1.5}),
+		"timestamp too big": _v3({"saved_at_unix": 1e300}),
+		"extra key": _v3({"extra": 1}),
+		"missing timestamp": _v3({}, ["saved_at_unix"]),
+		"missing version": _v3({}, ["version"]),
+		"missing format": _v3({}, ["format"]),
+		"top-level array": JSON.stringify([1, 2]).to_utf8_buffer(),
+	}
+	assert_true(oversized.size() > AutoSaveImpl.MAX_PAYLOAD_BYTES)
+	AutoSaveImpl.parse_envelope(_v3())  # warm up lazily created helpers before counting objects
+	var probes_before := ObjectProbe.created
+	var objects_before := Performance.get_monitor(Performance.OBJECT_COUNT)
+	for name: String in payloads:
+		assert_true(AutoSaveImpl.parse_envelope(payloads[name]).is_empty(), "rejected: %s" % name)
+	assert_eq(Performance.get_monitor(Performance.OBJECT_COUNT), objects_before, "no object left by decoding")
+	for name: String in payloads:
+		fake.store[SLOT] = payloads[name]
+		Core.state.set_value(COUNT, 0)
+		assert_eq(auto_save.restore(), OK)
+		assert_eq(Core.state.get_value(COUNT), 5, "local wins over %s" % name)
+		assert_false(Core.state.has_value(&"x/evil"))
+	assert_eq(ObjectProbe.created, probes_before, "no probe object created from cloud data")
+	probe = null
+
+
+static func _contains(bytes: PackedByteArray, text: String) -> bool:
+	var needle := text.to_utf8_buffer()
+	for i in bytes.size() - needle.size() + 1:
+		if bytes.slice(i, i + needle.size()) == needle:
+			return true
+	return false
 
 
 func test_restore_cloud_snapshot_rejected_by_core_keeps_local() -> void:
