@@ -254,6 +254,32 @@ func test_fake_backend_receives_envelope_of_saved_state() -> void:
 	Core.state.set_value(StateKeys.PLAYER_POSITION, null)
 
 
+## Public test hook decode_cloud_payload(): called dynamically so this file parses before public/ declares it.
+func test_decode_cloud_payload_hook() -> void:
+	_start()
+	Core.state.set_value(StateKeys.PLAYER_POSITION, Vector3(0.1, 0.2, -0.3))
+	_bump()
+	var expected := Core.state.snapshot()
+	assert_eq(fake.pushes.size(), 1)
+	var decoded: Dictionary = auto_save.call("decode_cloud_payload", fake.pushes[0].data)
+	var keys: Array = decoded.keys()
+	keys.sort()
+	assert_eq(keys, ["saved_at_unix", "snapshot"], "exactly the two documented keys")
+	assert_eq(typeof(decoded.get("saved_at_unix")), TYPE_INT)
+	assert_eq(decoded.get("saved_at_unix"), AutoSaveImpl.read_local_saved_at(SLOT))
+	assert_eq(decoded.get("snapshot"), expected, "v3 payload decodes to the state snapshot at save time")
+	# Garbage -> {}
+	for junk: PackedByteArray in [PackedByteArray(), PackedByteArray([0xFF, 0x00, 0x13]),
+			"{ nope".to_utf8_buffer(), '{"format": "cloud_save", "version": 3}'.to_utf8_buffer()]:
+		assert_eq(auto_save.call("decode_cloud_payload", junk), {}, "garbage %s -> {}" % junk)
+	# v2 (older builds) still decodes.
+	var v2_snap := {"phase": &"boot", "paused": false, "values": {COUNT: 7}}
+	var v2: Dictionary = auto_save.call("decode_cloud_payload",
+			_json({"format": "cloud_save", "version": 2, "saved_at_unix": 1700000000, "snapshot": v2_snap}))
+	assert_eq(v2, {"saved_at_unix": 1700000000, "snapshot": v2_snap}, "v2 payload decodes")
+	Core.state.set_value(StateKeys.PLAYER_POSITION, null)
+
+
 func test_unavailable_backend_saves_locally() -> void:
 	_start(false)
 	_bump()

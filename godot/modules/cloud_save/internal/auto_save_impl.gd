@@ -126,6 +126,16 @@ func restore() -> Error:
 	return result
 
 
+## Test hook (overrides the public default once declared there): decodes a payload this AutoSave pushed to a
+## CloudBackend. Returns {"saved_at_unix": int, "snapshot": Dictionary}, or {} if invalid. Any envelope version
+## parse_envelope() reads (v3, v2) is accepted.
+func decode_cloud_payload(data: PackedByteArray) -> Dictionary:
+	var env := parse_envelope(data)
+	if env.is_empty():
+		return {}
+	return {"saved_at_unix": int(env.saved_at_unix), "snapshot": env.snapshot}
+
+
 func _restore() -> Error:
 	var cloud := {}
 	if _backend != null and _backend.is_available():
