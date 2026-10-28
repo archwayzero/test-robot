@@ -8,6 +8,8 @@ var _phase: StringName = PHASE_BOOT
 var _paused := false
 var _values: Dictionary = {}
 
+static var _key_regex: RegEx
+
 
 func _init(core: CoreAPI) -> void:
 	_core = core
@@ -44,7 +46,7 @@ func get_value(key: StringName, default: Variant = null) -> Variant:
 
 func set_value(key: StringName, value: Variant) -> void:
 	if not is_valid_key(key):
-		push_error("GameState: key '%s' must be namespaced as <module>/<name>" % key)
+		push_error("GameState: key '%s' rejected, must match %s (<module>/<name>)" % [key, KEY_PATTERN])
 		return
 	if not is_plain_data(value):
 		push_error("GameState: value for '%s' is not plain serializable data: %s" % [key, value])
@@ -103,14 +105,21 @@ static func parse_snapshot(data: Variant) -> Dictionary:
 	for key in d.values:
 		if not (typeof(key) in [TYPE_STRING_NAME, TYPE_STRING]) or not is_plain_data(d.values[key]):
 			return {}
+		if not is_valid_key(StringName(key)):
+			push_error("GameState: snapshot key '%s' does not match %s; whole snapshot rejected" % [key, KEY_PATTERN])
+			return {}
 		values[StringName(key)] = _copy(d.values[key])
 	return {"phase": StringName(d.phase), "paused": d.paused, "values": values}
 
 
+## True if `key` matches GameState.KEY_PATTERN (`<module>/<name>[/...]`, lower-case, digits, `_`).
 static func is_valid_key(key: StringName) -> bool:
+	if _key_regex == null:
+		_key_regex = RegEx.create_from_string(KEY_PATTERN)
 	var s := String(key)
-	var slash := s.find("/")
-	return slash > 0 and slash < s.length() - 1
+	var m := _key_regex.search(s)
+	# Compare the whole match: PCRE's `$` also matches before a trailing newline.
+	return m != null and m.get_string() == s
 
 
 ## True if `value` is plain data that survives var_to_str()/str_to_var() unchanged (no Objects, Callables,

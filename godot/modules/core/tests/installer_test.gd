@@ -12,6 +12,14 @@ func test_core_autoload_is_wired() -> void:
 	assert_true(CoreAPI.is_test_run(), "runner is a test run")
 	assert_not_null(c.automation, "Core.automation in a test run")
 	assert_true(c.automation is Automation, "Core.automation is an Automation")
+	assert_eq(c.saves.slot_path(0), "user://automation/saves/slot_0.save", "test run saves under user://automation/")
+
+
+func test_installer_uses_user_data_dir_for_saves() -> void:
+	var fresh := CoreAPI.new()
+	load(INSTALLER).install(fresh)
+	assert_eq(fresh.saves.slot_path(3), CoreAPI.user_data_dir() + "saves/slot_3.save")
+	fresh.free()
 
 
 func test_install_on_fresh_core() -> void:
