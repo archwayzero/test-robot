@@ -2,7 +2,8 @@
 ## through their public factories, in this order:
 ##   1. phase "loading"; maze layout (MazeFactory.GAME_SEED) + MazeWorld.build()
 ##   2. Exploration.setup(layout); AutoSave.setup(platform backend); AutoSave.restore()
-##   3. Player spawned at the saved position (StateKeys.PLAYER_*) or the layout's start cell
+##   3. Player spawned at the saved position (StateKeys.PLAYER_*) or the layout's start cell; then
+##      restore_stance(saved StateKeys.PLAYER_STANCE) if a valid save position was used (task T028)
 ##   4. HUD inside the display safe area (DECISIONS.md D17): TouchControls, then Minimap.setup(layout, exploration)
 ##      top-left above them (map taps never reach the joystick); TouchControls hidden on desktop unless touch
 ##      emulation is on

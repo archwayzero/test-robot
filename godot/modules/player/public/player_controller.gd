@@ -43,6 +43,16 @@ const JUMP_VELOCITY := 4.0
 @abstract func spawn_at(position: Vector3, yaw: float = 0.0) -> void
 
 
+## Applies a saved stance after spawn_at() (load/restore). Goes straight to `stance` if it fits at the current
+## position; otherwise to the tallest stance that fits (a saved STAND under a low passage becomes CROUCH/CRAWL).
+## Emits stance_changed only if the stance actually changed, writes StateKeys.PLAYER_STANCE. Values outside the enum
+## are treated as STAND.
+## Not @abstract on purpose: added after the player implementation shipped (an abstract method would break it until
+## task T027 overrides this). The default body only reports that it is missing.
+func restore_stance(stance: Stance) -> void:
+	push_error("PlayerController.restore_stance(%d) not implemented yet (task T027)" % stance)
+
+
 ## Height of the current collision shape in meters (stand > crouch > crawl). Exposed for tests.
 @abstract func get_collision_height() -> float
 

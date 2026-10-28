@@ -15,7 +15,7 @@ Character controller: stances, walk/run/jump, collision, third-person camera, he
 ## Public interface
 - `PlayerFactory.create_player() -> PlayerController` (loads internal/player.tscn).
 - `PlayerController` (public/player_controller.gd, CharacterBody3D): `enum Stance {STAND, CROUCH, CRAWL}`,
-  `get_stance()`, `is_running()`, `is_grounded()`, `spawn_at(position, yaw)`, `get_collision_height()`, `get_camera()`;
+  `get_stance()`, `is_running()`, `is_grounded()`, `spawn_at(position, yaw)`, `restore_stance(stance)` (T027), `get_collision_height()`, `get_camera()`;
   signals `stance_changed(stance)`, `jumped()`, `landed()`; speeds `WALK_SPEED 1.6`, `RUN_SPEED 4.0`,
   `CROUCH_SPEED 1.0`, `CRAWL_SPEED 0.5` m/s, `JUMP_VELOCITY 4.0` m/s.
 
@@ -38,6 +38,8 @@ Character controller: stances, walk/run/jump, collision, third-person camera, he
 - Visual: capsule placeholder (T004) -> hero rig `res://assets/hero/rig/hero.glb` with an AnimationTree driving
   idle_loop/walk_loop/jog_loop/crouch_idle_loop/crouch_walk_loop/crawl_idle_loop/crawl_loop/jump (T019), as listed in
   docs/contracts/blender-godot-assets.md "Asset: hero".
+- `restore_stance(stance)` (T027): override the public default; tallest fitting stance via the same ShapeCast check
+  as the stance cycle; no stance_changed when unchanged; out-of-range ints -> STAND. Tests for each case.
 - Tests: speeds per stance (+-5%), heights per stance, stand-up refused under a low ceiling, no jump while crawling,
   wall-push at 8 angles never penetrates, emits player_moved.
 
