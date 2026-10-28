@@ -226,6 +226,11 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
   committing the public change on the task branch is blocked by the commit hook (orchestrator's paths are outside
   module-dev's scope). Run 1 kept `restore() -> void`. Next game (kit): either let the commit hook accept the
   module's own `public/` from the orchestrator on a task branch, or design `restore() -> Error` from day one.
+- **Non-breaking way to grow an interface:** add the method to `public/` as a normal (non-`@abstract`) method whose
+  body push_error()s, merge that, then the module task overrides it. Used for `PlayerController.restore_stance()`.
+- **Interface gap found by composition (T009):** the player had no way to apply a saved stance, so "same stance after
+  reload" (E12) was impossible. Next game: derive the public API from the save/restore test cases up front.
+- **Desktop focus-out must not pause previews/recordings;** only mobile pauses on focus loss (D12 in run 1).
 
 ### M2 art
 (to be filled in)

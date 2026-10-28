@@ -32,6 +32,8 @@ one task at a time; a task starts only after its dependencies are merged. Milest
 | T023 | human (Mac) | - | Xcode build, sign (personal team), install on iPhone 12, profile | T022 | M3 |
 | T025 | module-dev | core | Hardening: set_value()/restore() validate key namespaces (found in T008 review); `CoreAPI.user_data_dir()` so test runs save under user://automation/ | | M1 (before T010) |
 | T026 | module-dev | cloud_save | Sidecar meta under `CoreAPI.user_data_dir()` (tests never touch the player's files) | T025 | M1 (before T010) |
+| T027 | module-dev | player | Implement `PlayerController.restore_stance()` (saved stance on load; found in T009) | | M1 (before T010) |
+| T028 | module-dev | game | Call `restore_stance()` after spawn from a save; E12 stance check | T027 | M1 (before T010) |
 | T024 | module-dev | cloud_save | ICloudBackend (native plugin) — only if Apple Developer account + iCloud capability are available | T023 | M3 (optional) |
 
 Notes:
