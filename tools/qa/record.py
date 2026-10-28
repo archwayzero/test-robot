@@ -65,7 +65,7 @@ def main():
         avi = Path(tmp) / "movie.avi"
         cmd = [godot, "--path", str(root / "godot"), *args, "--display-driver", "x11", "--resolution", a.resolution,
                "--fixed-fps", str(FPS), "--disable-vsync", "--write-movie", str(avi), "--quit-after", str(frames),
-               a.scene]
+               a.scene, "--", "--automation"]  # test-run mode: Core.automation available, user:// data under automation/
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=a.timeout, env=env)
         except subprocess.TimeoutExpired:

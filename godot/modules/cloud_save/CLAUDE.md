@@ -35,6 +35,8 @@ Autosave policy and cloud backend (local + fake in sandbox, iCloud on iOS)
 - Backends now: LocalOnlyBackend, FakeCloudBackend. ICloudBackend is added at the Mac stage (M3): it must detect the
   plugin with `Engine.has_singleton(...)` and fall back to LocalOnly when absent; keep that seam ready.
 - No network calls of its own (iCloud is the OS's). Nothing else leaves the device.
+- JSON envelope must round-trip floats exactly: `JSON.stringify(..., "", true, true)` (full_precision; T029, found by E11).
+  Throttle: the second save must not come before MIN_INTERVAL_S of game time has passed (T029: it came 1 frame early).
 - Tests: throttle (two cells within 10 s -> one save, then one more after the interval), fake backend receives an
   envelope whose snapshot equals Core.state at save time, unavailable backend -> local OK + cloud_error ERR_UNAVAILABLE, restore picks the newer.
 

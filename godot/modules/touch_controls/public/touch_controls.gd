@@ -18,3 +18,16 @@ signal visibility_toggled(visible_now: bool)
 
 ## Current joystick deflection, Vector2 with length 0..1 (x = right, y = back). Exposed for tests.
 @abstract func get_stick_vector() -> Vector2
+
+
+## Test hook: screen rectangle (viewport coordinates) of the Jump button. Not @abstract (added after the
+## implementation shipped; task T031 overrides it). The default reports that it is missing.
+func get_jump_rect() -> Rect2:
+	push_error("TouchControls.get_jump_rect() not implemented yet (task T031)")
+	return Rect2()
+
+
+## Test hook: screen rectangle (viewport coordinates) of the Stance button. Same rules as get_jump_rect().
+func get_stance_rect() -> Rect2:
+	push_error("TouchControls.get_stance_rect() not implemented yet (task T031)")
+	return Rect2()

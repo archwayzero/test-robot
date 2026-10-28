@@ -82,6 +82,9 @@ Exit code 0 = all passed, 1 = failures, 2 = nothing found / not a test run.
 - The runner fails a test on any runtime SCRIPT error during it (a crash used to abort the test silently and pass);
   `push_error()` lines are allowed (tests use them to check rejection of bad input).
 - Captures and videos of anything with UI use `--resolution 1280x590` (the default 960x540 crops the bottom).
+- `capture.py` and `record.py` start the scene in test-run mode (`-- --automation`): playthrough scenes drive input
+  through `Core.automation`, and saves go under `user://automation/`. Playthroughs must never touch `user://saves`.
+- `--report <path>`: relative paths are relative to the repository root.
 - Always run through `tools/qa/memguard.py` (refuses to start without 4 GB spare, kills the job below 4 GB free).
 - In test runs, Automation resizes the headless root viewport to the project size (1280x590), so screen
   coordinates in touch tests match the game layout.
