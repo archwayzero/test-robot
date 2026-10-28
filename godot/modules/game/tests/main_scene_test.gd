@@ -146,6 +146,82 @@ func test_saved_position_outside_maze_falls_back_to_start() -> void:
 	assert_eq(_player_cell(), main.get_maze_world().get_layout().start_cell())
 
 
+func test_saved_position_invalid_values_fall_back_to_start() -> void:
+	var layout := MazeFactory.create().make_layout()
+	var cell := Vector2i(3, 2) if layout.start_cell() != Vector2i(3, 2) else Vector2i(4, 2)
+	var inside := layout.cell_to_world(cell)
+	var bad_values: Array = [
+		Vector3(inside.x, 10.0, inside.z),         # above the vault
+		Vector3(inside.x, -5.0, inside.z),         # below the floor
+		Vector3(NAN, 0.0, inside.z),
+		Vector3(inside.x, INF, inside.z),
+		Vector2(inside.x, inside.z),               # wrong type
+		"(%s, 0, %s)" % [inside.x, inside.z],
+	]
+	for value: Variant in bad_values:
+		after_each()  # fresh scene and state for every value (the runner calls after_each once more at the end)
+		before_each()
+		Core.state.set_value(StateKeys.MAZE_SEED, MazeFactory.GAME_SEED)
+		Core.state.set_value(StateKeys.PLAYER_POSITION, value)
+		assert_true(await _start(), "ready with %s" % [value])
+		assert_false(main.call("spawned_from_save"), "rejected %s" % [value])
+		assert_eq(_player_cell(), main.get_maze_world().get_layout().start_cell(), "start cell for %s" % [value])
+
+
+func test_backgrounding_pauses_and_resume_unpauses() -> void:
+	assert_true(await _start())
+	for pair: Array in [[Node.NOTIFICATION_APPLICATION_PAUSED, Node.NOTIFICATION_APPLICATION_RESUMED],
+			[Node.NOTIFICATION_APPLICATION_FOCUS_OUT, Node.NOTIFICATION_APPLICATION_FOCUS_IN]]:
+		main.notification(pair[0])
+		assert_true(get_tree().paused, "paused on %d" % pair[0])
+		assert_true(Core.state.is_paused())
+		assert_eq(Core.state.get_phase(), StateKeys.PHASE_PLAYING)
+		main.notification(pair[1])
+		assert_false(get_tree().paused, "unpaused on %d" % pair[1])
+		assert_false(Core.state.is_paused())
+		assert_eq(Core.state.get_phase(), StateKeys.PHASE_PLAYING)
+
+
+func test_resume_with_map_open_stays_paused() -> void:
+	assert_true(await _start())
+	var minimap := main.get_minimap()
+	minimap.open_large_map()
+	main.notification(Node.NOTIFICATION_APPLICATION_PAUSED)
+	main.notification(Node.NOTIFICATION_APPLICATION_RESUMED)
+	assert_true(get_tree().paused, "still paused: the map is open")
+	assert_true(Core.state.is_paused())
+	assert_eq(Core.state.get_phase(), StateKeys.PHASE_MAP_OPEN)
+	minimap.close_large_map()
+	assert_false(get_tree().paused)
+	assert_eq(Core.state.get_phase(), StateKeys.PHASE_PLAYING)
+	# Map closed while backgrounded: stays paused until resumed.
+	minimap.open_large_map()
+	main.notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
+	minimap.close_large_map()
+	assert_true(get_tree().paused, "backgrounded: still paused after closing the map")
+	assert_eq(Core.state.get_phase(), StateKeys.PHASE_PLAYING)
+	main.notification(Node.NOTIFICATION_APPLICATION_FOCUS_IN)
+	assert_false(get_tree().paused)
+	assert_false(Core.state.is_paused())
+
+
+func test_autosave_still_saves_when_backgrounded() -> void:
+	assert_true(await _start())
+	var results: Array = []
+	main.get_auto_save().autosaved.connect(func(error: Error, _cloud: Error) -> void: results.append(error))
+	_delete_save()
+	# AutoSave pauses with the tree (it is not PROCESS_MODE_ALWAYS); notifications still reach it.
+	assert_true(main.get_auto_save().process_mode in [Node.PROCESS_MODE_INHERIT, Node.PROCESS_MODE_PAUSABLE],
+			"AutoSave is pausable")
+	# Propagates to main first (pauses the tree), then to its children, AutoSave included.
+	main.propagate_notification(Node.NOTIFICATION_APPLICATION_PAUSED)
+	assert_true(get_tree().paused)
+	assert_eq(results, [OK], "AutoSave saved on APPLICATION_PAUSED while the tree is paused")
+	assert_true(Core.saves.has_save(AutoSave.SAVE_SLOT))
+	main.propagate_notification(Node.NOTIFICATION_APPLICATION_RESUMED)
+	assert_false(get_tree().paused)
+
+
 func test_large_map_pauses_and_restores() -> void:
 	assert_true(await _start())
 	var minimap := main.get_minimap()
@@ -177,10 +253,24 @@ func test_free_while_map_open_unpauses() -> void:
 	assert_true(await _start())
 	main.get_minimap().open_large_map()
 	assert_true(get_tree().paused)
+	assert_eq(Core.state.get_phase(), StateKeys.PHASE_MAP_OPEN)
 	remove_child(main)
 	main.free()
 	main = null
 	assert_false(get_tree().paused)
+	assert_false(Core.state.is_paused())
+	assert_eq(Core.state.get_phase(), StateKeys.PHASE_PLAYING, "phase restored: Core outlives the scene")
+
+
+func test_free_while_backgrounded_unpauses() -> void:
+	assert_true(await _start())
+	main.notification(Node.NOTIFICATION_APPLICATION_PAUSED)
+	assert_true(get_tree().paused)
+	remove_child(main)
+	main.free()
+	main = null
+	assert_false(get_tree().paused)
+	assert_false(Core.state.is_paused())
 
 
 func test_hud_insets_zero_on_desktop() -> void:
@@ -218,6 +308,35 @@ func test_hud_insets_from_injected_safe_area() -> void:
 	assert_almost_eq((main.call("get_hud_insets") as Dictionary).left, 141 * scale.x, 0.01)
 	main.call("set_safe_area_source", Callable())
 	assert_eq((main.call("get_hud_insets") as Dictionary).left, 0.0)
+
+
+func _check_one_sided(safe: Rect2i, expect_left: float, expect_right: float) -> void:
+	var screen := Vector2i(2532, 1170)
+	main.call("set_safe_area_source", func() -> Dictionary: return {"safe_area": safe, "screen_size": screen})
+	var vp := get_viewport().get_visible_rect().size
+	var scale := vp / Vector2(screen)
+	var insets: Dictionary = main.call("get_hud_insets")
+	assert_almost_eq(insets.left, expect_left * scale.x, 0.01, "left")
+	assert_almost_eq(insets.right, expect_right * scale.x, 0.01, "right")
+	assert_almost_eq(insets.top, 0.0, 0.01, "top")
+	assert_almost_eq(insets.bottom, 63 * scale.y, 0.01, "bottom")
+	var rect := (main.call("get_hud") as Control).get_global_rect()
+	assert_almost_eq(rect.position.x, insets.left, 0.01)
+	assert_almost_eq(rect.end.x, vp.x - insets.right, 0.01)
+	assert_almost_eq(rect.end.y, vp.y - insets.bottom, 0.01)
+	var small := main.get_minimap().get_small_rect()
+	assert_true(small.position.x >= insets.left and small.end.x <= vp.x - insets.right + 0.01,
+			"minimap inside the safe area: %s" % [small])
+
+
+func test_hud_insets_notch_right_only() -> void:
+	assert_true(await _start())
+	_check_one_sided(Rect2i(0, 0, 2532 - 141, 1170 - 63), 0.0, 141.0)
+
+
+func test_hud_insets_notch_left_only() -> void:
+	assert_true(await _start())
+	_check_one_sided(Rect2i(141, 0, 2532 - 141, 1170 - 63), 141.0, 0.0)
 
 
 func test_touch_in_left_half_reaches_joystick_not_minimap() -> void:

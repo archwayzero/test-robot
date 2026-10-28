@@ -17,6 +17,10 @@ const STEP_PLAYING := &"playing"
 ## PLATFORM.md target frame rate on the device.
 const IOS_MAX_FPS := 30
 
+## Sane band for a saved player height (crypt-kit: floor at y=0, walls/vault top at 3.9 m).
+const SAVED_Y_MIN := -1.0
+const SAVED_Y_MAX := 4.0
+
 ## Boot steps in the order they ran (read-only use by tests).
 var boot_log: Array[StringName] = []
 
@@ -31,6 +35,8 @@ var _touch_controls: TouchControls
 var _minimap: Minimap
 var _ready_to_play := false
 var _spawned_from_save := false
+## True while the app is in the background / unfocused (DECISIONS.md D12: paused then).
+var _backgrounded := false
 
 ## Test seam: when valid, returns {"safe_area": Rect2i, "screen_size": Vector2i} instead of the DisplayServer
 ## values, and is used on every platform (desktop included).
@@ -45,9 +51,41 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	# Never leave the tree paused behind us (e.g. scene freed while the large map was open).
-	if _minimap != null and _minimap.is_large_map_open():
+	# Never leave the tree paused or the phase at map_open behind us (Core is an autoload and outlives this scene),
+	# e.g. scene freed while the large map was open or while backgrounded.
+	var map_open := _minimap != null and _minimap.is_large_map_open()
+	if map_open or _backgrounded:
 		_set_paused(false)
+	if map_open:
+		Core.state.set_phase(StateKeys.PHASE_PLAYING)
+	_backgrounded = false
+
+
+## DECISIONS.md D12: pause while the app is backgrounded. Notifications reach every node regardless of pause, so
+## AutoSave's own save on NOTIFICATION_APPLICATION_PAUSED still runs (whatever the order).
+func _notification(what: int) -> void:
+	match what:
+		NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_APPLICATION_FOCUS_OUT:
+			_on_backgrounded()
+		NOTIFICATION_APPLICATION_RESUMED, NOTIFICATION_APPLICATION_FOCUS_IN:
+			_on_foregrounded()
+
+
+func _on_backgrounded() -> void:
+	_backgrounded = true
+	_set_paused(true)
+
+
+func _on_foregrounded() -> void:
+	_backgrounded = false
+	# Stay paused while the large map is open (or during boot: _boot() unpauses when it reaches playing).
+	if _ready_to_play and not (_minimap != null and _minimap.is_large_map_open()):
+		_set_paused(false)
+
+
+## True while paused because the app is in the background.
+func is_backgrounded() -> bool:
+	return _backgrounded
 
 
 func _boot() -> void:
@@ -89,8 +127,8 @@ func _boot() -> void:
 	# 4. HUD inside the safe area: touch controls first, minimap above them (drawn later, gets input first).
 	_build_hud()
 
-	# 5. Playing.
-	_set_paused(false)
+	# 5. Playing (stays paused if the app went to the background during boot).
+	_set_paused(_backgrounded)
 	Core.state.set_phase(StateKeys.PHASE_PLAYING)
 	_ready_to_play = true
 	_log(STEP_PLAYING)
@@ -104,14 +142,24 @@ func _spawn_player() -> void:
 	var saved_position: Variant = Core.state.get_value(StateKeys.PLAYER_POSITION)
 	var saved_seed: Variant = Core.state.get_value(StateKeys.MAZE_SEED)
 	var same_maze: bool = saved_seed is int and saved_seed == _layout.get_seed()
-	if same_maze and saved_position is Vector3 and _layout.in_bounds(_layout.world_to_cell(saved_position)):
+	if same_maze and _valid_saved_position(saved_position):
 		spawn_position = saved_position
 		var saved_yaw: Variant = Core.state.get_value(StateKeys.PLAYER_YAW)
-		if saved_yaw is float or saved_yaw is int:
+		if (saved_yaw is float or saved_yaw is int) and is_finite(float(saved_yaw)):
 			spawn_yaw = float(saved_yaw)
 		_spawned_from_save = true
 	# Stance: PlayerController has no public way to set it (see the T009 report); only position and yaw apply.
 	_player.spawn_at(spawn_position, spawn_yaw)
+
+
+## A saved position is usable only if it is a finite Vector3 at a sane height inside the maze bounds.
+func _valid_saved_position(value: Variant) -> bool:
+	if not value is Vector3:
+		return false
+	var pos: Vector3 = value
+	if not pos.is_finite() or pos.y <= SAVED_Y_MIN or pos.y >= SAVED_Y_MAX:
+		return false
+	return _layout.in_bounds(_layout.world_to_cell(pos))
 
 
 ## Yaw (Godot convention: 0 faces -Z, +PI/2 faces -X) toward the first open edge of `cell`, so a new game does
@@ -170,7 +218,7 @@ func _on_large_map_toggled(open: bool) -> void:
 		_touch_controls.set_controls_visible(false)
 		_set_paused(true)
 	else:
-		_set_paused(false)
+		_set_paused(_backgrounded)
 		_touch_controls.set_controls_visible(_touch_wanted())
 		Core.state.set_phase(StateKeys.PHASE_PLAYING)
 
