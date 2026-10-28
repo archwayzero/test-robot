@@ -234,6 +234,10 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
   the low-passage camera collapsing onto the player (visible only in videos, not in unit tests); and that the
   recording tool ran without test mode, so playthroughs deleted the real save slot 0. Next game: capture/record
   tools start in test mode from day one, and every test hook QA needs is in the public API before QA starts.
+- **Godot 4.7.2 text floats are not exact** (T029 review): `String.to_float`, JSON number parsing and
+  `JSON.to_native`'s "f:" strings return a different double for ~12% of values even with 17 digits. Saves that must
+  be exact use `var_to_bytes` (cloud envelope v3); `bytes_to_var` without objects is the safe decoder. Next game:
+  specify binary save payloads from the start, and keep e2e tests format-agnostic via a public decode hook.
 - **Desktop focus-out must not pause previews/recordings;** only mobile pauses on focus loss (D12 in run 1).
 
 ### M2 art
