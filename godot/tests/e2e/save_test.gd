@@ -1,7 +1,9 @@
 ## M4 save end-to-end tests: TEST_PLAN.md E11 autosave_throttle, E12 save_restore, E13 cloud_unavailable. Owner: qa.
 ##
 ## The game boots with the platform backend (LocalOnly in the sandbox). E11/E13 give the running AutoSave an
-## in-memory fake backend through the public API: AutoSave.setup(CloudSaveFactory.make_fake_backend(available)).
+## in-memory fake backend through the public API: AutoSave.setup(CloudSaveFactory.make_fake_backend(available))
+## (documented in public/auto_save.gd: "Calling it again replaces the backend"). E11 decodes what the backend received
+## with the public test hook AutoSave.decode_cloud_payload().
 ## Saves go to user://automation/ in test runs (CoreAPI.user_data_dir()).
 extends "res://tests/e2e/e2e_base.gd"
 
@@ -20,19 +22,18 @@ func _route(n: int) -> Array[Vector2i]:
 	return [start]
 
 
-## Decodes cloud_save's envelope (format documented in godot/modules/cloud_save/CLAUDE.md:
-## JSON.stringify(JSON.from_native({format, version, saved_at_unix, snapshot}, false))). {} if not decodable.
-static func _decode_envelope(data: PackedByteArray) -> Dictionary:
+## Decodes a payload the fake backend received, through the public AutoSave.decode_cloud_payload() test hook
+## (M1 findings F1/F2 fixed in T029; the test does no format-specific parsing). {} if empty or invalid.
+static func _decode(auto_save: AutoSave, data: PackedByteArray) -> Dictionary:
 	if data.is_empty():
 		return {}
-	var raw: Variant = JSON.parse_string(data.get_string_from_utf8())
-	if raw == null:
-		return {}
-	var env: Variant = JSON.to_native(raw, false)
-	return env if env is Dictionary else {}
+	return auto_save.decode_cloud_payload(data)
 
 
 func test_e11_autosave_throttle() -> void:
+	expect_checkpoint("e11 gap")
+	expect_checkpoint("e11 payload", 2)
+	expect_checkpoint("e11 latest")
 	assert_true(await start_game())
 	var backend := CloudSaveFactory.create().make_fake_backend(true)
 	var auto_save := main.get_auto_save()
@@ -40,7 +41,7 @@ func test_e11_autosave_throttle() -> void:
 	var saves: Array = []  # [frame, error, cloud_error, state snapshot at save time, envelope]
 	auto_save.autosaved.connect(func(error: Error, cloud_error: Error) -> void:
 		saves.append([automation().get_frame(), error, cloud_error, Core.state.snapshot(),
-				_decode_envelope(backend.pull(AutoSave.SAVE_SLOT))]))
+				_decode(auto_save, backend.pull(AutoSave.SAVE_SLOT))]))
 	var explored_frames: Array = []
 	main.get_exploration().cell_explored.connect(func(_c: Vector2i) -> void:
 		explored_frames.append(automation().get_frame()))
@@ -59,29 +60,58 @@ func test_e11_autosave_throttle() -> void:
 	# Wait until 12 s of game time after the first save.
 	await automation().wait_until(func() -> bool: return automation().get_frame() >= first_save + 12 * FPS, 13 * FPS)
 	assert_eq(saves.size(), 2, "exactly 2 saves: immediately + 1 after the interval")
-	if saves.size() >= 2:
-		var gap := int(saves[1][0]) - first_save
-		assert_between(gap, 10 * FPS - 1, 10 * FPS + 2, "second save when the 10 s interval ends (gap %d frames)" % gap)
+	# Post-await checks live in plain helper functions (own stack frame; see the checkpoint guard in e2e_base.gd).
+	_check_gap(saves, first_save)
 	for s: Array in saves:
-		assert_eq(s[1], OK, "local save OK")
-		assert_eq(s[2], OK, "cloud push OK")
-		var env: Dictionary = s[4]
-		assert_eq(env.get("format"), "cloud_save", "envelope format")
-		assert_eq(env.get("version"), 2, "envelope version")
-		assert_true(env.get("saved_at_unix") is int, "envelope timestamp")
-		var snap: Variant = env.get("snapshot")
-		var state: Dictionary = s[3]
-		assert_true(snap is Dictionary, "envelope has a snapshot")
-		if snap is Dictionary:
-			assert_eq(StringName(snap.get("phase", "")), StringName(state.phase), "snapshot phase")
-			assert_eq(snap.get("paused"), state.paused, "snapshot paused")
-			assert_eq(snap.get("values"), state.values, "snapshot values equal Core.state at save time")
-			_report_value_diffs(snap.get("values", {}), state.values)
-	if saves.size() >= 2:
-		var values: Dictionary = (saves[1][4] as Dictionary).get("snapshot", {}).get("values", {})
-		assert_eq(values.get(StateKeys.EXPLORATION_COUNT), 3, "latest envelope has 3 explored cells")
+		_check_save(s)
+	_check_latest(saves)
+	# The hook rejects data that is not a payload.
+	assert_eq(auto_save.decode_cloud_payload("not a cloud payload".to_utf8_buffer()), {}, "invalid payload -> {}")
 	assert_true(Core.saves.has_save(AutoSave.SAVE_SLOT), "local save exists")
 	print("E11 measured: explored at %s, saves at %s" % [explored_frames, saves.map(func(s: Array) -> int: return s[0])])
+	checkpoint("end")
+
+
+func _check_gap(saves: Array, first_save: int) -> void:
+	if saves.size() < 2:
+		return
+	var gap := int(saves[1][0]) - first_save
+	# T029 (F2): the deferred save waits a full MIN_INTERVAL_S (300 frames at 30 fps), at most 2 frames late.
+	assert_between(gap, int(AutoSave.MIN_INTERVAL_S) * FPS, int(AutoSave.MIN_INTERVAL_S) * FPS + 2,
+			"second save when the 10 s interval ends (gap %d frames)" % gap)
+	print("E11 measured: second save %d frames (%.2f s) after the first" % [gap, gap / float(FPS)])
+	checkpoint("e11 gap")
+
+
+func _check_latest(saves: Array) -> void:
+	if saves.size() < 2:
+		return
+	var values: Dictionary = (saves[1][4] as Dictionary).get("snapshot", {}).get("values", {})
+	assert_eq(values.get(StateKeys.EXPLORATION_COUNT), 3, "latest payload has 3 explored cells")
+	print("E11 measured: decoded player/yaw %s, state player/yaw %s" % [var_to_str(values.get(StateKeys.PLAYER_YAW)),
+			var_to_str((saves[1][3] as Dictionary).values.get(StateKeys.PLAYER_YAW))])
+	checkpoint("e11 latest")
+
+
+## Checks one autosave record [frame, error, cloud_error, state snapshot at save time, decoded payload].
+## A separate function: inlined in the E11 coroutine, Godot 4.7.2 passed an Object to the first bool argument in this
+## loop (`Cannot convert argument 1 from Object to bool`) and skipped `if` bodies; see the T032 report.
+func _check_save(s: Array) -> void:
+	assert_eq(s[1], OK, "local save OK")
+	assert_eq(s[2], OK, "cloud push OK")
+	var decoded: Dictionary = s[4]
+	var state: Dictionary = s[3]
+	assert_true(not decoded.is_empty(), "decode_cloud_payload() accepted the pushed payload")
+	assert_true(decoded.get("saved_at_unix") is int, "decoded timestamp is an int")
+	var snap: Variant = decoded.get("snapshot")
+	assert_true(snap is Dictionary, "decoded payload has a snapshot")
+	if snap is Dictionary:
+		# Exact round-trip: Variant equality (floats compared exactly) and identical binary encoding (bit level, also
+		# catches StringName vs String and int vs float type changes).
+		assert_eq(snap, state, "decoded snapshot equals Core.state.snapshot() at save time")
+		assert_eq(var_to_bytes(snap), var_to_bytes(state), "decoded snapshot is bit-identical to the state")
+		_report_value_diffs((snap as Dictionary).get("values", {}), state.values)
+		checkpoint("e11 payload")
 
 
 func test_e12_save_restore() -> void:
@@ -107,6 +137,7 @@ func test_e12_save_restore() -> void:
 	assert_true(d <= 0.1, "position within 0.1 m (%.3f m; saved %s, now %s)" % [d, pos, player().global_position])
 	assert_eq(player().get_stance(), stance, "same stance")
 	print("E12 measured: explored %s, position error %.4f m, stance %d" % [explored, d, player().get_stance()])
+	checkpoint("end")
 
 
 ## Prints which keys differ between the envelope and the state, and by how much (diagnostic for the report).
@@ -141,6 +172,7 @@ static func _visible_canvas_items(node: Node, out: PackedStringArray) -> PackedS
 
 
 func test_e13_cloud_unavailable() -> void:
+	expect_checkpoint("e13 result")
 	assert_true(await start_game())
 	main.get_auto_save().setup(CloudSaveFactory.create().make_fake_backend(false))
 	var results: Array = []
@@ -154,6 +186,7 @@ func test_e13_cloud_unavailable() -> void:
 	if results.size() >= 1:
 		assert_eq(results[0][0], OK, "local save OK")
 		assert_eq(results[0][1], ERR_UNAVAILABLE, "cloud_error == ERR_UNAVAILABLE")
+		checkpoint("e13 result")
 	assert_true(Core.saves.has_save(AutoSave.SAVE_SLOT), "local save on disk")
 	var after := _visible_canvas_items(get_tree().root, PackedStringArray())
 	var added := []
@@ -163,3 +196,4 @@ func test_e13_cloud_unavailable() -> void:
 	assert_eq(added, [], "no new visible UI (no error shown)")
 	assert_eq(Core.state.get_phase(), StateKeys.PHASE_PLAYING, "still playing")
 	assert_false(get_tree().paused, "not paused")
+	checkpoint("end")

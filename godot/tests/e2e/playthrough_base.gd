@@ -1,15 +1,14 @@
 ## Base of the scripted gameplay-video playthroughs (TEST_PLAN.md "Gameplay videos"). Owner: qa.
 ##
-## Run by tools/qa/record.py, which starts the scene WITHOUT `-- --automation`, so Core.automation is null there.
-## The playthroughs therefore drive the game the way a player does: Input.action_press/action_release on the
-## GameActions (as touch_controls does) and Input.parse_input_event for touches (minimap taps, camera orbit drags).
+## Run by tools/qa/record.py, which starts the scene in test-run mode (`-- --automation`, M1 finding F5 fixed in
+## #28). The playthroughs REQUIRE Core.automation: they set the seed and fixed timestep and drive all input through
+## it (press/release actions, touch, inject_event for orbit drags). Without it they refuse to run and quit, so a
+## playthrough can never read or write the player's real user://saves or user://cloud_save: in test runs all game
+## data goes under CoreAPI.user_data_dir() = user://automation/.
 ## They read the game only through GameMain's public accessors and the modules' public APIs.
 ##
-## Not a test run: saves go to user:// (the sandbox user's Godot data dir). Slot 0 is deleted before the main scene
-## is loaded so every recording starts from a fresh game.
-##
 ## A caption (step name + video time mm:ss) is drawn at the top centre, and every step is appended to
-## .captures/t010/<scene>_timeline.txt, so the report can list exact moments.
+## .captures/T032/<scene>_timeline.txt, so the report can list exact moments.
 extends Node
 
 const FPS := 30.0
@@ -32,9 +31,21 @@ var _orbit_down := false
 var steer_camera := true
 
 
+func automation() -> Automation:
+	return Core.automation
+
+
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS  # keep scripting while the large map pauses the tree
+	if Core.automation == null or not CoreAPI.user_data_dir().begins_with("user://automation/"):
+		push_error("playthrough: not a test run (Core.automation is null); start with `-- --automation`. Quitting "
+				+ "without touching any save data.")
+		get_tree().quit(2)
+		return
+	automation().set_seed(1)
+	automation().set_fixed_timestep(60, int(FPS))
 	_start_frame = Engine.get_process_frames()
+	# Fresh game: slot 0 under user://automation/saves/ (test-run data dir), never the player's user://saves.
 	if Core.saves.has_save(AutoSave.SAVE_SLOT):
 		Core.saves.delete_save(AutoSave.SAVE_SLOT)
 	var layer := CanvasLayer.new()
@@ -81,7 +92,7 @@ func step(text: String) -> void:
 
 
 func _write_timeline() -> void:
-	var dir := ProjectSettings.globalize_path("res://").path_join("../.captures/t010").simplify_path()
+	var dir := ProjectSettings.globalize_path("res://").path_join("../.captures/T032").simplify_path()
 	DirAccess.make_dir_recursive_absolute(dir)
 	var name_ := scene_file_path.get_file().get_basename()
 	var f := FileAccess.open(dir.path_join(name_ + "_timeline.txt"), FileAccess.WRITE)
@@ -104,9 +115,7 @@ func player_cell() -> Vector2i:
 
 
 func wait(frames: int) -> void:
-	var target := Engine.get_process_frames() + frames
-	while Engine.get_process_frames() < target:
-		await get_tree().process_frame
+	await automation().advance_frames(frames)
 
 
 func wait_s(seconds: float) -> void:
@@ -162,7 +171,7 @@ static func path_to(tree: Dictionary, target: Vector2i) -> Array[Vector2i]:
 	return path
 
 
-# --- input (as a player would) --------------------------------------------------------------------------
+# --- input (through Core.automation) --------------------------------------------------------------------------
 
 func camera_yaw() -> float:
 	var fwd := -player().get_camera().global_basis.z
@@ -177,44 +186,44 @@ func hold_move(world_dir: Vector3, strength: float) -> void:
 
 func _axis(positive: StringName, negative: StringName, value: float) -> void:
 	if value > 0.001:
-		Input.action_press(positive, value)
-		Input.action_release(negative)
+		automation().press_action(positive, value)
+		release(negative)
 	elif value < -0.001:
-		Input.action_press(negative, -value)
-		Input.action_release(positive)
+		automation().press_action(negative, -value)
+		release(positive)
 	else:
-		Input.action_release(positive)
-		Input.action_release(negative)
+		release(positive)
+		release(negative)
+
+
+func release(action: StringName) -> void:
+	if Input.is_action_pressed(action):
+		automation().release_action(action)
 
 
 func release_move() -> void:
 	for a in MOVE_ACTIONS:
-		Input.action_release(a)
+		release(a)
 
 
 func tap(action: StringName, hold_frames := 3) -> void:
-	Input.action_press(action)
-	await wait(hold_frames)
-	Input.action_release(action)
+	await automation().tap_action(action, hold_frames)
 	await wait(2)
 
 
-## Viewport pixels -> window pixels. Injected events are in window coordinates and the canvas_items stretch scales
-## them to the 1280x590 viewport; in a real 1280x590 window (record.py) this is 1:1.
+## Viewport pixels -> window pixels, for raw events sent with Automation.inject_event() (window coordinates; the
+## canvas_items stretch scales them to the 1280x590 viewport). In a 1280x590 window (record.py) this is 1:1.
 func to_window(v: Vector2) -> Vector2:
 	var visible := get_viewport().get_visible_rect().size
-	var window := Vector2(get_tree().root.size)
+	var window := Vector2(get_window().size)
 	if visible.x <= 0.0 or window.x <= 0.0:
 		return v
 	return v * (window.x / visible.x)
 
 
+## Touch down/up at a viewport position, through Automation.touch().
 func touch(pos: Vector2, pressed: bool, index := 0) -> void:
-	var ev := InputEventScreenTouch.new()
-	ev.index = index
-	ev.position = to_window(pos)
-	ev.pressed = pressed
-	Input.parse_input_event(ev)
+	automation().touch(pos, pressed, index)
 
 
 func tap_screen(pos: Vector2, index := 0) -> void:
@@ -241,7 +250,7 @@ func turn_camera_toward(yaw: float) -> void:
 	ev.position = to_window(_orbit_pos + rel)
 	ev.relative = to_window(rel)
 	ev.screen_relative = to_window(rel)
-	Input.parse_input_event(ev)
+	automation().inject_event(ev)
 	# Keep the virtual finger near ORBIT_POS: lift and put it down again when it drifts too far.
 	_orbit_pos += rel
 	if absf(_orbit_pos.x - ORBIT_POS.x) > 200.0:

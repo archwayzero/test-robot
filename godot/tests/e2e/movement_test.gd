@@ -47,6 +47,7 @@ func test_e1_walk_and_run_speed() -> void:
 	assert_almost_eq(walk, PlayerController.WALK_SPEED, PlayerController.WALK_SPEED * SPEED_TOLERANCE, "walk speed")
 	assert_almost_eq(run, PlayerController.RUN_SPEED, PlayerController.RUN_SPEED * SPEED_TOLERANCE, "run speed")
 	print("E1 measured: walk %.3f m/s, run %.3f m/s (forward %s)" % [walk, run, forward])
+	checkpoint("end")
 
 
 func test_e2_stance_cycle() -> void:
@@ -87,6 +88,7 @@ func test_e2_stance_cycle() -> void:
 	assert_almost_eq(crouch, PlayerController.CROUCH_SPEED, PlayerController.CROUCH_SPEED * SPEED_TOLERANCE, "crouch")
 	assert_almost_eq(crawl, PlayerController.CRAWL_SPEED, PlayerController.CRAWL_SPEED * SPEED_TOLERANCE, "crawl")
 	print("E2 measured: stand height %.2f, crouch %.3f m/s, crawl %.3f m/s" % [stand_h, crouch, crawl])
+	checkpoint("end")
 
 
 ## A FULL cell next to a cell of clearance `kind` with an open edge between them: {"from", "to"} or {}.
@@ -104,6 +106,8 @@ func _entry_to(kind: MazeLayout.Clearance) -> Dictionary:
 
 
 func test_e3_low_passage() -> void:
+	expect_checkpoint("e3 crouch-cell try", 2)
+	expect_checkpoint("e3 crawl-cell try", 2)
 	assert_true(await start_game())
 	var stances: Array = []
 	player().stance_changed.connect(func(s: PlayerController.Stance) -> void: stances.append(s))
@@ -130,6 +134,7 @@ func test_e3_low_passage() -> void:
 		await tap(GameActions.STANCE_CYCLE)
 		assert_ne(player().get_stance(), PlayerController.Stance.STAND, "stand refused in CROUCH cell (try %d)" % attempt)
 		assert_true(player().get_collision_height() <= 1.0 + 0.001, "height <= 1.0 in CROUCH cell")
+		checkpoint("e3 crouch-cell try")
 		if player().get_stance() == PlayerController.Stance.CROUCH:
 			await tap(GameActions.STANCE_CYCLE)  # back to crawl for the next try
 	assert_false(PlayerController.Stance.STAND in stances, "no STAND in CROUCH cell: %s" % [stances])
@@ -166,10 +171,13 @@ func test_e3_low_passage() -> void:
 		await tap(GameActions.STANCE_CYCLE)
 		assert_eq(player().get_stance(), PlayerController.Stance.CRAWL, "crouch/stand refused in CRAWL cell (try %d)" % attempt)
 		assert_almost_eq(player().get_collision_height(), 0.5, 0.001, "crawl height in CRAWL cell")
+		checkpoint("e3 crawl-cell try")
 	assert_eq(stances, [], "no stance_changed in the CRAWL cell")
+	checkpoint("end")
 
 
 func test_e4_jump() -> void:
+	expect_checkpoint("e4 landed check")
 	assert_true(await start_game())
 	var events: Array = []
 	player().jumped.connect(func() -> void: events.append(["jumped", automation().get_frame()]))
@@ -190,6 +198,8 @@ func test_e4_jump() -> void:
 	assert_eq(names, ["jumped", "landed"], "jumped then landed")
 	if events.size() >= 2:
 		assert_true(int(events[1][1]) - t0 <= 60, "landed within 60 frames (%d)" % (int(events[1][1]) - t0))
+		print("E4 measured: landed %d frames after the jump press" % (int(events[1][1]) - t0))
+		checkpoint("e4 landed check")
 	assert_true(max_y > 0.3, "rose off the floor (max y %.2f)" % max_y)
 	# Crawl, then try to jump.
 	await tap(GameActions.STANCE_CYCLE)
@@ -203,9 +213,11 @@ func test_e4_jump() -> void:
 	assert_almost_eq(player().global_position.y, y0, 0.01, "stayed on the floor")
 	assert_eq(player().get_stance(), PlayerController.Stance.CRAWL, "still crawling")
 	print("E4 measured: max jump height %.2f m" % max_y)
+	checkpoint("end")
 
 
 func test_e5_wall_collision() -> void:
+	expect_checkpoint("e5 angle", 8)
 	assert_true(await start_game())
 	var start := layout().cell_to_world(layout().start_cell())
 	var min_dist := INF
@@ -230,5 +242,7 @@ func test_e5_wall_collision() -> void:
 				fail("angle %d deg frame %d: outside the grid at %s" % [i * 45, f, p])
 				break
 		release_move()
+		checkpoint("e5 angle")
 		await automation().advance_frames(2)
 	print("E5 measured: minimum distance to a wall plane %.3f m (%s)" % [min_dist, worst])
+	checkpoint("end")

@@ -1,8 +1,7 @@
 ## M3 mini-map end-to-end tests: TEST_PLAN.md E8 minimap_fresh, E9 minimap_reveal, E10 large_map. Owner: qa.
 ##
-## The public Minimap interface has no read access to what is drawn. Where available, the implementation's test
-## accessors get_marker_cell() / get_cell_color_model() are read duck-typed (has_method + call); their absence is a
-## failure, reported as a finding (they are not in public/minimap.gd).
+## What the map draws is read through the public Minimap test hooks get_marker_cell() and get_cell_color_model()
+## (public/minimap.gd; M1 finding F3, fixed in #28). No minimap internals are used.
 extends "res://tests/e2e/e2e_base.gd"
 
 
@@ -10,20 +9,13 @@ func _init() -> void:
 	timeout_frames = 3000
 
 
-func _marker_cell() -> Variant:
-	var m := main.get_minimap()
-	if not m.has_method("get_marker_cell"):
-		fail("Minimap has no get_marker_cell() (not in the public interface)")
-		return null
-	return m.call("get_marker_cell")
+func _marker_cell() -> Vector2i:
+	return main.get_minimap().get_marker_cell()
 
 
+## Cells the map draws (keys of the public colour model: visited cells only).
 func _drawn_cells() -> Array:
-	var m := main.get_minimap()
-	if not m.has_method("get_cell_color_model"):
-		fail("Minimap has no get_cell_color_model() (not in the public interface)")
-		return []
-	return _sorted((m.call("get_cell_color_model") as Dictionary).keys())
+	return _sorted(main.get_minimap().get_cell_color_model().keys())
 
 
 ## Plain (untyped) sorted copy, so typed and untyped arrays compare by content.
@@ -48,6 +40,7 @@ func test_e8_minimap_fresh() -> void:
 	assert_eq(_marker_cell(), start, "minimap marker in the start cell")
 	assert_eq(_drawn_cells(), [start], "only the start cell drawn")
 	assert_false(main.get_minimap().is_large_map_open())
+	checkpoint("end")
 
 
 func test_e9_minimap_reveal() -> void:
@@ -76,8 +69,14 @@ func test_e9_minimap_reveal() -> void:
 	assert_eq(ex.explored_count(), 6)
 	assert_eq(explored, expected_new, "cell_explored once per new cell, in order")
 	assert_eq(_drawn_cells(), _sorted(path), "minimap draws exactly the explored cells")
+	var model := main.get_minimap().get_cell_color_model()
+	for c: Variant in model:
+		var col: Variant = model[c]
+		assert_true(col is Color and (col as Color) != Color.BLACK,
+				"visited cell %s drawn in a non-black colour (%s)" % [c, col])
 	assert_eq(_marker_cell(), player_cell(), "marker follows the player")
 	print("E9 route: %s" % [path])
+	checkpoint("end")
 
 
 func test_e10_large_map() -> void:
@@ -113,3 +112,4 @@ func test_e10_large_map() -> void:
 	assert_false(get_tree().paused, "tree running")
 	assert_true(controls.visible, "controls back")
 	assert_eq(toggles, [true, false], "large_map_toggled once each way")
+	checkpoint("end")

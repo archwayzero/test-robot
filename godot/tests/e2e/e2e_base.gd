@@ -18,6 +18,9 @@ const WALL_THICKNESS := 0.6
 
 var main: GameMain
 var _initial_state: Dictionary
+## Checkpoint guard (T032): {tag: expected hit count} declared by the test, {tag: hits} recorded while it runs.
+var _checkpoints_expected := {}
+var _checkpoints_hit := {}
 
 
 func before_all() -> void:
@@ -31,6 +34,9 @@ func after_all() -> void:
 
 
 func before_each() -> void:
+	_checkpoints_expected.clear()
+	_checkpoints_hit.clear()
+	expect_checkpoint("end")  # every test calls checkpoint("end") as its last statement
 	await _unload()
 	_reset_state()
 	automation().set_seed(1)
@@ -38,9 +44,35 @@ func before_each() -> void:
 
 
 func after_each() -> void:
+	_verify_checkpoints()
 	_release_all()
 	await _unload()
 	_reset_state()
+
+
+# --- Checkpoint guard ----------------------------------------------------------------------------------
+# Godot 4.7.2 was seen to skip an `if` body that declares a local, inside a test coroutine whose locals are captured
+# by lambdas, after `await Core.automation.wait_until(<lambda>)` (condition true, body not run; repro in the T032
+# report). Assertions there would silently not run. Tests declare the checkpoints their conditional blocks must
+# reach; after_each() (its own stack frame) fails the test if one was not reached the expected number of times.
+
+## Declares that `tag` must be reached exactly `times` times during this test. Call at the top of the test.
+func expect_checkpoint(tag: String, times := 1) -> void:
+	_checkpoints_expected[tag] = times
+
+
+func checkpoint(tag: String) -> void:
+	_checkpoints_hit[tag] = int(_checkpoints_hit.get(tag, 0)) + 1
+
+
+func _verify_checkpoints() -> void:
+	for tag: String in _checkpoints_expected:
+		var want := int(_checkpoints_expected[tag])
+		var got := int(_checkpoints_hit.get(tag, 0))
+		if got != want:
+			fail("checkpoint '%s' reached %d times, expected %d (assertions skipped?)" % [tag, got, want])
+	_checkpoints_expected.clear()
+	_checkpoints_hit.clear()
 
 
 func _reset_state() -> void:

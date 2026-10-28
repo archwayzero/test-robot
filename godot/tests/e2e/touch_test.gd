@@ -1,9 +1,8 @@
 ## M5 controls end-to-end tests: TEST_PLAN.md E14 touch_joystick, E15 touch_buttons. Owner: qa.
 ##
 ## Touches go through Core.automation.touch()/drag()/inject_event() at viewport pixels (headless root resized to
-## 1280x590). The public TouchControls interface does not expose the button positions, so E15 derives them from
-## the layout documented in godot/modules/touch_controls/CLAUDE.md and its implementation constants
-## (Jump radius 60 and Stance radius 45, margins right 48 / bottom 32, gap 28) - a reported finding.
+## 1280x590). E15 taps the button centres from the public test hooks TouchControls.get_jump_rect() /
+## get_stance_rect() (viewport coordinates; M1 finding F4, fixed in T031). Only the centre is guaranteed to press.
 extends "res://tests/e2e/e2e_base.gd"
 
 ## Joystick radius from touch_controls/CLAUDE.md ("radius 90 px").
@@ -76,15 +75,23 @@ func test_e14_touch_joystick() -> void:
 	assert_almost_eq(Input.get_action_strength(GameActions.MOVE_FORWARD), 0.0, 0.001, "released after drag()")
 	print("E14 measured: 45 px -> %.3f (stick %.3f, running %s); 90 px -> %.3f (stick %.3f, running %s)"
 			% [half_strength, half_stick, half_running, full_strength, full_stick, full_running])
+	checkpoint("end")
 
 
 func test_e15_touch_buttons() -> void:
 	assert_true(await start_game())
 	await _place_in_corridor()
 	var controls := main.get_touch_controls()
-	var rect := controls.get_global_rect()
-	var jump_pos := rect.position + Vector2(rect.size.x - 48.0 - 60.0, rect.size.y - 32.0 - 60.0)
-	var stance_pos := Vector2(jump_pos.x - 60.0 - 28.0 - 45.0, rect.position.y + rect.size.y - 32.0 - 45.0)
+	var jump_rect := controls.get_jump_rect()
+	var stance_rect := controls.get_stance_rect()
+	var screen := get_viewport().get_visible_rect()
+	assert_true(jump_rect.has_area() and screen.encloses(jump_rect), "Jump rect %s on screen %s" % [jump_rect, screen])
+	assert_true(stance_rect.has_area() and screen.encloses(stance_rect), "Stance rect %s on screen" % [stance_rect])
+	assert_false(jump_rect.intersects(stance_rect), "Jump and Stance rects do not overlap")
+	var jump_pos := jump_rect.get_center()
+	var stance_pos := stance_rect.get_center()
+	print("E15 measured: jump rect %s (centre %s), stance rect %s (centre %s)" % [jump_rect, jump_pos, stance_rect,
+			stance_pos])
 	var jumps := [0]
 	var stances: Array = []
 	player().jumped.connect(func() -> void: jumps[0] += 1)
@@ -118,3 +125,4 @@ func test_e15_touch_buttons() -> void:
 	assert_true(flat(p1 - p0).length() > 1.0, "kept moving during the jump (%.2f m in 22 frames)" % flat(p1 - p0).length())
 	assert_true(flat(p2 - p1).length() > 0.5, "kept moving after Stance (%.2f m in 22 frames)" % flat(p2 - p1).length())
 	assert_false(main.get_minimap().is_large_map_open(), "no stray minimap tap")
+	checkpoint("end")
