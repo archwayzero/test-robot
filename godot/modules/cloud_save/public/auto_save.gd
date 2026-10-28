@@ -29,3 +29,11 @@ const MIN_INTERVAL_S := 10.0
 
 ## Saves now, ignoring the throttle (used on app background and by tests).
 @abstract func save_now() -> Error
+
+
+## Test hook: decodes a payload this AutoSave pushed to a CloudBackend. Returns {"saved_at_unix": int, "snapshot":
+## Dictionary} or {} if invalid. Format-agnostic, so end-to-end tests don't depend on the envelope format.
+## Not @abstract (added after the implementation shipped; the implementation overrides it, T029).
+func decode_cloud_payload(_data: PackedByteArray) -> Dictionary:
+	push_error("AutoSave.decode_cloud_payload() not implemented")
+	return {}
