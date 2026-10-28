@@ -1,5 +1,6 @@
 ## End-to-end smoke tests of the main scene (module game): boot order, ready_to_play, fresh start in the start cell
-## with exactly one explored cell, large map pause/phase, HUD safe-area insets, HUD input order.
+## with exactly one explored cell, large map pause/phase, HUD safe-area insets, HUD input order, saved stance restore
+## (T028) and a save/reload round trip (TEST_PLAN E12). Saves go to user://automation/ in test runs (Core.saves).
 ## Every test starts from a fresh state (no save in slot 0, no player/exploration keys) and frees the scene.
 extends TestCase
 
@@ -377,3 +378,109 @@ func test_touch_in_left_half_reaches_joystick_not_minimap() -> void:
 	automation().touch(from + Vector2(0, -90), false, 0)
 	await wait_frames(2)
 	assert_almost_eq(controls.get_stick_vector().length(), 0.0, 0.01)
+
+
+# --- Saved stance (T028) -------------------------------------------------------------------------------
+
+const Stance := PlayerController.Stance
+
+
+## Puts a valid saved position (start cell, slightly off-centre) and `stance` into Core.state, then boots.
+func _start_with_saved_stance(stance: Variant) -> bool:
+	var layout := MazeFactory.create().make_layout()
+	var pos := layout.cell_to_world(layout.start_cell()) + Vector3(0.1, 0.0, 0.1)
+	Core.state.set_value(StateKeys.MAZE_SEED, MazeFactory.GAME_SEED)
+	Core.state.set_value(StateKeys.PLAYER_POSITION, pos)
+	Core.state.set_value(StateKeys.PLAYER_YAW, 0.0)
+	Core.state.set_value(StateKeys.PLAYER_STANCE, stance)
+	var ok := await _start()
+	assert_true(main.call("spawned_from_save"), "saved position used")
+	return ok
+
+
+func _stance_restored() -> bool:
+	return (main.get("boot_log") as Array).has(MainImpl.STEP_STANCE_RESTORED)
+
+
+func test_saved_crouch_is_restored() -> void:
+	assert_true(await _start_with_saved_stance(StateKeys.STANCE_CROUCH))
+	assert_eq(main.get_player().get_stance(), Stance.CROUCH)
+	assert_true(_stance_restored())
+	await wait_frames(5)
+	assert_eq(main.get_player().get_stance(), Stance.CROUCH, "still crouched a few frames later")
+	assert_eq(Core.state.get_value(StateKeys.PLAYER_STANCE), StateKeys.STANCE_CROUCH)
+
+
+func test_saved_crawl_is_restored() -> void:
+	assert_true(await _start_with_saved_stance(StateKeys.STANCE_CRAWL))
+	assert_eq(main.get_player().get_stance(), Stance.CRAWL)
+	assert_true(_stance_restored())
+	await wait_frames(5)
+	assert_eq(main.get_player().get_stance(), Stance.CRAWL)
+
+
+func test_saved_stand_stays_stand() -> void:
+	assert_true(await _start_with_saved_stance(StateKeys.STANCE_STAND))
+	assert_eq(main.get_player().get_stance(), Stance.STAND)
+	assert_true(_stance_restored())
+
+
+func test_saved_stance_integral_float_is_accepted() -> void:
+	assert_true(await _start_with_saved_stance(1.0))
+	assert_eq(main.get_player().get_stance(), Stance.CROUCH)
+	assert_true(_stance_restored())
+
+
+func test_saved_stance_invalid_values_leave_stand() -> void:
+	for value: Variant in ["1", 1.5, NAN, INF, Vector2(1, 0), null]:
+		after_each()  # fresh scene and state for every value (the runner calls after_each once more at the end)
+		before_each()
+		assert_true(await _start_with_saved_stance(value), "ready with %s" % [value])
+		assert_eq(main.get_player().get_stance(), Stance.STAND, "STAND for %s" % [value])
+		assert_false(_stance_restored(), "restore_stance not called for %s" % [value])
+
+
+func test_saved_stance_out_of_range_is_stand() -> void:
+	assert_true(await _start_with_saved_stance(7))
+	assert_eq(main.get_player().get_stance(), Stance.STAND)
+	assert_true(_stance_restored(), "out-of-range ints are passed on (player treats them as STAND)")
+
+
+func test_fresh_start_does_not_restore_stance() -> void:
+	Core.state.set_value(StateKeys.PLAYER_STANCE, StateKeys.STANCE_CRAWL)  # stale stance, but no valid position
+	assert_true(await _start())
+	assert_false(main.call("spawned_from_save"))
+	assert_eq(main.get_player().get_stance(), Stance.STAND)
+	assert_false(_stance_restored(), "restore_stance not called on a fresh start")
+
+
+## TEST_PLAN E12 in spirit: crouch, save_now(), free the scene, reload: same stance, position within 0.1 m.
+func test_save_reload_round_trip_keeps_stance_and_position() -> void:
+	assert_true(await _start())
+	var player := main.get_player()
+	automation().tap_action(GameActions.STANCE_CYCLE)
+	assert_true(await automation().wait_until(func() -> bool: return player.get_stance() == Stance.CROUCH, 30),
+			"crouched after stance_cycle")
+	# Walk a little so the saved position differs from the start-cell spawn.
+	automation().press_action(GameActions.MOVE_FORWARD, 1.0)
+	await wait_frames(20)
+	automation().release_action(GameActions.MOVE_FORWARD)
+	await wait_frames(40)  # past the player's state-write throttle
+	var saved_position := player.global_position
+	var saved_stance := player.get_stance()
+	assert_eq(saved_stance, Stance.CROUCH)
+	assert_eq(main.get_auto_save().save_now(), OK)
+	assert_true(Core.saves.has_save(AutoSave.SAVE_SLOT))
+	# Free the scene and wipe the in-memory keys, so the reload must come from the save on disk.
+	remove_child(main)
+	main.free()
+	main = null
+	for key in [StateKeys.PLAYER_POSITION, StateKeys.PLAYER_YAW, StateKeys.PLAYER_STANCE, StateKeys.MAZE_SEED]:
+		Core.state.set_value(key, null)
+	assert_true(await _start())
+	assert_true(main.call("spawned_from_save"), "spawned from the save")
+	assert_true(_stance_restored())
+	assert_eq(main.get_player().get_stance(), saved_stance, "same stance after reload")
+	var p := main.get_player().global_position
+	assert_almost_eq(Vector2(p.x, p.z).distance_to(Vector2(saved_position.x, saved_position.z)), 0.0, 0.1,
+			"same position after reload")
