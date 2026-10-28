@@ -99,6 +99,65 @@ func test_throttle_one_immediate_then_one_after_interval() -> void:
 	assert_eq(events.size(), 2, "no save without a pending trigger")
 
 
+## Frames (Engine.get_process_frames()) at which `autosaved` fired.
+var save_frames: Array[int] = []
+
+
+func _start_recording_frames() -> void:
+	save_frames.clear()
+	auto_save.autosaved.connect(func(_e: Error, _ce: Error) -> void: save_frames.append(Engine.get_process_frames()))
+
+
+## M1 QA F2: the deferred save comes >= 10 s of game time after the first (300 frames at 30 fps), at most a frame later.
+## The first save here is triggered from the test coroutine (resumed on process_frame, before AutoSave._process).
+func test_throttle_deferred_save_after_full_interval_from_process() -> void:
+	_start()
+	_start_recording_frames()
+	await wait_frames(1)
+	_bump()
+	await wait_frames(3)
+	_bump()  # pending
+	await wait_frames(310)
+	assert_eq(save_frames.size(), 2, "immediate + deferred save")
+	if save_frames.size() == 2:
+		var gap := save_frames[1] - save_frames[0]
+		assert_between(gap, 300, 301, "deferred save gap %d frames (>= 10 s at 30 fps)" % gap)
+
+
+## Same, with the first save triggered during the physics step (as exploration does in the game).
+func test_throttle_deferred_save_after_full_interval_from_physics() -> void:
+	_start()
+	_start_recording_frames()
+	var bumps := [0]
+	var on_physics := func() -> void:
+		if bumps[0] < 2:
+			bumps[0] += 1
+			_bump()  # first: immediate save; second (next physics step): pending
+	get_tree().physics_frame.connect(on_physics)
+	await wait_frames(320)
+	get_tree().physics_frame.disconnect(on_physics)
+	assert_eq(bumps[0], 2)
+	assert_eq(save_frames.size(), 2, "immediate + deferred save")
+	if save_frames.size() == 2:
+		var gap := save_frames[1] - save_frames[0]
+		assert_between(gap, 300, 301, "deferred save gap %d frames (>= 10 s at 30 fps)" % gap)
+
+
+## A trigger at 299 frames is still inside the interval; it is saved exactly 300 frames after the first save.
+func test_throttle_trigger_just_before_interval_end_is_deferred_one_frame() -> void:
+	_start()
+	_start_recording_frames()
+	await wait_frames(1)
+	_bump()
+	await wait_frames(299)
+	_bump()
+	assert_eq(save_frames.size(), 1, "299 frames (9.97 s) is still inside the interval")
+	await wait_frames(3)
+	assert_eq(save_frames.size(), 2, "pending saved when the interval ended")
+	if save_frames.size() == 2:
+		assert_eq(save_frames[1] - save_frames[0], 300)
+
+
 func test_many_triggers_in_interval_give_one_pending_save() -> void:
 	_start()
 	_bump()
@@ -395,6 +454,81 @@ func test_envelope_round_trips_native_types_exactly() -> void:
 	assert_eq(typeof(env.snapshot.values[COUNT]), TYPE_INT)
 	for key: Variant in env.snapshot.values:
 		assert_eq(typeof(key), TYPE_STRING_NAME, "key %s stays StringName" % key)
+
+
+## M1 QA F1: floats survive the envelope bit-exactly (full_precision JSON), also inside vectors.
+func test_envelope_round_trips_awkward_floats_exactly() -> void:
+	var yaw32 := PackedFloat32Array([-PI / 2.0])[0]  # float32 yaw widened to double: -1.5707963705062866
+	var snap := {"phase": &"playing", "paused": false, "values": {
+		StateKeys.PLAYER_YAW: yaw32,
+		StateKeys.PLAYER_POSITION: Vector3(1.0 / 3.0, -2.0 / 3.0, 10.1),
+		&"x/third": 1.0 / 3.0,
+		&"x/pi": PI,
+		&"x/tiny": 1e-300,
+		&"x/small": 5e-7,
+		&"x/huge": 1.7976931348623157e308,
+		&"x/big": -1e22,
+		&"x/2pow60": 2.0 ** 60,
+		&"x/odd_big": 9007199254740993.0,
+		&"x/neg_zero": -0.0,
+		&"x/whole": 3.0,
+		&"x/f64": PackedFloat64Array([1.0 / 3.0, -PI]),
+		&"x/f32": PackedFloat32Array([1.0 / 3.0, -PI]),
+		&"x/typed": [1.0 / 7.0] as Array[float],
+		&"x/nested": {"k": {1.0 / 9.0: [2.0 / 3.0]}},
+		&"x/tiny_vec": Vector3(1e-38, -3.4e38, 0.1),
+		&"x/v2": Vector2(0.1, 0.2),
+		&"x/list": [0.1 + 0.2, Vector3(1.0 / 7.0, 2.0 / 9.0, -1.0 / 3.0)],
+	}}
+	var data := AutoSaveImpl.make_envelope(snap, 1700000000)
+	var env := AutoSaveImpl.parse_envelope(data)
+	assert_false(env.is_empty(), "envelope parsed")
+	if env.is_empty():
+		return
+	assert_eq(env.snapshot, snap, "decoded snapshot == original")
+	for key: Variant in snap.values:
+		var a: Variant = env.snapshot.values[key]
+		var b: Variant = snap.values[key]
+		assert_eq(typeof(a), typeof(b), "type of %s" % key)
+		assert_true(a == b, "%s: %s vs %s" % [key, var_to_str(a), var_to_str(b)])
+	# The e2e decoding path (JSON.parse_string + to_native) gives the same.
+	var raw: Variant = JSON.to_native(JSON.parse_string(data.get_string_from_utf8()), false)
+	assert_eq(raw.snapshot, snap)
+
+
+## The real autosave path: what the fake receives equals Core.state.snapshot() exactly, awkward floats included.
+func test_autosave_envelope_equals_state_with_awkward_floats() -> void:
+	_start()
+	Core.state.set_value(StateKeys.PLAYER_YAW, PackedFloat32Array([-PI / 2.0])[0])
+	Core.state.set_value(StateKeys.PLAYER_POSITION, Vector3(1.0 / 3.0, 0.1, -7.0 / 3.0))
+	_bump()
+	var expected := Core.state.snapshot()
+	assert_eq(fake.pushes.size(), 1)
+	var env := AutoSaveImpl.parse_envelope(fake.pushes[0].data)
+	assert_false(env.is_empty())
+	if not env.is_empty():
+		assert_eq(env.snapshot, expected, "envelope snapshot == Core.state.snapshot()")
+	Core.state.set_value(StateKeys.PLAYER_YAW, null)
+	Core.state.set_value(StateKeys.PLAYER_POSITION, null)
+
+
+## A full 20x20 maze state stays far below MAX_PAYLOAD_BYTES with full-precision floats and still parses.
+func test_envelope_size_for_20x20_maze() -> void:
+	var bits := PackedByteArray()
+	bits.resize(int(ceil(20 * 20 / 8.0)))
+	bits.fill(0xFF)
+	var snap := {"phase": &"playing", "paused": false, "values": {
+		StateKeys.PLAYER_POSITION: Vector3(1.0 / 3.0, 0.1, -7.0 / 3.0),
+		StateKeys.PLAYER_YAW: -1.5707963705062866,
+		StateKeys.PLAYER_STANCE: StateKeys.STANCE_CRAWL,
+		StateKeys.EXPLORATION_VISITED: Marshalls.raw_to_base64(bits),
+		StateKeys.EXPLORATION_COUNT: 400,
+		StateKeys.MAZE_SEED: 1234567890123,
+	}}
+	var data := AutoSaveImpl.make_envelope(snap, 1700000000)
+	assert_true(data.size() < 4096, "20x20 envelope is %d bytes" % data.size())
+	assert_true(data.size() <= AutoSaveImpl.MAX_PAYLOAD_BYTES)
+	assert_eq(AutoSaveImpl.parse_envelope(data).get("snapshot"), snap)
 
 
 func test_restore_cloud_snapshot_rejected_by_core_keeps_local() -> void:

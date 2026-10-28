@@ -2,7 +2,10 @@
 ##
 ## Save: Core.saves.save_game(SAVE_SLOT); on OK, record the UTC time in our own sidecar (meta_path()) and push our own
 ## envelope (see make_envelope()) to the backend. The local save never waits for the cloud.
-## Throttle: game time (sum of _process deltas, PROCESS_MODE_PAUSABLE so it stops while the tree is paused).
+## Throttle: game time (sum of _process deltas, PROCESS_MODE_PAUSABLE so it stops while the tree is paused). The
+## delta of the frame in which a save happened is not counted when that save ran before our _process (physics step,
+## signals, other nodes' _process): that frame's time elapsed before the save. So the deferred save fires exactly
+## MIN_INTERVAL_S of game time after the previous one (300 frames at 30 fps), not one frame early.
 ## Restore: the cloud envelope wins only if it is valid and strictly newer than the local sidecar timestamp (or no
 ## local save exists) and Core actually accepts its snapshot; otherwise the local slot is loaded.
 ## This module never reads core's save file; it only uses Core.state / Core.saves.
@@ -22,8 +25,9 @@ const ENVELOPE_VERSION := 2
 const MAX_PAYLOAD_BYTES := 1024 * 1024
 ## Deepest container nesting accepted in a cloud payload (raw JSON levels; a snapshot needs far fewer).
 const MAX_DEPTH := 64
-## Tolerance for float accumulation of frame deltas (300 * 1/30 may sum to 9.99999...).
-const _EPSILON := 0.0001
+## Tolerance for float accumulation of frame deltas (300 * 1/30 may sum to 9.99999...). Far below one frame, so
+## it can never make a save fire a frame early.
+const _EPSILON := 1e-6
 ## Variant types that must never come out of cloud data.
 const _FORBIDDEN_TYPES: Array[int] = [TYPE_OBJECT, TYPE_CALLABLE, TYPE_SIGNAL, TYPE_RID]
 
@@ -33,6 +37,8 @@ var _restoring := false
 var _pending := false
 ## Game seconds since the last save; starts "long ago" so the first trigger saves immediately.
 var _since_last_save := INF
+## Engine.get_process_frames() at the last save; that frame's delta is not added (see the class doc).
+var _last_save_frame := -1
 
 
 func _init() -> void:
@@ -59,7 +65,8 @@ func _notification(what: int) -> void:
 
 
 func _process(delta: float) -> void:
-	_since_last_save += delta
+	if Engine.get_process_frames() != _last_save_frame:
+		_since_last_save += delta
 	if _pending and _active and _since_last_save + _EPSILON >= MIN_INTERVAL_S:
 		_save()
 
@@ -80,6 +87,7 @@ func save_now() -> Error:
 func _save() -> Error:
 	_pending = false
 	_since_last_save = 0.0
+	_last_save_frame = Engine.get_process_frames()
 	var error := Core.saves.save_game(SAVE_SLOT)
 	var cloud_error: Error = ERR_SKIP  # local save failed: nothing to mirror
 	if error == OK:
@@ -137,7 +145,10 @@ static func _state_matches(snapshot: Dictionary) -> bool:
 
 # --- Envelope -------------------------------------------------------------------------------------------
 
-## The cloud payload, UTF-8 JSON of JSON.from_native({"format", "version", "saved_at_unix", "snapshot"}, false).
+## The cloud payload, UTF-8 JSON of JSON.from_native({"format", "version", "saved_at_unix", "snapshot"}, false),
+## decodable with JSON.to_native(..., false). Floats are kept exact (M1 QA F1): from_native writes a float as
+## "f:" + ~14 significant digits, so _encode() writes "f:" + the shortest round-trip text instead (same encoding,
+## more digits), and the JSON text is written with full_precision (vector/packed-array components are JSON numbers).
 static func make_envelope(snapshot: Dictionary, saved_at_unix: int) -> PackedByteArray:
 	var envelope := {
 		"format": ENVELOPE_FORMAT,
@@ -145,7 +156,31 @@ static func make_envelope(snapshot: Dictionary, saved_at_unix: int) -> PackedByt
 		"saved_at_unix": saved_at_unix,
 		"snapshot": snapshot,
 	}
-	return JSON.stringify(JSON.from_native(envelope, false)).to_utf8_buffer()
+	return JSON.stringify(_encode(envelope), "", true, true).to_utf8_buffer()
+
+
+## JSON.from_native(value, false), except that every float inside Dictionaries and Arrays is written exactly.
+static func _encode(value: Variant) -> Variant:
+	var encoded: Variant = JSON.from_native(value, false)
+	match typeof(value):
+		TYPE_FLOAT:
+			if is_finite(value):
+				return "f:" + JSON.stringify(value, "", true, true)
+		TYPE_ARRAY:
+			var items: Variant = encoded.get("args") if encoded is Dictionary else encoded
+			if items is Array and (items as Array).size() == (value as Array).size():
+				for i in (value as Array).size():
+					items[i] = _encode(value[i])
+		TYPE_DICTIONARY:
+			var args: Variant = (encoded as Dictionary).get("args") if encoded is Dictionary else null
+			var dict: Dictionary = value
+			if args is Array and (args as Array).size() == dict.size() * 2:
+				var i := 0
+				for key: Variant in dict:
+					args[i] = _encode(key)
+					args[i + 1] = _encode(dict[key])
+					i += 2
+	return encoded
 
 
 ## Returns {"saved_at_unix": int, "snapshot": Dictionary}, or {} if `data` is empty, corrupt, not ours, or carries
