@@ -251,7 +251,13 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
   throttle gap, player 4-7% of the frame in low passages). Two QA rounds per milestone are normal; budget for them.
 
 ### M2 art
-(to be filled in)
+- **The provided hero was upper body only** (T011): legs ended in capped stumps at mid-thigh; the "0.98 m tall"
+  figure in the asset notes was stump-to-head. Found by the modeler's first inspection render. The human supplied a
+  full-body reference; the modeler generates digitigrade legs. Next game: check every provided model with front/side/
+  below renders and a completeness checklist (head, hands, feet, pose) before planning, and ask for A-pose sources.
+- **Agent definitions cannot be updated through git inside the sandbox:** `.claude/agents/` is read-only to shell
+  commands, so `git switch`/`git pull` fail when a commit changes those files; the human ran the pull. Next game
+  (kit): make `.claude/agents/` writable for git in the sandbox, or keep agent rules that change during a run in docs/.
 
 ### M3 iOS device build
 (to be filled in)
