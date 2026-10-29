@@ -105,6 +105,13 @@ Tests run with the in-repo runner `godot/addons/test_runner/` (commands and form
 and NOTES.md. Produced by reference-director from a snapshot of the exported model via the ComfyUI workflow in
 `tools/comfy/workflows/`. Consumed by rigger-animator and qa. Guidance only, never an acceptance oracle on its own.
 
+## Turnaround references (before modelling)
+For any asset modelled from an image (or with generated parts), reference-director first produces a turnaround in
+`reference/<asset>/turnaround/` from the source image: orbit video(s), stills at 0/45/.../315 deg, contact sheet and
+NOTES.md (angle mapping, per-angle observations, listed AI inventions). The modeler renders its model at the same
+angles and compares side by side before reporting. Asset pipeline order: reference-director (turnaround) -> modeler
+-> reference-director (motion clips, animated assets) -> rigger-animator -> qa. Found in run 1 (T011/T038).
+
 ## Ownership
 | Path | Owner |
 |---|---|

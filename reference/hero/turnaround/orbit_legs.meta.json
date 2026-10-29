@@ -1,0 +1,15 @@
+{
+  "prompt_id": "38fe6d78-223d-44ae-894a-fd8b6e90bd1d",
+  "workflow": "ref_to_video.json",
+  "workflow_sha256": "69012be1197d6211031d2fdb82f326e44114c0888a5cd00e4c76d83f057cd553",
+  "params": {
+    "image": "legs_input.png",
+    "seconds": 9,
+    "seed": 202,
+    "prompt": "Close-up product turntable of the mechanical legs in <Picture 1>. The legs fill the frame from top to bottom: the rust-stained armoured thigh plates at the top edge, the blade tips touching the floor at the bottom edge, large in frame. The legs are a still object and do not move at all; no walking, no stepping. Only the camera moves: one slow full 360-degree horizontal orbit around the legs at knee height at constant speed, keeping the same close distance, from the left side, around the back, the right side, the front, and back to the left side. Plain neutral grey seamless studio background, even soft studio lighting, realistic 3D render, sharp detail. Keep exactly the same design as <Picture 1> from every angle: wide boxy rust-stained armoured thigh plates to the knee, a large rounded knee joint, thin dark mechanical shins bent backwards (digitigrade), a small coil spring at the ankle, and each foot split into three separate long curved blade tines that curve forward and touch the ground at their tips."
+  },
+  "outputs": [
+    "MiniMax_H3_00003_.mp4"
+  ],
+  "created": "2026-10-29T03:48:41+00:00"
+}

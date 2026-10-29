@@ -1,0 +1,5 @@
+outs:
+- md5: 1c6bc883ef529851249639b274a907fc
+  size: 143074
+  hash: md5
+  path: legs_input.png
