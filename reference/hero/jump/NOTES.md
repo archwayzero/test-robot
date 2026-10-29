@@ -54,6 +54,8 @@ For a game jump, split this into takeoff (0-28), air/apex (28-44) and land (44-8
 
 ## Known artifacts
 - The look drifted: shiny bronze/gold armour and a gold face, a floor/spotlight, the camera closer than the input.
+- Unlike the treadmill clips, this clip shows a visible floor line and a cast shadow, so it gives a usable
+  ground-contact reference (blades leave the ground ~28, landing contact ~44-46).
 - The hood touches the top edge at the apex.
 - The jump height is small (as asked, to keep it in frame). Scale the height to gameplay physics.
 - A generated motion guide, not ground truth.

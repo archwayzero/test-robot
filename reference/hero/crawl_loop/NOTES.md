@@ -32,18 +32,25 @@ floor. The character does not stand up."
    (probably triggered by the "no spots" wording).
 3. **Seed 1603: accepted.** The background is described only in positive terms. Clean.
 
-## Cycle and key poses (near = camera-side limbs; on all fours the near/far limbs separate better than when standing)
-- **Near leg extended back** (thigh plate near horizontal, shin and hook trailing far behind): ~0-15, ~60-69,
-  ~138-150.
-- **Near knee planted under the hip** (thigh plate near vertical, knee pod on the floor, hook arching up behind): ~24-42,
-  ~72-87, ~117-126.
-- **Near hand lift / reach** (hand curled, swinging forward): ~21, ~51-54, ~102, ~135. **Near hand plant**: ~3-6
-  frames after each lift (e.g. ~57, ~108).
+## Cycle and key poses (re-checked frame by frame after review)
+Near and far legs **cannot be reliably separated**: in this profile one thigh plate dominates the silhouette, and the
+leg behind it is mostly hidden. So the ranges below describe the *visible* leg phase, not a named leg.
+- **Leg extended back** (thigh plate near horizontal, shin and hook trailing far behind, hips low): ~0-16, ~56-68,
+  ~104-118. A weak, partial extension at ~138-144 (the knee stays near the floor).
+- **Knee planted under the hip** (thigh plate near vertical, knee pod on the floor, hook arching up behind, hips high):
+  ~20-52, ~72-100, ~120-134 and ~146-156 (at 142-156 the knee is planted, not extended).
+- Transitions: extended -> knee-under at ~16-20, ~68-72, ~118-122; knee-under -> extended at ~52-56, ~100-104.
+- **Hand lift / reach** (hand curled, swinging forward): ~18-22, ~50-54, ~100-104, ~132-136. **Hand plant**: ~3-6
+  frames after each lift (e.g. ~56, ~106, ~138).
 - **Highest** torso: the knee-under phases (hips up). **Lowest**: the leg-extended phases (hips drop, body stretched).
-- The full near-leg cycle is ≈ 60-75 frames (2.5-3 s), uneven. About two cycles in the clip.
+- **One alternation** (extended -> knee-under -> extended) lasts ≈ **48-56 frames (2.0-2.3 s)**: extended starts at
+  ~0, ~56, ~104. If each alternation is one leg (likely, but not visible), a full two-leg crawl cycle = two
+  alternations ≈ **100-108 frames (≈ 4.3 s)**. After ~120 the pattern degrades (the knee stays down to the end).
 
-**Loop:** 60 -> 138 (near leg extended -> extended, 78 frames). The seam needs a few frames of blending because the cycle
-is not perfectly periodic.
+**Loop:** 0 -> 104 (extended -> extended, two alternations = one full two-leg cycle, 104 frames). The frames 0, 56 and
+104-108 are nearly the same pose, so 56 -> 104 (48 frames) also loops as a single alternation if the rigger mirrors it
+for the other leg. Blend a few frames at the seam; the cycle is not perfectly periodic. The earlier 60 -> 138 range
+was wrong (138 is in a knee-planted phase).
 
 ## Known artifacts
 - The contralateral pattern (hand + opposite knee) is only roughly followed. The hands move more often than the

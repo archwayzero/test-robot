@@ -14,7 +14,7 @@ range, artifacts). Frame numbers are 0-based source frames at 24 fps. In-game cl
 | crouch_idle_loop | `crouch_idle_loop/` | 1301 | 1 | usable: starts standing, sinks into the crouch; use the hold | 60-122 (hold) |
 | crouch_walk_loop | `crouch_walk_loop/` | 1401 | 1 | **good**: low body, legs kept (stride 46 f) | 24-118 (2 strides) |
 | crawl_idle_loop | `crawl_idle_loop/` | 1502 | 2 | usable: steady pose, legs fold correctly; legs overlap, minimal motion | 0-122 |
-| crawl_loop | `crawl_loop/` | 1603 | 3 | usable: correct on-all-fours leg fold; cycle irregular | 60-138 (1 cycle) |
+| crawl_loop | `crawl_loop/` | 1603 | 3 | usable: correct on-all-fours leg fold; cycle irregular | 0-104 (2 alternations of ~52 f = 1 full two-leg cycle); 56-104 = 1 alternation |
 | jump | `jump/` | 1703 | 3 | usable for phases/poses; **look drifted** (bronze/gold, closer camera) | one-shot 0-80 (takeoff 0-28, air 28-44, land 44-80) |
 
 The generator **kept the digitigrade legs and three-tine hook feet in all 8 accepted clips**. None of them turned the
