@@ -14,10 +14,11 @@ Metrics (evaluated deformed mesh, every frame):
 - max edge stretch: largest length ratio (stretch or compression) of any edge >= 5 mm vs. rest, and the bone that
   dominates it. Informational (weight-painting weak spots), not a pass/fail criterion.
 - leg min z / knee-down / knee slip: lowest thigh/knee-pod/shin vertex over the clip; crawl: share of frames each
-  knee rests (lowest vertex <= 1 cm; the idle needs 100%) and knee slip (same rule as blades) while it rests.
+  knee rests (lowest vertex <= 5 mm; the idle needs 100%) and knee slip (same rule as blades) while it rests.
 - arm-torso / leg-leg / thigh-torso: penetration = depth of the 3rd-deepest vertex of one part found inside the other
-  part (ray-parity test, majority of 3 directions, candidates up to 20 cm from the surface, so deep intersections
-  are found; shoulder seam ignored), max over frames (cm) and frames with > 1 cm.
+  part (ray-parity test, majority of 7 directions, candidates up to 20 cm from the surface, so deep intersections
+  are found; shoulder seam ignored; arm vertices already inside the torso at rest are excluded), max over frames
+  (cm) and frames with > 1 cm.
 """
 import sys
 
@@ -70,15 +71,6 @@ def faces_of(mask):
 torso_faces = faces_of(torso_mask)
 torso_hi_faces = faces_of(torso_hi_mask)
 leg_faces = {s: faces_of(leg_w[s] > 0.5) for s in "lr"}
-# armpit seam: arm vertices of the armpit band (rest z > 1.10) that are within 5 cm of the torso at rest sit in the
-# torso's arm opening, where the parity test is ambiguous (one is modeled inside the torso); they are the arm-torso
-# connection, not an intersection. Everywhere else on the arm the test applies.
-_rb = BVHTree.FromPolygons([Vector(c) for c in rest], torso_faces, all_triangles=False)
-arm_ids = {s: np.array([i for i in arm_ids[s]
-                        if not (rest[i, 2] > 1.10 and _rb.find_nearest(Vector(rest[i]), 0.05)[0] is not None)])
-           for s in "lr"}
-
-
 def eval_co():
     dg = bpy.context.evaluated_depsgraph_get()
     ob = hero.evaluated_get(dg)
@@ -91,15 +83,29 @@ def eval_co():
     return co @ M[:3, :3].T + M[:3, 3]
 
 
-RAY_DIRS = [Vector((0.267, 0.534, 0.802)).normalized(), Vector((-0.80, 0.27, -0.53)).normalized(),
-            Vector((0.33, -0.89, 0.30)).normalized()]
+def _fib_dirs(n):
+    """n well-spread unit directions (Fibonacci sphere)."""
+    out = []
+    for i in range(n):
+        z = 1 - 2 * (i + 0.5) / n
+        r = (1 - z * z) ** 0.5
+        a = i * 2.399963 + 0.3
+        out.append(Vector((r * np.cos(a), r * np.sin(a), z)))
+    return out
+
+
+RAY_DIRS = _fib_dirs(7)
 
 
 def inside(bvh, p, max_hits=24):
-    """Ray-parity inside test against a (possibly open) part surface: majority vote of 3 ray directions (odd hit
-    count = inside). No depth limit (the old nearest-face normal test only saw points within 4 cm)."""
-    votes = 0
-    for k, d in enumerate(RAY_DIRS):
+    """Ray-parity inside test against a (possibly open) part surface: majority vote of 7 well-spread ray directions
+    (odd hit count = inside). The parts are not watertight (arm openings, waist, shoulder seam); with only 3 rays a
+    point beside the torso's arm opening could be voted inside by rays leaking through the opening (measured: 3
+    upper-arm vertices of idle_loop beside the armpit, 4-5 cm *outside* the torso, flagged at 4.8 cm). 7 rays: 145 of
+    165 sampled interior torso points detected (3 rays: 147), no false hits at rest. No depth limit."""
+    odd = even = 0
+    need = len(RAY_DIRS) // 2 + 1
+    for d in RAY_DIRS:
         o, n = p.copy(), 0
         for _ in range(max_hits):
             loc, nrm, idx, dist = bvh.ray_cast(o, d)
@@ -107,10 +113,23 @@ def inside(bvh, p, max_hits=24):
                 break
             n += 1
             o = loc + d * 1e-5
-        votes += n % 2
-        if votes >= 2 or (k == 1 and votes == 0):
+        if n % 2:
+            odd += 1
+        else:
+            even += 1
+        if odd >= need or even >= need:
             break
-    return votes >= 2
+    return odd >= need
+
+
+# armpit seam: only arm vertices that are already inside the torso at rest (modeled into the torso's arm opening)
+# are excluded; every other arm vertex is tested, so "inside now AND not inside at rest" is what counts.
+_rb = BVHTree.FromPolygons([Vector(c) for c in rest], torso_faces, all_triangles=False)
+REST_INSIDE = {s: [i for i in arm_ids[s] if _rb.find_nearest(Vector(rest[i]), 0.20)[0] is not None
+                   and inside(_rb, Vector(rest[i]))] for s in "lr"}
+arm_ids = {s: np.array(sorted(set(arm_ids[s].tolist()) - set(REST_INSIDE[s])), dtype=int) for s in "lr"}
+print("armpit exclusion (arm verts inside the torso at rest):", {s: len(v) for s, v in REST_INSIDE.items()},
+      "tested:", {s: len(v) for s, v in arm_ids.items()})
 
 
 def penetration(co, ids, faces, reach=0.20):
@@ -232,10 +251,10 @@ for act in bpy.data.actions:
     slip = max(worst_slip.values()) * 100
     hslip = max(worst_hand.values()) * 100 if name.startswith("crawl") else float("nan")
     kslip = max(worst_knee.values()) * 100 if name.startswith("crawl") else float("nan")
-    # knee contact (crawl): per side, frames where the knee is down (lowest thigh/pod/shin vertex <= 1 cm) and the
+    # knee contact (crawl): per side, frames where the knee is down (lowest thigh/pod/shin vertex <= 5 mm) and the
     # highest such resting value; the idle must rest on both knees in every frame
     if name.startswith("crawl"):
-        kdown = {s: [z for z in knee_low[s] if z <= 0.01] for s in "lr"}
+        kdown = {s: [z for z in knee_low[s] if z <= 0.005] for s in "lr"}
         kfrac = min(len(kdown[s]) / len(knee_low[s]) for s in "lr")
         kcol = f"{leg_min:+.3f} / {kfrac * 100:.0f}% / {kslip:.2f}"
     else:

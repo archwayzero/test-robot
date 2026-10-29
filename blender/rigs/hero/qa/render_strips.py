@@ -25,13 +25,13 @@ PAIRS = {
     "walk_loop": [(30, 23), (34, 2), (38, 4), (44, 7), (52, 11), (66, 19)],
     # contact A 2 -> our 0; stride 16 src = our 18
     "jog_loop": [(2, 0), (4, 2), (6, 4), (10, 9), (12, 11), (14, 13)],
-    # contact A 14 -> our 0; stride 46 src = our 36
-    "crouch_walk_loop": [(14, 0), (18, 3), (24, 8), (38, 19), (42, 22), (48, 27)],
+    # contact A 14 -> our 0 (left strike); stride 46 src = our 30
+    "crouch_walk_loop": [(14, 0), (18, 3), (24, 7), (38, 16), (42, 18), (48, 22)],
     # leg extended back (src 0) -> our 19 (left knee at the back end of stance); 104 src = our 36
     "crawl_loop": [(0, 19), (10, 22), (20, 26), (36, 31), (52, 1), (70, 7)],
-    # game-timed jump: dip 20 -> 2, blades off 28 -> 3/4, apex 34 -> 12, descent 42 -> 21, contact 46 -> 27,
-    # compression 54 -> 31, settled 80 -> 40
-    "jump": [(0, 0), (20, 2), (28, 4), (34, 12), (42, 21), (46, 27), (54, 31), (80, 40)],
+    # game-timed jump (clip starts at launch): push-off extension 26 -> 0, blades off 28 -> 1, apex 34 -> 11,
+    # descent 42 -> 19, contact 46 -> 25, compression 54 -> 29, settled 80 -> 38
+    "jump": [(26, 0), (28, 1), (34, 11), (42, 19), (46, 25), (54, 29), (80, 38)],
     "idle_loop": [(0, 0), (20, 20), (48, 48), (82, 80)],
     "crouch_idle_loop": [(60, 0), (80, 40), (100, 80), (122, 120)],
     "crawl_idle_loop": [(0, 0), (40, 30), (80, 60), (122, 90)],
