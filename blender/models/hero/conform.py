@@ -1,4 +1,4 @@
-"""T011 hero conform: Tripo upper body (provided) + generated digitigrade legs -> hero_model.blend.
+"""T011 hero conform (pass 4): Tripo upper body (provided) + continuous digitigrade legs -> hero_model.blend.
 
 Build (re-runnable, deterministic), then export:
   python3 tools/qa/memguard.py --expect-peak-mb 2000 -- blender -b -P blender/models/hero/conform.py
@@ -7,33 +7,32 @@ Build (re-runnable, deterministic), then export:
     --out godot/assets/hero/model/hero.glb --no-anim
 
 Steps:
-  1. Import source/hero.glb (untouched), merge split vertices, drop the encoded custom normals, remove the
-     stump caps (two clean 18-vertex boundary loops at mid-thigh).
-  2. Decimate the upper body just enough that body + legs <= TRI_TARGET (face, hands and stumps protected).
-  3. Rotate 180 deg about Z (front -> Blender +Y -> Godot -Z), scale so the hood top is at 1.75 m.
-  4. Generate the legs (bmesh) in the same mesh, one closed piece per rigid part so per-bone rigid weights stay easy.
-     Proportions measured on reference/hero/full_body.png (791 px = 1.75 m), checked per angle against
-     reference/hero/turnaround/ (pass 3); H = ankle/tine-root height = 0.24 m (full_body.md's "hock height"):
-       thigh plate   extruded from the stump loop down to the knee (z 0.47; seam closed) with a raised cuff ridge,
-                     a segment groove and a narrowed outer side (hand clearance)              -> thigh bone
-       knee pod      rounded capsule at the plate's front-bottom, z 0.41-0.56 (45/90 deg)     -> shin bone
-       shin          S-shaped tapered strut knee (z 0.46) -> hock (z 0.33), nearly vertical    -> shin bone
-       metatarsal    hock bulb -> shaft down and back -> thin core -> ankle block (z = H);
-                     ~43 deg rest bend at the hock                                            -> metatarsal bone
-       spring        3-turn coil around the core just above the ankle                         -> metatarsal bone
-       3 tines       nested reverse-C blades: leave the ankle BACKWARD at ~hock height, rearmost 0.88/0.73/0.60 H
-                     behind, sweep down, tips hook FORWARD (+0.38 H on the ground / +0.16 H / -0.05 H, raised
-                     and splayed sideways so they stay separate)                              -> foot/toe bone
-     Edge loops at the knee, hock and ankle. The surface centroid is asserted to lie over the ground contact.
-  5. Leg UVs (one island per tube/cap, shelf-packed), second PBR material with Cycles-baked procedural textures
-     (base colour 1024, normal 1024, roughness/metallic 512). Metal/rust colours, roughness and metallic are sampled
-     from the Tripo textures around the stump. Rust coverage is calibrated on a baked noise map (empirical
-     quantiles, re-baked until it matches): the top of the cuff matches the Tripo thigh just above the seam
-     (visible outer/front half), grading over 1.5-6.5 cm below the seam to the reference's heavier plate rust
-     (50 %, reference ochre tone); knee pod, shins and blades stay sparse (per-part face attribute, removed).
-  6. Body textures: base colour 4096 -> 2048 (budget), roughness/metallic 2048 -> 1024 (texture-memory budget),
-     normal kept at 2048.
-  7. Save hero_model.blend (images packed). Export separately (command above).
+  1. Import source/hero.glb (untouched), merge split vertices, drop the encoded custom normals.
+  2. Cut the Tripo thighs at the hip line (z = CUT_Z = 0.78 m after scaling, below the hip disc and under the
+     hand): everything of the thighs below it is removed; one clean boundary loop per side remains.
+  3. Build ONE continuous leg per side (bmesh), welded to that loop, measured on reference/hero/full_body.png
+     (landmark sheet: qa/ref_landmarks.py -> .captures/T011/v4/reference_landmarks.json; 453 px/m):
+       - thigh plate: lofted from the cut loop along the thigh axis (hip disc centre -> knee, 0.4245 m) with a
+         cuff band, two telescoping segment lines (reference z 0.737 / 0.631 = fractions 0.342 / 0.595 of the
+         thigh), boxy superellipse sections (depth 0.15-0.16 m, width 0.13 -> 0.11 m), a slanted bottom edge
+         (back 2 cm higher) that rolls inwards into
+       - the knee / shin: the same surface continues as a 16-sided loft: knee bulb under the plate (depth 9 cm),
+         tapering shin slanting back, the hock bend, the metatarsal (12-sided), a coil-spring thread (4 turns)
+         and the ankle cap. Side profile = the measured front/back edge offsets of the near reference shin.
+       - knee pod: rounded capsule at the plate's front-bottom, boolean-unioned (welded) into the plate/shin.
+       - three nested reverse-C tines per foot: centrelines = the traced reference polylines of the planted
+         foot (in ankle heights H), roots embedded in the shin/spring and boolean-unioned (welded).
+     Edge loops at the hip (cut loop), the plate grooves, the knee, the hock, the ankle and along the tines.
+     Face attributes kept in the .blend for measurement / weighting (not exported): lm_part (1 plate, 2 groove,
+     3 rim, 4 shin, 5 spring, 6 ankle, 7 pod, 10/11/12 outer/middle/inner tine), lm_t (position along the part).
+  4. Decimate the upper body so body + legs <= TRI_TARGET (face, hands and the cut loops protected).
+  5. Rotate 180 deg about Z (front -> Blender +Y -> Godot -Z), scale so the hood top is at 1.75 m, join, weld.
+  6. Leg UVs (one island per loft section / part, shelf-packed), second PBR material with Cycles-baked procedural
+     textures (base colour 1024, normal 1024, roughness/metallic 512); rust coverage calibrated on the baked noise:
+     Tripo-matched next to the seam, the reference's heavy ochre on the plates, dark segment lines, sparse rust
+     on the darker shins and feet.
+  7. Body textures: base colour 4096 -> 2048, roughness/metallic 2048 -> 1024, normal kept at 2048.
+  8. Save hero_model.blend (images packed). Export separately (command above).
 """
 import array
 import math
@@ -42,6 +41,7 @@ import os
 import bmesh
 import bpy
 from mathutils import Matrix, Vector
+from mathutils.kdtree import KDTree
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "source", "hero.glb")
@@ -51,48 +51,51 @@ TEX = os.path.join(HERE, "textures")
 HEAD_TOP = 1.75          # m, hood top
 SCALE = 1.12             # upper-body scale (proportions measured against reference/hero/full_body.png)
 TRI_TARGET = 19800       # total, leaves margin under the 20,000 character budget
-STUMP_MAX_Z = 0.03       # source units: stump boundary loops live below this
+CUT_Z = 0.78             # m (final): Tripo thighs are cut here (one simple loop per side, below the hip disc)
 LEG_TEX = {"basecolor": 1024, "normal": 1024, "rm": 512}
 
-# ---- leg layout (m). F = forward offset from the stump centre (+Y = front), z = height.
-PLATE_BOTTOM_Z = 0.47
-PLATE_X_MAX = 0.175      # outer |x| of the plate body (hand inner surface is at |x| ~0.22)
-RIDGE_X_MAX = 0.180      # outer |x| of the cuff ridge
-# H = ankle (tine root, spring) height = the "hock height" of reference/hero/full_body.md (105-110 px of 791 px
-# for 1.75 m -> 0.235-0.243 m). Knee pod spans z 0.425-0.557 there; the spring sits ~0.15 m behind the knee pod.
-POD_TOP = (-0.006, 0.545)             # knee pod axis top (forward offset from the plate front, z)
-POD_BOT = (-0.036, 0.425)             # knee pod axis bottom
-POD_R = (0.030, 0.037)                # half lateral, half depth
-KNEE = (-0.034, 0.462)                # knee pivot (inside the pod's lower half)
-SHIN_D = (-0.008, -0.134)             # knee -> hock (forward, z): nearly vertical, S-shaped
-SHIN_S = [(0, 0), (-0.30, 0.38), (0.30, 0.72), (1, 1)]   # S control points as fractions of SHIN_D
-SHIN_R = (0.023, 0.030)               # shin half lateral, half depth at the knee (tapers to ~55 %)
-ANKLE_Z = 0.240                       # = H
-ANKLE_BACK = -0.120                   # ankle forward offset from the knee pivot (reference ~-0.15; -0.12 keeps
-                                      # the ground contact under the centre of mass)
-SPRING_T = (0.665, 0.965)             # spring span along the metatarsal (fraction hock -> ankle)
-SPRING_R, SPRING_WIRE, SPRING_TURNS, SPRING_SEG = 0.0165, 0.0036, 3.0, 6
-# tines: (name, control points (forward of the ankle, height) in H, lateral at root, lateral at tip (x side), samples)
-TINES = [("outer", [(0.26, 1.25), (0.02, 1.21), (-0.35, 1.13), (-0.60, 1.02), (-0.78, 0.88), (-0.87, 0.73),
-                    (-0.87, 0.59), (-0.78, 0.44), (-0.66, 0.33), (-0.52, 0.27), (-0.32, 0.10), (-0.12, 0.01), (0.10, 0.0),
-                    (0.38, 0.0)], 0.006, 0.024, 19),
-         ("middle", [(0.13, 1.12), (-0.10, 1.06), (-0.38, 0.97), (-0.57, 0.87), (-0.69, 0.76), (-0.74, 0.63),
-                     (-0.71, 0.50), (-0.64, 0.40), (-0.53, 0.31), (-0.36, 0.17), (-0.16, 0.085), (0.05, 0.065), (0.16, 0.08)],
-          0.0, 0.004, 15),
-         ("inner", [(0.02, 0.98), (-0.18, 0.93), (-0.38, 0.84), (-0.53, 0.72), (-0.60, 0.58), (-0.58, 0.44),
-                    (-0.47, 0.28), (-0.34, 0.15), (-0.20, 0.075), (-0.05, 0.045)], -0.006, -0.018, 12)]
-TINE_W = (0.009, 0.0045)  # half width (lateral) root -> tip
-TINE_T = (0.0058, 0.0032) # half thickness (in profile) root -> tip
-# rust coverage (fraction of the surface classified as rust, same classifier as the Tripo sampling):
-#   top 3 cm below the seam = the Tripo thigh just above it (measured), grading over the next 5 cm to the
-#   reference's heavier plate rust; shins/blades sparse. Thresholds come from the baked noise's empirical quantiles.
-RUST_FRAC_PLATE = 0.50
+# ---- measured leg layout (reference_landmarks.json; near leg unless noted). Rest pose = neutral standing.
+HIP = (0.0686, 0.8708)   # hip joint (y, z): centre of the Tripo hip disc (reference: disc centre, z 0.881)
+THIGH_LEN = 0.4245       # hip -> knee (reference near leg)
+THIGH_FWD_DEG = 2.0      # rest-pose thigh tilt forward (pose-dependent; the reference near leg is 9 deg BACK)
+SPLAY_THIGH_DEG = 3.0    # front view: the plates splay outwards (legs_000)
+SPLAY_SHIN_DEG = 5.0
+KNEE_TO_ANKLE = 0.2606   # mean of the near (0.2626) and far (0.2587) legs
+HOCK_T = 0.4855          # hock position along knee -> ankle (shin 0.1266 / metatarsal 0.1342)
+ANKLE_Z = 0.2229         # H = ankle height of the planted reference foot (101 px)
+PLATE_FRAC_GROOVES = (0.342, 0.595)   # segment lines, fractions of the hip->knee length
+PLATE_BOTTOM_UP = (0.016, 0.035)      # plate bottom above the knee centre along the thigh: front, back
+# shin side profile: (t along knee->ankle, depth, width, forward offset of the centre from the knee-ankle line);
+# depth/offset from the near reference shin edges, width from the front view (legs_000)
+SHIN_ST = [(0.00, 0.090, 0.076, 0.000), (0.13, 0.082, 0.070, -0.0045), (0.25, 0.064, 0.058, -0.0070),
+           (0.38, 0.038, 0.042, 0.0015), (HOCK_T, 0.029, 0.035, 0.0055), (0.58, 0.027, 0.033, 0.0060)]
+META_ST = [(0.65, 0.026, 0.031, 0.0050), (0.76, 0.024, 0.028, 0.0030), (0.84, 0.022, 0.026, 0.0020)]
+SPRING_T = (0.865, 0.985)
+SPRING_CORE, SPRING_AMP, SPRING_TURNS, SPRING_RPT = 0.0085, 0.0045, 4.0, 6
+ANKLE_ST = [(1.00, 0.021, 0.022, 0.0), (1.035, 0.017, 0.018, 0.0)]
+POD = {"up": (-0.035, 0.095), "fwd_gap": 0.008, "r_fwd": 0.026, "r_lat": 0.036, "out": 0.016}
+# tines: traced centrelines of the planted (far) reference foot, px; ankle (141, 699), H = 101 px
+REF_ANKLE_PX, REF_H_PX = (141.0, 699.0), 101.0
+TINE_PX = {
+    "outer": [(118, 643), (127, 658), (131, 664), (139, 673), (150, 681), (160, 686), (170, 689), (181, 691), (191, 694),
+              (201, 699), (210, 704), (219, 716), (223, 726), (225, 734), (222, 746), (216, 758), (208, 768), (196, 778),
+              (186, 786), (176, 793), (166, 798), (158, 800), (140, 800), (120, 800), (104, 800)],
+    "middle": [(132, 683), (140, 684), (150, 685), (160, 689), (170, 692), (181, 694), (191, 697), (200, 702), (208, 708),
+               (215, 718), (219, 728), (219, 740), (213, 756), (205, 768), (195, 778), (186, 786), (180, 790)],
+    "inner": [(143, 697), (150, 696), (160, 696), (170, 698), (180, 703), (190, 710), (197, 720), (200, 730), (201, 742),
+              (200, 754), (196, 766), (190, 776), (184, 781)],
+}
+# (lateral offset outward m, half width lateral root/tip, half thickness in profile root/tip, samples, part id)
+TINE_SPEC = {"outer": (0.006, (0.0055, 0.0035), (0.0036, 0.0020), 30, 10),     # flat blades, ~1.1 cm wide
+             "middle": (-0.006, (0.0050, 0.0032), (0.0032, 0.0020), 22, 11),
+             "inner": (-0.006, (0.0050, 0.0035), (0.0029, 0.0029), 18, 12)}
+# rust coverage (fraction of the surface classified as rust, same classifier as the Tripo sampling)
+RUST_FRAC_PLATE = 0.37                # measured on the near reference plate (qa/ref_rust.py)
 RUST_THR_SHIN = 0.66
-RUST_PART = {"thigh plate": 1.0}      # other parts (knee pod, shin, metatarsal, spring, tines): sparse rust
-# reference plate rust tone (linear), eyeballed from the orange patches of full_body.png / legs_090.png
-REF_RUST_LO, REF_RUST_HI = (0.15, 0.065, 0.012), (0.33, 0.15, 0.022)
-RUST_EDGE = 0.025                     # smoothstep width of the rust patch edge (crisp patches)
-SEAM_FULL, SEAM_BLEND = 0.015, 0.065  # m below the seam: Tripo density down to 1.5 cm, plate density from 6.5 cm
+REF_RUST_LO, REF_RUST_HI = (0.056, 0.032, 0.010), (0.159, 0.084, 0.021)   # measured (linear)
+RUST_EDGE = 0.025
+SEAM_FULL, SEAM_BLEND = 0.012, 0.050  # m below the seam: Tripo density down to 1.2 cm, plate density from 5 cm
+PLATE_BOTTOM_Z = 0.47                 # lowest plate height (rust calibration region)
 
 
 def log(*a):
@@ -118,17 +121,31 @@ bm = bmesh.new()
 bm.from_mesh(me)
 bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
 TOP_SRC = max(v.co.z for v in bm.verts)
-caps = [f for f in bm.faces if all(v.co.z < 0.004 for v in f.verts)]
-bmesh.ops.delete(bm, geom=caps, context="FACES_ONLY")
-for v in [v for v in bm.verts if not v.link_faces]:
-    bm.verts.remove(v)
-log("source tris", src_tris, "caps removed", len(caps))
+# final transform: 180 deg about Z (front -> +Y), uniform scale, hood top at HEAD_TOP
+M = (Matrix.Translation((0, 0, HEAD_TOP - TOP_SRC * SCALE)) @ Matrix.Diagonal((SCALE, SCALE, SCALE, 1.0))
+     @ Matrix.Rotation(math.pi, 4, "Z"))
+CUT_SRC = (CUT_Z - (HEAD_TOP - TOP_SRC * SCALE)) / SCALE
+LEG_X_SRC = 0.2 / SCALE  # thigh region |x| (the hands hang outside it)
 
 
-def stump_loops(bm, max_z):
-    """Return {side: ordered vert loop} for the two stump boundary loops."""
+def cut_thighs(bm):
+    """Bisect the thighs at CUT_SRC and delete everything of them below. Returns {side: ordered loop verts}."""
+    reg = [f for f in bm.faces if all(abs(v.co.x) < LEG_X_SRC for v in f.verts)
+           and min(v.co.z for v in f.verts) < CUT_SRC]
+    geom = list({e for f in reg for e in f.edges}) + reg + list({v for f in reg for v in f.verts})
+    bmesh.ops.bisect_plane(bm, geom=geom, dist=1e-7, plane_co=(0, 0, CUT_SRC), plane_no=(0, 0, 1))
+    below = [f for f in bm.faces if all(abs(v.co.x) < LEG_X_SRC for v in f.verts)
+             and max(v.co.z for v in f.verts) <= CUT_SRC + 1e-7]
+    bmesh.ops.delete(bm, geom=below, context="FACES")
+    for v in [v for v in bm.verts if not v.link_faces]:
+        bm.verts.remove(v)
+    return cut_loops(bm, CUT_SRC, 1e-6)
+
+
+def cut_loops(bm, zc, tol):
+    """{side: ordered boundary loop at height zc}, each starting at its back-most vertex."""
     out = {}
-    bnd = [e for e in bm.edges if e.is_boundary and max(v.co.z for v in e.verts) < max_z]
+    bnd = [e for e in bm.edges if e.is_boundary and all(abs(v.co.z - zc) < tol for v in e.verts)]
     for side in (1, -1):
         es = [e for e in bnd if e.verts[0].co.x * side > 0]
         adj = {}
@@ -136,21 +153,28 @@ def stump_loops(bm, max_z):
             a, b = e.verts
             adj.setdefault(a, []).append(b)
             adj.setdefault(b, []).append(a)
-        assert all(len(n) == 2 for n in adj.values()), "stump loop is not a simple loop"
-        start = next(iter(adj))
+        assert adj and all(len(n) == 2 for n in adj.values()), "cut loop is not a simple loop"
+        start = min(adj, key=lambda v: (v.co.y, v.co.x))
         loop, prev, cur = [start], None, start
         while True:
-            nxt = [v for v in adj[cur] if v is not prev][0]
+            if prev is None:
+                nxt = min(adj[cur], key=lambda v: (v.co.x, v.co.y))
+            else:
+                nxt = [v for v in adj[cur] if v is not prev][0]
             if nxt is start:
                 break
             loop.append(nxt)
             prev, cur = cur, nxt
-        assert len(loop) == len(adj), "stump boundary has several loops"
+        assert len(loop) == len(adj), "cut boundary has several loops on one side"
         out[side] = loop
     return out
 
 
-# ----------------------------------------------------------------------------------------------- legs
+loops_src = cut_thighs(bm)
+log("source tris", src_tris, "cut loops", {s: len(l) for s, l in loops_src.items()})
+
+
+# ----------------------------------------------------------------------------------------------- helpers
 def catmull(pts, n):
     """Uniform Catmull-Rom through pts (Vectors), n samples, end points included."""
     P = [pts[0] + (pts[0] - pts[1])] + pts + [pts[-1] + (pts[-1] - pts[-2])]
@@ -193,28 +217,59 @@ def polyline_length(pts):
     return sum((pts[i] - pts[i - 1]).length for i in range(1, len(pts)))
 
 
+def superellipse(theta, a, b, n):
+    c, s = math.cos(theta), math.sin(theta)
+    return (a * math.copysign(abs(c) ** (2 / n), c), b * math.copysign(abs(s) ** (2 / n), s))
+
+
+def frame(T):
+    """Lateral (world +X sense) and forward (+Y sense) unit axes perpendicular to the tangent T."""
+    T = T.normalized()
+    X = Vector((1, 0, 0))
+    L = (X - T * X.dot(T)).normalized()
+    F = T.cross(L).normalized()
+    if F.y < 0:
+        F = -F
+    return L, F
+
+
+def angles_from(start, n, direction):
+    return [start + direction * 2 * math.pi * j / n for j in range(n)]
+
+
+def fractions(phis, direction):
+    p0 = phis[0]
+    return [((p - p0) * direction) % (2 * math.pi) / (2 * math.pi) for p in phis]
+
+
 class Builder:
     def __init__(self, bm, mat_index):
         self.bm = bm
-        self.uv = bm.loops.layers.uv.active
+        self.uv = bm.loops.layers.uv.active or bm.loops.layers.uv.new("UVMap")
         self.mat = mat_index
-        self.islands = []      # list of (list of (loop, Vector2 local uv in m))
-        self.faces = []
-        self.sharp = []
-        self.parts = {}        # part name -> triangle count
-        self.geo = {}          # measured leg geometry for the log
-        # per-part rust factor (face attribute read by the bake material, removed afterwards)
-        self.rl = bm.faces.layers.float.get("rustpart") or bm.faces.layers.float.new("rustpart")
+        self.islands = []
+        self.lay = {k: bm.faces.layers.float.get(k) or bm.faces.layers.float.new(k)
+                    for k in ("rustpart", "dark", "lm_part", "lm_t")}
+        self.parts = {}
 
-    def count(self, part, faces):
-        self.parts[part] = self.parts.get(part, 0) + sum(len(f.verts) - 2 for f in faces)
+    def tag(self, faces, part, t=0.0, rust=0.0, dark=0.0, name=None):
         for f in faces:
-            f[self.rl] = RUST_PART.get(part, 0.0)
+            f[self.lay["lm_part"]] = part
+            f[self.lay["lm_t"]] = t
+            f[self.lay["rustpart"]] = rust
+            f[self.lay["dark"]] = dark
+        if name:
+            self.parts[name] = self.parts.get(name, 0) + sum(len(f.verts) - 2 for f in faces)
 
-    def ring_strip(self, rings, sharp_rings=(), sharp_long=False):
-        """Quads between consecutive rings (lists of verts, equal length, closed). One UV island."""
+    def face(self, verts, mat=None):
+        f = self.bm.faces.new(verts)
+        f.material_index = self.mat if mat is None else mat
+        f.smooth = True
+        return f
+
+    def ring_strip(self, rings):
+        """Quads between consecutive rings (equal length, closed); one UV island. Returns face rows."""
         n = len(rings[0])
-        # local UV: u = arclength around the ring, centred; v = distance along
         perims, cum = [], []
         for r in rings:
             d = [(r[(k + 1) % n].co - r[k].co).length for k in range(n)]
@@ -229,30 +284,45 @@ class Builder:
         wmax = max(perims)
         uvs = [[Vector((cum[i][k] - perims[i] / 2 + wmax / 2, vpos[i])) for k in range(n + 1)]
                for i in range(len(rings))]
-        isl, faces = [], []
+        isl, rows = [], []
         for i in range(len(rings) - 1):
+            row = []
             for k in range(n):
                 k1 = (k + 1) % n
-                f = self.bm.faces.new((rings[i][k], rings[i][k1], rings[i + 1][k1], rings[i + 1][k]))
-                f.material_index = self.mat
-                f.smooth = True
+                f = self.face((rings[i][k], rings[i][k1], rings[i + 1][k1], rings[i + 1][k]))
                 for loop, uv in zip(f.loops, (uvs[i][k], uvs[i][k + 1], uvs[i + 1][k + 1], uvs[i + 1][k])):
                     isl.append((loop, uv))
-                faces.append(f)
+                row.append(f)
+            rows.append(row)
         self.islands.append(isl)
-        self.faces += faces
-        for i in sharp_rings:
-            for k in range(n):
-                self.sharp.append(self.bm.edges.get((rings[i][k], rings[i][(k + 1) % n])))
-        if sharp_long:
-            for i in range(len(rings) - 1):
-                for k in range(n):
-                    self.sharp.append(self.bm.edges.get((rings[i][k], rings[i + 1][k])))
+        return rows
+
+    def planar_island(self, faces, origin, ax, ay):
+        isl = []
+        for f in faces:
+            for loop in f.loops:
+                d = loop.vert.co - origin
+                isl.append((loop, Vector((d.dot(ax), d.dot(ay)))))
+        self.islands.append(isl)
+
+    def zipper(self, A, fa, B, fb):
+        """Triangles between ring A (fractions fa) and ring B (fractions fb), both starting at fraction 0."""
+        faces = []
+        n, m = len(A), len(B)
+        i = j = 0
+        while i < n or j < m:
+            a_next = fa[i + 1] if i + 1 < n else 1.0
+            b_next = fb[j + 1] if j + 1 < m else 1.0
+            if i < n and (j >= m or a_next <= b_next):
+                faces.append(self.face((A[i % n], A[(i + 1) % n], B[j % m])))
+                i += 1
+            else:
+                faces.append(self.face((A[i % n], B[(j + 1) % m], B[j % m])))
+                j += 1
         return faces
 
-    def cap(self, ring, outward, sharp=True, bulge=0.0):
-        """Triangle fan (poke) closing a ring; normal oriented along `outward`; centre pushed out by `bulge` m."""
-        f = self.bm.faces.new(ring)
+    def cap(self, ring, outward, bulge=0.0):
+        f = self.face(ring)
         f.normal_update()
         if f.normal.dot(outward) < 0:
             f.normal_flip()
@@ -263,244 +333,259 @@ class Builder:
         c = sum((v.co for v in ring), Vector()) / len(ring)
         ax = (ring[0].co - c).normalized()
         ay = outward.normalized().cross(ax)
-        isl = []
         for nf in res["faces"]:
             nf.material_index = self.mat
             nf.smooth = True
-            for loop in nf.loops:
-                d = loop.vert.co - c
-                isl.append((loop, Vector((d.dot(ax), d.dot(ay)))))
-            self.faces.append(nf)
-        self.islands.append(isl)
-        if sharp:
-            n = len(ring)
-            for k in range(n):
-                self.sharp.append(self.bm.edges.get((ring[k], ring[(k + 1) % n])))
+        self.planar_island(res["faces"], c, ax, ay)
         return res["faces"]
 
-    def tube_rings(self, centers, lat, radii, sides, phase):
-        """Rings of `sides` verts around a path in a vertical plane; lat = lateral unit axis."""
+    def section_ring(self, C, T, phis, a, b, n, slant=0.0):
+        """Ring around centre C in the plane perpendicular to T at world angles phis (atan2(y, x) sense);
+        a = lateral half width, b = forward half depth; slant tilts the plane (front moves along +T)."""
+        L, F = frame(T)
+        Td = T.normalized()
+        ring = []
+        for ph in phis:
+            u, v = superellipse(ph, a, b, n)
+            ring.append(self.bm.verts.new(C + L * u + F * v + Td * (slant * v / b)))
+        return ring
+
+    def tube(self, centers, lat, radii, sides, phase):
         rings = []
         for i, c in enumerate(centers):
             t = (centers[min(i + 1, len(centers) - 1)] - centers[max(i - 1, 0)]).normalized()
             nrm = t.cross(lat).normalized()
             rx, rf = radii[i]
-            ring = []
-            for j in range(sides):
-                a = 2 * math.pi * j / sides + phase
-                ring.append(self.bm.verts.new(c + lat * (rx * math.cos(a)) + nrm * (rf * math.sin(a))))
-            rings.append(ring)
-        return rings
-
-    def closed_tube(self, part, centers, lat, radii, sides, phase, bulge=(0.0, 0.0), sharp_long=False):
-        """Closed tube (ring strip + two poked caps), normals outward. One rigid piece."""
-        rings = self.tube_rings(centers, lat, radii, sides, phase)
-        faces = self.ring_strip(rings, sharp_long=sharp_long)
-        faces += self.cap(rings[0], centers[0] - centers[1], sharp=not bulge[0], bulge=bulge[0])
-        faces += self.cap(rings[-1], centers[-1] - centers[-2], sharp=not bulge[1], bulge=bulge[1])
-        bmesh.ops.recalc_face_normals(self.bm, faces=faces)
-        self.count(part, faces)
+            rings.append([self.bm.verts.new(c + lat * (rx * math.cos(2 * math.pi * j / sides + phase))
+                                            + nrm * (rf * math.sin(2 * math.pi * j / sides + phase)))
+                          for j in range(sides)])
         return rings
 
 
-def superellipse(theta, a, b, n):
-    c, s = math.cos(theta), math.sin(theta)
-    return (a * math.copysign(abs(c) ** (2 / n), c), b * math.copysign(abs(s) ** (2 / n), s))
+# ----------------------------------------------------------------------------------------------- legs
+def leg_skeleton(cx, side):
+    """Hip, knee, ankle (world, final coordinates) and the shin direction for one side."""
+    Hp = Vector((cx, HIP[0], HIP[1]))
+    st, ft = math.radians(SPLAY_THIGH_DEG), math.radians(THIGH_FWD_DEG)
+    dt = Vector((side * math.sin(st), math.sin(ft) * math.cos(st), -math.cos(ft) * math.cos(st))).normalized()
+    K = Hp + dt * THIGH_LEN
+    ss = math.radians(SPLAY_SHIN_DEG)
+
+    def shin_dir(th):
+        return Vector((side * math.sin(ss), -math.sin(th) * math.cos(ss), -math.cos(th) * math.cos(ss)))
+    lo, hi = 0.0, 1.4
+    for _ in range(60):   # shin slant (from vertical, backwards) so the ankle lands at ANKLE_Z
+        th = (lo + hi) / 2
+        if (K + shin_dir(th) * KNEE_TO_ANKLE).z > ANKLE_Z:
+            hi = th
+        else:
+            lo = th
+    da = shin_dir(th)
+    A = K + da * KNEE_TO_ANKLE
+    Fs = frame(da)[1]
+    return Hp, dt, K, da, A, Fs, math.degrees(th)
 
 
-def build_legs(bm, loops, mat_index):
-    B = Builder(bm, mat_index)
-    for _key, loop in loops.items():
-        xs = [v.co.x for v in loop]
-        ys = [v.co.y for v in loop]
-        cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
-        side = 1 if cx > 0 else -1  # from the geometry (the loop keys predate the 180 deg turn)
-        X = Vector((side, 0, 0))    # outward lateral axis for this side
-        a0, b0 = (max(xs) - min(xs)) / 2, (max(ys) - min(ys)) / 2
-        z0 = sum(v.co.z for v in loop) / len(loop)
-        # start the loop at the back-most vertex (UV seam at the back), outward-consistent direction
-        i0 = min(range(len(loop)), key=lambda i: loop[i].co.y)
-        loop = loop[i0:] + loop[:i0]
-        if (loop[1].co.x - loop[0].co.x) * side < 0:
-            loop = [loop[0]] + loop[:0:-1]
-        thetas = [math.atan2(v.co.y - cy, (v.co.x - cx)) for v in loop]
-
-        # ---- thigh plate (down to the knee). Rings: (z, scale, superellipse exponent, forward offset, outer |x|)
-        # cuff joint at the seam: a 2 mm tuck under the Tripo edge, a raised 1 cm ridge band, a step back in;
-        # then the plate with one segment groove and the boxy bottom.
-        spec = [(z0 - 0.002, 0.985, 2.8, 0.000, RIDGE_X_MAX),    # tuck (joint line)
-                (z0 - 0.005, 1.065, 3.0, 0.000, RIDGE_X_MAX),    # ridge top edge
-                (z0 - 0.015, 1.065, 3.2, 0.000, RIDGE_X_MAX),    # ridge bottom edge
-                (z0 - 0.018, 1.025, 3.3, 0.000, PLATE_X_MAX),    # step in below the ridge
-                (0.578, 1.06, 3.5, 0.004, PLATE_X_MAX),
-                (0.573, 1.02, 3.5, 0.004, PLATE_X_MAX),          # segment groove
-                (0.568, 1.07, 3.5, 0.005, PLATE_X_MAX),
-                (PLATE_BOTTOM_Z, 1.10, 3.6, 0.010, PLATE_X_MAX),
-                (PLATE_BOTTOM_Z, 0.80, 3.4, 0.010, PLATE_X_MAX)]
-        rings = [loop]
-        for z, sc, n, df, xmax in spec:
-            sc_out = min(sc, max(0.5, (xmax - abs(cx)) / a0))   # narrow the outer half only
-            ring = []
-            for th in thetas:
-                ox, oy = superellipse(th, a0, b0 * sc, n)
-                ox *= sc_out if ox * side > 0 else sc
-                ring.append(bm.verts.new((cx + ox, cy + oy + df, z)))
-            rings.append(ring)
-        faces = B.ring_strip(rings, sharp_rings=(2, 3, 8, 9))
-        axis = []
-        for i in range(len(rings) - 1):
-            zc = (rings[i][0].co.z + rings[i + 1][0].co.z) / 2
-            axis += [Vector((cx, cy, zc))] * len(loop)
-        # the strip has one winding; judge it on the first (outer) segment and flip the whole strip if inward
-        s = 0.0
-        for f, p in zip(faces[:len(loop)], axis):
-            f.normal_update()
-            s += f.normal.dot(f.calc_center_median() - p)
-        if s < 0:
-            bmesh.ops.reverse_faces(bm, faces=faces)
-        faces += B.cap(rings[-1], Vector((0, 0, -1)), sharp=False)
-        B.count("thigh plate", faces)
-        plate_front = max(v.co.y for v in rings[8]) - cy
-        B.geo["plate_max_x"] = max(B.geo.get("plate_max_x", 0.0), max(abs(v.co.x) for r in rings[1:] for v in r))
-
-        def P(f, z):
-            return Vector((cx, cy + f, z))
-
-        # ---- knee pod: rounded capsule at the plate's front-bottom, top forward of the plate front, bottom
-        # below the plate (reference 45/90 deg; the 225/270 deg spur/fin is an AI invention and is ignored)
-        pt = P(plate_front + POD_TOP[0], POD_TOP[1])
-        pb = P(plate_front + POD_BOT[0], POD_BOT[1])
-        prof = [(0.0, 0.62), (0.14, 0.95), (0.45, 1.0), (0.80, 0.92), (1.0, 0.60)]
-        B.closed_tube("knee pod", [pb.lerp(pt, t) for t, _ in prof], X,
-                      [(POD_R[0] * k, POD_R[1] * k) for _, k in prof], 8, math.pi / 8,
-                      bulge=(0.011, 0.011))
-
-        # ---- shin: S-shaped tapered strut knee -> hock (forward under the knee, then back), thick at the top
-        K = P(plate_front + KNEE[0], KNEE[1])
-        J = K + Vector((0, SHIN_D[0], SHIN_D[1]))
-        sh_ctrl = [K + Vector((0, f * SHIN_D[0], z * SHIN_D[1])) for f, z in SHIN_S]
-        sh_dense = catmull(sh_ctrl, 120)
-        sh_t = [-0.10, 0.06, 0.32, 0.60, 0.90, 1.0]          # loops: knee (0.06), hock (0.90 / 1.0)
-        sh_r = [(0.92, 0.92), (1.0, 1.0), (0.84, 0.86), (0.70, 0.72), (0.60, 0.62), (0.56, 0.58)]
-
-        def along(dense, t):
-            if t <= 0:
-                return dense[0] + (dense[0] - dense[3]).normalized() * (-t) * polyline_length(dense)
-            L = polyline_length(dense) * t
-            acc = 0.0
-            for i in range(1, len(dense)):
-                seg = (dense[i] - dense[i - 1]).length
-                if acc + seg >= L:
-                    return dense[i - 1].lerp(dense[i], (L - acc) / seg)
-                acc += seg
-            return dense[-1]
-        B.closed_tube("shin", [along(sh_dense, t) for t in sh_t], X,
-                      [(SHIN_R[0] * a, SHIN_R[1] * b) for a, b in sh_r], 6, math.pi / 6)
-
-        # ---- metatarsal hock -> ankle (down and back): hock bulb, shaft, thin spring core, ankle block
-        A = P(K.y - cy + ANKLE_BACK, ANKLE_Z)
-        dm = (A - J).normalized()
-        LM = (A - J).length
-        mt = [(-0.13, 0.013), (-0.05, 0.021), (0.06, 0.020), (0.60, 0.014), (0.66, 0.008),
-              (0.97, 0.008), (1.04, 0.018), (1.15, 0.012)]
-        B.closed_tube("metatarsal", [J + dm * (LM * t) for t, _ in mt], X,
-                      [(r, r * 1.08) for _, r in mt], 6, math.pi / 6, bulge=(0.006, 0.005))
-
-        # ---- coil spring around the core (rigid with the metatarsal): helix, triangular wire section
-        e1 = X
-        e2 = dm.cross(X).normalized()
-        s0 = J + dm * (LM * SPRING_T[0])
-        s_len = LM * (SPRING_T[1] - SPRING_T[0])
-        nseg = int(SPRING_TURNS * SPRING_SEG)
-        hp = []
-        for i in range(nseg + 1):
-            t = i / nseg
-            ph = 2 * math.pi * SPRING_TURNS * t
-            hp.append((s0 + dm * (s_len * t) + (e1 * math.cos(ph) + e2 * math.sin(ph)) * SPRING_R, ph))
-        srings = []
-        for i, (p, ph) in enumerate(hp):
-            tg = (hp[min(i + 1, nseg)][0] - hp[max(i - 1, 0)][0]).normalized()
-            rad = (e1 * math.cos(ph) + e2 * math.sin(ph))
-            bn = tg.cross(rad).normalized()
-            rad = bn.cross(tg).normalized()
-            srings.append([bm.verts.new(p + (rad * math.cos(a) + bn * math.sin(a)) * SPRING_WIRE)
-                           for a in (2 * math.pi * j / 3 for j in range(3))])
-        sf = B.ring_strip(srings, sharp_long=False)
-        sf += B.cap(srings[0], hp[0][0] - hp[1][0], sharp=False)
-        sf += B.cap(srings[-1], hp[-1][0] - hp[-2][0], sharp=False)
-        bmesh.ops.recalc_face_normals(bm, faces=sf)
-        B.count("spring", sf)
-
-        # ---- three nested reverse-C tines per foot (reference/hero/full_body.md, in hock heights H = ankle z):
-        # leave the ankle BACKWARD, arch at ~hock height, rearmost point behind, sweep down, tips hook FORWARD.
-        Hh = ANKLE_Z
-        fa = A.y - cy
-        tine_paths = []
-        for name, ctrl, lat0, lat1, nsamp in TINES:
-            dense = catmull([Vector((0, fa + f * Hh, z * Hh)) for f, z in ctrl], 300)
-            path = resample_by_curvature(dense, nsamp, k_turn=0.03)
-            tine_paths.append((name, path, lat0, lat1, polyline_length(dense)))
-        lens, rear, tipsF, tipsZ = [], [], [], []
-        for name, path, lat0, lat1, L in tine_paths:
-            cum = [0.0]
-            for i in range(1, len(path)):
-                cum.append(cum[-1] + (path[i] - path[i - 1]).length)
-            Lp = cum[-1]
-            cen = [Vector((cx + side * (lat0 + (lat1 - lat0) * (c / Lp) ** 1.2), cy + p.y, p.z))
-                   for p, c in zip(path, cum)]
-            rad = []
-            for i, c in enumerate(cum):
-                t = c / Lp
-                w = TINE_W[0] * (1 - t) + TINE_W[1] * t
-                th = TINE_T[0] * (1 - t) + TINE_T[1] * t
-                k = 0.55 if i == len(cum) - 1 else 1.0         # pointed tip
-                rad.append((w * k * math.sqrt(2), th * k * math.sqrt(2)))
-            trings = B.tube_rings(cen, X, rad, 4, math.pi / 4)
-            tf = B.ring_strip(trings, sharp_long=True)
-            tf += B.cap(trings[0], cen[0] - cen[1])
-            tf += B.cap(trings[-1], cen[-1] - cen[-2])
-            bmesh.ops.recalc_face_normals(bm, faces=tf)
-            B.count("tines", tf)
-            lens.append(L)
-            rear.append(min(p.y for p in path) - fa)
-            tipsF.append(path[-1].y - fa)
-            tipsZ.append(path[-1].z)
-            B.tine_rings = getattr(B, "tine_rings", []) + [trings]
-        # contact exactly on y = 0: the outer tine's lowest vertex
-        outer_rings = B.tine_rings[-3]
-        drop = min(v.co.z for r in outer_rings for v in r)
-        for trs in B.tine_rings[-3:]:
-            for r in trs:
-                for v in r:
-                    v.co.z -= drop
-        B.geo.setdefault("contact_F", []).extend(
-            v.co.y for r in outer_rings for v in r if v.co.z < 0.004)
-        B.geo["cy"] = round(cy, 4)
-        B.geo["K"] = (round(K.y - cy, 3), round(K.z, 3))
-        B.geo["J"] = (round(J.y - cy, 3), round(J.z, 3))
-        B.geo["A"] = (round(A.y - cy, 3), round(A.z - drop, 3))
-        B.geo["shin_len"] = round(polyline_length(sh_dense), 3)
-        B.geo["meta_len"] = round(LM, 3)
-        B.geo["bend_deg"] = round(math.degrees((sh_dense[-1] - sh_dense[-8]).angle(dm)), 1)
-        B.geo["pod"] = (round((pt - pb).length + 0.022, 3), 2 * POD_R[0], 2 * POD_R[1],
-                        round(pb.z - 0.011, 3), round(pt.z + 0.011, 3))
-        B.geo["tine_len_H"] = [round(L / Hh, 2) for L in lens]
-        B.geo["tine_rear_H"] = [round(r / Hh, 2) for r in rear]
-        B.geo["tip_F_H"] = [round(f / Hh, 2) for f in tipsF]
-        B.geo["tip_z_m"] = [round(z - drop, 4) for z in tipsZ]
-        B.geo["plate_front_F"] = round(plate_front, 3)
-        B.geo["drop"] = round(drop, 4)
-    return B
+def shin_point(K, da, Fs, t, off):
+    return K + da * (KNEE_TO_ANKLE * t) + Fs * off
 
 
-def pack_islands(B, pad=0.004):
-    """Shelf-pack the builder's islands into [0,1]^2 with uniform scale (texel density equal everywhere)."""
+def build_leg(B, loop_co, side):
+    """One continuous leg, closed (top capped with material 2, removed after the union):
+    thigh plate -> rim -> knee bulb -> shin -> hock -> metatarsal -> spring -> ankle."""
+    bm = B.bm
+    xs = [c.x for c in loop_co]
+    ys = [c.y for c in loop_co]
+    cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+    z0 = sum(c.z for c in loop_co) / len(loop_co)
+    thetas = [math.atan2(c.y - cy, c.x - cx) for c in loop_co]
+    unw = [thetas[0]]
+    for th in thetas[1:]:
+        unw.append(unw[-1] + (th - unw[-1] + math.pi) % (2 * math.pi) - math.pi)
+    direction = 1 if unw[-1] > unw[0] else -1
+    Hp, dt, K, da, A, Fs, shin_deg = leg_skeleton(cx, side)
+    Lt, Ft = frame(dt)
+    geo = {"hip": Hp, "knee": K, "ankle": A, "shin_abs_deg": shin_deg, "dt": dt, "Ft": Ft, "da": da, "Fs": Fs}
+
+    top = [bm.verts.new(c) for c in loop_co]
+    rings = [top]
+
+    def scaled_loop(k, z):
+        return [bm.verts.new(Vector((cx + (c.x - cx) * k, cy + (c.y - cy) * k, z))) for c in loop_co]
+
+    def plate_centre(z):
+        s = (Hp.z - z) / -dt.z
+        return Hp + dt * s + Ft * (-0.013 * s / THIGH_LEN)
+
+    def plate_ring(z, hb, hw, n, slant=0.0, blend=None, k_loop=1.0):
+        r = B.section_ring(plate_centre(z), dt, thetas, hw, hb, n, slant=slant)
+        if blend is not None:      # blend towards the (scaled) Tripo loop shape at height z
+            for v, c in zip(r, loop_co):
+                v.co = v.co.lerp(Vector((cx + (c.x - cx) * k_loop, cy + (c.y - cy) * k_loop, z)), blend)
+        return r
+
+    zg1 = Hp.z + dt.z * THIGH_LEN * PLATE_FRAC_GROOVES[0]
+    zg2 = Hp.z + dt.z * THIGH_LEN * PLATE_FRAC_GROOVES[1]
+    zb = K.z - dt.z * (PLATE_BOTTOM_UP[0] + PLATE_BOTTOM_UP[1]) / 2
+    slant_b = (PLATE_BOTTOM_UP[1] - PLATE_BOTTOM_UP[0]) / 2   # front lower (moves along the downward axis)
+    spec = [
+        (lambda: scaled_loop(0.985, z0 - 0.003), 1),                                   # tuck under the Tripo edge
+        (lambda: plate_ring(z0 - 0.007, 0.083, 0.072, 3.0, blend=0.5, k_loop=1.035), 1),  # cuff band
+        (lambda: plate_ring(z0 - 0.017, 0.082, 0.071, 3.0), 1),
+        (lambda: plate_ring(z0 - 0.021, 0.077, 0.067, 3.1), 1),                         # step in below the cuff
+        (lambda: plate_ring(zg1 + 0.004, 0.076, 0.066, 3.2), 1),
+        (lambda: plate_ring(zg1, 0.072, 0.062, 3.2), 2),                                 # segment line 1
+        (lambda: plate_ring(zg1 - 0.004, 0.078, 0.067, 3.3), 1),
+        (lambda: plate_ring((zg1 + zg2) / 2, 0.0775, 0.065, 3.4), 1),
+        (lambda: plate_ring(zg2 + 0.004, 0.0775, 0.062, 3.4), 1),
+        (lambda: plate_ring(zg2, 0.0745, 0.059, 3.4), 2),                                # segment line 2
+        (lambda: plate_ring(zg2 - 0.004, 0.0800, 0.064, 3.5), 1),
+        (lambda: plate_ring((zg2 + zb) / 2, 0.0795, 0.058, 3.6), 1),
+        (lambda: plate_ring(zb, 0.0790, 0.054, 3.6, slant=slant_b), 1),                 # bottom edge (slanted)
+        (lambda: plate_ring(zb + 0.006, 0.0745, 0.050, 3.4, slant=slant_b), 3),         # inner lip
+    ]
+    kinds = []
+    for mk, kind in spec:
+        rings.append(mk())
+        kinds.append(kind)
+    rows = B.ring_strip(rings)
+    for i, row in enumerate(rows):
+        # the segment groove rows: the two strips touching a groove ring
+        groove = kinds[i] == 2 or (i > 0 and kinds[i - 1] == 2)
+        part = 2 if groove else kinds[i]
+        B.tag(row, part, t=i / len(rows), rust=1.0, dark=1.0 if groove else 0.0, name="thigh plate")
+    capf = B.face(top, mat=2)
+    capf.normal_update()
+    if capf.normal.z < 0:
+        capf.normal_flip()
+
+    # ---- knee / shin / metatarsal / spring / ankle: one 16 -> 12 sided loft starting inside the plate rim
+    ph16 = angles_from(thetas[0], 16, direction)
+    ph12 = angles_from(thetas[0], 12, direction)
+    zr = zb + 0.012 * -dt.z                      # recessed 1.2 cm inside the rim
+    t_top = (zr - K.z) / (da.z * KNEE_TO_ANKLE)   # negative: above the knee on the shin line
+    C0 = shin_point(K, da, Fs, t_top, 0.0)
+    r0 = B.section_ring(C0, dt, ph16, 0.072 / 2, 0.084 / 2, 2.4, slant=slant_b * 0.6)
+    zf = B.zipper(rings[-1], fractions(thetas, direction), r0, [j / 16 for j in range(16)])
+    B.planar_island(zf, plate_centre(zb), Lt, Ft)
+    B.tag(zf, 3, rust=1.0, name="thigh plate")
+
+    ctrl = [shin_point(K, da, Fs, t, off) for t, _, _, off in SHIN_ST + META_ST]
+    srings, ts = [r0], [t_top]
+    for i, (t, dep, wid, off) in enumerate(SHIN_ST):
+        prev = ctrl[i - 1] if i > 0 else C0
+        T = ctrl[i + 1] - prev
+        srings.append(B.section_ring(ctrl[i], T, ph16, wid / 2, dep / 2, 2.3 if t < 0.3 else 2.2))
+        ts.append(t)
+    rows = B.ring_strip(srings)
+    for i, row in enumerate(rows):
+        B.tag(row, 4, t=ts[i], name="knee/shin")
+    lower, mts = [], []
+    for j, (t, dep, wid, off) in enumerate(META_ST):
+        lower.append(B.section_ring(ctrl[len(SHIN_ST) + j], da, ph12, wid / 2, dep / 2, 2.2))
+        mts.append(t)
+    zf = B.zipper(srings[-1], [j / 16 for j in range(16)], lower[0], [j / 12 for j in range(12)])
+    B.planar_island(zf, ctrl[len(SHIN_ST) - 1], *frame(da))
+    B.tag(zf, 4, t=0.62, name="knee/shin")
+    # spring: helical thread on a thin core (4 turns), then the ankle block and a rounded cap
+    L12, F12 = frame(da)
+    nsp = int(SPRING_TURNS * SPRING_RPT)
+    for i in range(nsp + 1):
+        t = SPRING_T[0] + (SPRING_T[1] - SPRING_T[0]) * i / nsp
+        C = shin_point(K, da, Fs, t, 0.0)
+        helix = 2 * math.pi * SPRING_TURNS * i / nsp
+        ring = []
+        for ph in ph12:
+            bump = max(0.0, math.cos(ph * direction - helix)) ** 3
+            r = SPRING_CORE + SPRING_AMP * bump
+            ring.append(bm.verts.new(C + L12 * (math.cos(ph) * r) + F12 * (math.sin(ph) * r)))
+        lower.append(ring)
+        mts.append(t)
+    for t, dep, wid, off in ANKLE_ST:
+        lower.append(B.section_ring(shin_point(K, da, Fs, t, off), da, ph12, wid / 2, dep / 2, 2.2))
+        mts.append(t)
+    rows = B.ring_strip(lower)
+    for i, row in enumerate(rows):
+        t = mts[i]
+        part = 6 if t >= SPRING_T[1] - 1e-6 else (5 if t >= SPRING_T[0] - 0.03 else 4)
+        B.tag(row, part, t=t, name={4: "knee/shin", 5: "spring", 6: "ankle"}[part])
+    capf = B.cap(lower[-1], da, bulge=0.006)
+    B.tag(capf, 6, t=1.05, name="ankle")
+    geo["plate_front"] = plate_centre(zb) + Ft * 0.079
+    return geo
+
+
+def build_parts(B, geo, side):
+    """Knee pod and the three tines of one leg (closed tubes, unioned with the leg afterwards)."""
+    K, A, dt, Ft, da = geo["knee"], geo["ankle"], geo["dt"], geo["Ft"], geo["da"]
+    U = -dt
+    X = Vector((1, 0, 0))
+    # knee pod: capsule parallel to the thigh, its front 5 mm ahead of the plate front
+    pc = (geo["plate_front"] - K).dot(Ft) + POD["fwd_gap"] - POD["r_fwd"]
+    out = Vector((side * POD["out"], 0, 0))      # on the outer front corner of the plate (visible from the side)
+    p0 = K + U * POD["up"][0] + Ft * pc + out
+    p1 = K + U * POD["up"][1] + Ft * pc + out
+    prof = [(0.0, 0.55), (0.10, 0.90), (0.35, 1.0), (0.75, 0.97), (0.92, 0.80), (1.0, 0.50)]
+    cen = [p0.lerp(p1, t) for t, _ in prof]
+    rings = B.tube(cen, X, [(POD["r_lat"] * k, POD["r_fwd"] * k) for _, k in prof], 10, 0.0)
+    faces = [f for r in B.ring_strip(rings) for f in r]
+    faces += B.cap(rings[0], cen[0] - cen[1], bulge=0.010)
+    faces += B.cap(rings[-1], cen[-1] - cen[-2], bulge=0.010)
+    bmesh.ops.recalc_face_normals(B.bm, faces=faces)
+    B.tag(faces, 7, name="knee pod")
+    geo["pod"] = (p0, p1)
+
+    # tines: traced reference centrelines in ankle heights, placed at this ankle (rest pose: planted foot)
+    H = ANKLE_Z
+    Y = Vector((0, 1, 0))
+    Z = Vector((0, 0, 1))
+    geo["tines"] = {}
+    for name, px in TINE_PX.items():
+        lat, hw, ht, nsamp, pid = TINE_SPEC[name]
+        pts = [A + Y * ((REF_ANKLE_PX[0] - x) / REF_H_PX * H) + Z * ((REF_ANKLE_PX[1] - y + 1.0) / REF_H_PX * H)
+               + Vector((side * lat, 0, 0)) for x, y in px]   # +1 px: the traced line centre is 1 px above the ground
+        # embed the root inside the shin / spring core so the union welds it cleanly
+        if name == "outer":   # runs down the back of the shin: seat the first points 3 mm deeper, start on the axis
+            for i in range(3):
+                r = pts[i]
+                ax = K + da * (KNEE_TO_ANKLE * max(0.0, min(1.03, (r - K).dot(da) / KNEE_TO_ANKLE)))
+                pts[i] = r + (ax - r).normalized() * 0.003 * (3 - i) / 3
+            r = pts[0]
+            inner = K + da * (KNEE_TO_ANKLE * max(0.0, min(1.03, (r - K).dot(da) / KNEE_TO_ANKLE)))
+        else:                 # leave the spring core: extend 1.6 cm back along the tine's own start direction
+            inner = pts[0] + (pts[0] - pts[1]).normalized() * 0.016
+        dense = catmull([inner] + pts, 400)
+        path = resample_by_curvature(dense, nsamp, k_turn=0.025)
+        cum = [0.0]
+        for i in range(1, len(path)):
+            cum.append(cum[-1] + (path[i] - path[i - 1]).length)
+        Lp = cum[-1]
+        rad = []
+        for i, c in enumerate(cum):
+            t = c / Lp
+            k = 0.45 if i == len(cum) - 1 else (0.75 if i == len(cum) - 2 else 1.0)
+            rad.append(((hw[0] + (hw[1] - hw[0]) * t) * k, (ht[0] + (ht[1] - ht[0]) * t) * k))
+        trings = B.tube(path, X, rad, 6, math.pi / 6)
+        faces = []
+        for i, row in enumerate(B.ring_strip(trings)):
+            B.tag(row, pid, t=cum[i] / Lp, name="tines")
+            faces += row
+        c0 = B.cap(trings[0], path[0] - path[1])
+        c1 = B.cap(trings[-1], path[-1] - path[-2])
+        B.tag(c0, pid, t=0.0, name="tines")
+        B.tag(c1, pid, t=1.0, name="tines")
+        bmesh.ops.recalc_face_normals(B.bm, faces=faces + c0 + c1)
+        geo["tines"][name] = path
+
+
+def pack_islands(islands, pad=0.004):
+    """Shelf-pack islands (lists of (loop, local uv in m, uv layer)) into [0,1]^2 with uniform scale."""
     rects = []
-    for isl in B.islands:
-        us = [uv.x for _, uv in isl]
-        vs = [uv.y for _, uv in isl]
+    for isl in islands:
+        us = [uv.x for _, uv, _ in isl]
+        vs = [uv.y for _, uv, _ in isl]
         rects.append((min(us), min(vs), max(us) - min(us), max(vs) - min(vs)))
-    order = sorted(range(len(rects)), key=lambda i: -rects[i][3])
+    order = sorted(range(len(rects)), key=lambda i: (-round(rects[i][3], 6), i))
 
     def place(scale):
         x = y = shelf_h = 0.0
@@ -524,39 +609,89 @@ def pack_islands(B, pad=0.004):
         else:
             hi = mid
     pos = place(lo)
-    for i, isl in enumerate(B.islands):
+    for i, isl in enumerate(islands):
         mu, mv = rects[i][0], rects[i][1]
         px, py = pos[i]
-        for loop, uv in isl:
-            loop[B.uv].uv = (px + (uv.x - mu) * lo, py + (uv.y - mv) * lo)
+        for loop, uv, lay in isl:
+            loop[lay].uv = (px + (uv.x - mu) * lo, py + (uv.y - mv) * lo)
     return lo
 
 
-# ---------------------------------------------------------------------- budget: decimate the upper body
-loops = stump_loops(bm, STUMP_MAX_Z)
-ring_n = {s: len(l) for s, l in loops.items()}
-probe = bm.copy()
-probe_tris0 = sum(len(f.verts) - 2 for f in probe.faces)
-build_legs(probe, stump_loops(probe, STUMP_MAX_Z), 1)
-leg_tris = sum(len(f.verts) - 2 for f in probe.faces) - probe_tris0
-probe.free()
-body_tris0 = sum(len(f.verts) - 2 for f in bm.faces)
-log("stump loops", ring_n, "legs tris", leg_tris, "body tris (caps removed)", body_tris0)
+def new_object(name, bmx, mats):
+    mesh = bpy.data.meshes.new(name)
+    bmx.to_mesh(mesh)
+    for m in mats:
+        mesh.materials.append(m)
+    o = bpy.data.objects.new(name, mesh)
+    bpy.context.scene.collection.objects.link(o)
+    return o
 
+
+# ------------------------------------------------------------------------- legs (final coordinates)
+leg_mat = bpy.data.materials.new("hero_legs")
+cap_mat = bpy.data.materials.new("cut_cap_tmp")
+lbm, pbm = bmesh.new(), bmesh.new()
+B, PB = Builder(lbm, 1), Builder(pbm, 1)
+GEO = {}
+for s_src in sorted(loops_src):
+    pos = [M @ v.co for v in loops_src[s_src]]
+    side = 1 if sum(p.x for p in pos) > 0 else -1
+    GEO[side] = build_leg(B, pos, side)
+    build_parts(PB, GEO[side], side)
+leg_faces_closed = [f for f in lbm.faces]
+bmesh.ops.recalc_face_normals(lbm, faces=leg_faces_closed)
+pack_scale = pack_islands([[(l, uv, B.uv) for l, uv in isl] for isl in B.islands]
+                          + [[(l, uv, PB.uv) for l, uv in isl] for isl in PB.islands])
+leg_obj = new_object("legs_tmp", lbm, [body_mat, leg_mat, cap_mat])
+parts_obj = new_object("parts_tmp", pbm, [body_mat, leg_mat, cap_mat])
+lbm.free()
+pbm.free()
+mod = leg_obj.modifiers.new("union", "BOOLEAN")
+mod.operation = "UNION"
+mod.solver = "EXACT"
+mod.object = parts_obj
+mod.use_self = True
+bpy.context.view_layer.objects.active = leg_obj
+for o in bpy.context.scene.objects:
+    o.select_set(o is leg_obj)
+bpy.ops.object.modifier_apply(modifier=mod.name)
+bpy.data.objects.remove(parts_obj)
+lbm = bmesh.new()
+lbm.from_mesh(leg_obj.data)
+bmesh.ops.delete(lbm, geom=[f for f in lbm.faces if f.material_index == 2], context="FACES_ONLY")
+for v in [v for v in lbm.verts if not v.link_faces]:
+    lbm.verts.remove(v)
+lbm.to_mesh(leg_obj.data)
+leg_tris = sum(len(f.verts) - 2 for f in lbm.faces)
+_lp = lbm.faces.layers.float["lm_part"]
+_cnt = {}
+for f in lbm.faces:
+    _cnt[(int(round(f[_lp])), f.material_index)] = _cnt.get((int(round(f[_lp])), f.material_index), 0) + 1
+log("faces per (lm_part, material) after the union", dict(sorted(_cnt.items())))
+lbm.free()
+leg_obj.data.materials.pop()        # drop the temporary cap material slot
+log("leg parts tris (both legs, before the union)", {**B.parts, **PB.parts})
+log("legs tris after the union", leg_tris, "UV scale", round(pack_scale, 3), "->",
+    round(pack_scale * LEG_TEX["basecolor"]), "px/m")
+
+# ---------------------------------------------------------------------- budget: decimate the upper body
 bm.to_mesh(me)
 bm.free()
+body_tris0 = sum(len(p.vertices) - 2 for p in me.polygons)
 body_target = TRI_TARGET - leg_tris
+log("body tris after the cut", body_tris0, "target", body_target)
 if body_tris0 > body_target:
-    # weight 1 = may decimate, 0 = protect (face/hood front, hands, stump rings)
     vg = obj.vertex_groups.new(name="decimate")
     for v in me.vertices:
         c = v.co
-        protect = (c.z > 0.78 and c.y < 0.02) or (abs(c.x) > 0.17 and c.z < 0.40) or c.z < 0.05
+        protect = ((c.z > 0.78 and c.y < 0.02) or (abs(c.x) > 0.17 and c.z < 0.40)
+                   or (c.z < CUT_SRC + 0.01 and abs(c.x) < LEG_X_SRC))
         vg.add([v.index], 0.0 if protect else 1.0, "REPLACE")
     bpy.context.view_layer.objects.active = obj
-    obj.select_set(True)
+    for o in bpy.context.scene.objects:
+        o.select_set(o is obj)
     ratio = body_target / body_tris0
-    for _ in range(4):
+    for _ in range(6):
         mod = obj.modifiers.new("decimate", "DECIMATE")
         mod.decimate_type = "COLLAPSE"
         mod.ratio = ratio
@@ -575,49 +710,82 @@ if body_tris0 > body_target:
 body_tris1 = sum(len(p.vertices) - 2 for p in me.polygons)
 log("body tris after decimate", body_tris1)
 
-# ------------------------------------------------------------------------------- orient, scale, place
+# ------------------------------------------------------------------------- orient, scale, join, weld
+me.transform(M)
+me.update()
+for p in me.polygons:
+    p.use_smooth = True
+me.materials.append(leg_mat)
+bpy.ops.object.select_all(action="DESELECT")
+leg_obj.select_set(True)
+obj.select_set(True)
+bpy.context.view_layer.objects.active = obj
+bpy.ops.object.join()
 bm = bmesh.new()
 bm.from_mesh(me)
-loops = stump_loops(bm, STUMP_MAX_Z)
-assert {s: len(l) for s, l in loops.items()} == ring_n, "decimation changed the stump loops"
-STUMP_SRC = sum(v.co.z for l in loops.values() for v in l) / sum(len(l) for l in loops.values())
-z_stump = HEAD_TOP - (TOP_SRC - STUMP_SRC) * SCALE
-M = (Matrix.Translation((0, 0, z_stump)) @ Matrix.Diagonal((SCALE, SCALE, SCALE, 1.0))
-     @ Matrix.Rotation(math.pi, 4, "Z") @ Matrix.Translation((0, 0, -STUMP_SRC)))
-bmesh.ops.transform(bm, matrix=M, verts=bm.verts)
-for f in bm.faces:
-    f.smooth = True
-log("stump height", round(z_stump, 4))
+cut_vs = [v for v in bm.verts if abs(v.co.z - CUT_Z) < 1e-4 and abs(v.co.x) < 0.2]
+n_before = len(bm.verts)
+bmesh.ops.remove_doubles(bm, verts=cut_vs, dist=1e-5)
+welded = n_before - len(bm.verts)
+n_loop = sum(len(l) for l in loops_src.values())
+log("cut loop verts", n_loop, "welded", welded)
+assert welded == n_loop, "legs not welded to the cut loops"
+assert not [e for e in bm.edges if e.is_boundary and abs(e.verts[0].co.z - CUT_Z) < 1e-4
+            and abs(e.verts[1].co.z - CUT_Z) < 1e-4], "open edges left at the cut"
 
-# hand clearance: inner surface of the hands/forearms (body verts beside the hips, outside the hip shell)
-hand_min_x = min(abs(v.co.x) for v in bm.verts if 0.70 < v.co.z < 0.95 and abs(v.co.x) > 0.20)
+# leg connectivity: one connected component of leg faces per side
+for side in (1, -1):
+    fs = {f for f in bm.faces if f.material_index == 1 and f.calc_center_median().x * side > 0}
+    comps, seen = 0, set()
+    for f0 in sorted(fs, key=lambda f: f.index):
+        if f0 in seen:
+            continue
+        comps += 1
+        stack = [f0]
+        seen.add(f0)
+        while stack:
+            f = stack.pop()
+            for e in f.edges:
+                for g in e.link_faces:
+                    if g in fs and g not in seen:
+                        seen.add(g)
+                        stack.append(g)
+    log("leg side", side, "connected components", comps, "faces", len(fs))
+    assert comps == 1, "leg is not one connected surface"
 
-# --------------------------------------------------------------------------------------- legs + material
-leg_mat = bpy.data.materials.new("hero_legs")
-me.materials.append(leg_mat)
-B = build_legs(bm, loops, 1)
-uv_scale = pack_islands(B)
-log("leg UV scale (uv units per m)", round(uv_scale, 3), "->", round(uv_scale * LEG_TEX["basecolor"]), "px/m")
-log("leg parts tris (both legs)", B.parts, "sum", sum(B.parts.values()))
-log("leg geometry (F from stump centre, z)", B.geo)
-log("hand inner |x|", round(hand_min_x, 4), "plate max |x|", round(B.geo["plate_max_x"], 4),
-    "clearance", round(hand_min_x - B.geo["plate_max_x"], 4))
-assert hand_min_x - B.geo["plate_max_x"] >= 0.02, "hands closer than 2 cm to the thigh plates"
-# feet under the centre of mass: area-weighted surface centroid (proxy for the CoM) inside the ground-contact span
-_acc, _area = Vector(), 0.0
-for f in bm.faces:
-    a = f.calc_area()
-    _acc += f.calc_center_median() * a
-    _area += a
-com_y = (_acc / _area).y
-cf = B.geo.pop("contact_F")
-log("centre of mass y (surface centroid)", round(com_y, 4), "ground contact y span", round(min(cf), 4),
-    "..", round(max(cf), 4))
-assert min(cf) <= com_y <= max(cf), "feet are not under the centre of mass"
-if os.environ.get("HERO_GEO_ONLY"):
-    raise SystemExit(0)
+# drop the lowest part (tines) by the 1-2 mm so the lowest vertex is exactly on y = 0
+leg_v = sorted({v for f in bm.faces if f.material_index == 1 for v in f.verts}, key=lambda v: v.index)
+zmin = min(v.co.z for v in leg_v)
+for v in leg_v:            # faded to zero at half the ankle height (sub-millimetre)
+    if v.co.z < ANKLE_Z * 0.5:
+        v.co.z -= zmin * (1.0 - v.co.z / (ANKLE_Z * 0.5))
+log("ground drop", round(zmin, 5))
+
+# hand clearance: min distance from the hands/forearms to the leg surface
+kd = KDTree(len(leg_v))
+for i, v in enumerate(leg_v):
+    kd.insert(v.co, i)
+kd.balance()
+hand_v = [v for v in bm.verts if abs(v.co.x) > 0.19 and 0.6 < v.co.z < 1.0
+          and not any(f.material_index == 1 for f in v.link_faces)]
+hand_clear = min(kd.find(v.co)[2] for v in hand_v)
+log("hand clearance (min hand -> leg distance)", round(hand_clear, 4))
+assert hand_clear >= 0.02, "hands closer than 2 cm to the legs"
+
+contact = [v.co.y for v in leg_v if v.co.z < 0.004]
+log("contact strip y", round(min(contact), 4), "..", round(max(contact), 4), "| hip midpoint y", HIP[0],
+    "| inside:", min(contact) <= HIP[0] <= max(contact))
+for side, g in sorted(GEO.items()):
+    log("side", side, "hip", tuple(round(c, 4) for c in g["hip"]), "knee", tuple(round(c, 4) for c in g["knee"]),
+        "ankle", tuple(round(c, 4) for c in g["ankle"]), "shin slant from vertical", round(g["shin_abs_deg"], 2))
+
+# sharp edges: leg edges with a dihedral angle above 55 deg (plate rim, caps)
 bm.edges.index_update()
-sharp_idx = {e.index for e in B.sharp if e is not None}
+sharp_idx = set()
+for e in bm.edges:
+    if len(e.link_faces) == 2 and all(f.material_index == 1 for f in e.link_faces):
+        if e.calc_face_angle(0.0) > math.radians(55):
+            sharp_idx.add(e.index)
 bm.to_mesh(me)
 bm.free()
 sharp = me.attributes.get("sharp_edge") or me.attributes.new("sharp_edge", "BOOLEAN", "EDGE")
@@ -626,6 +794,12 @@ for i in sharp_idx:
     vals[i] = True
 sharp.data.foreach_set("value", vals)
 me.update()
+if os.environ.get("HERO_GEO_ONLY"):
+    obj.location = (0, 0, 0)
+    bpy.ops.wm.save_as_mainfile(filepath=os.environ["HERO_GEO_ONLY"], compress=True)
+    raise SystemExit(0)
+z_stump = CUT_Z
+
 
 # ----------------------------------------------------------------- body textures: fit the budgets
 os.makedirs(TEX, exist_ok=True)
@@ -693,7 +867,7 @@ def sample_region(mat_index, z_lo, z_hi, images, keep=None):
         uvs = [uvd[li].uv for li in tri.loops]
         for b1, b2 in BARY:
             p = cs[0] * (1 - b1 - b2) + cs[1] * b1 + cs[2] * b2
-            if not (z_lo <= p.z <= z_hi and 0.04 < abs(p.x) < 0.19) or (keep and not keep(p)):
+            if not (z_lo <= p.z <= z_hi and 0.03 < abs(p.x) < 0.20) or (keep and not keep(p)):
                 continue
             u = uvs[0].x * (1 - b1 - b2) + uvs[1].x * b1 + uvs[2].x * b2
             v = uvs[0].y * (1 - b1 - b2) + uvs[1].y * b1 + uvs[2].y * b2
@@ -850,6 +1024,10 @@ def build_proc_material(mat):
     pits = smoothstep(noise(55.0, 3.0, 0.6).outputs["Fac"], 0.60, 0.63)
     rustc = mix(pits, rustc, scaled(T_METAL, 1.6))       # dark pitting inside the rust patches
     base = mix(rust, metal, rustc)
+    dattr = N("ShaderNodeAttribute")
+    dattr.attribute_type = "GEOMETRY"
+    dattr.attribute_name = "dark"
+    base = mix(dattr.outputs["Fac"], base, scaled(T_METAL, 0.45))     # dark segment lines in the plate grooves
     L(base, bsdf.inputs["Base Color"])
     rough = mixf(rust, math_("ADD", math_("MULTIPLY", metal_var, 0.16), T_MROUGH - 0.08), T_RROUGH)
     metal_f = mixf(rust, T_MMETAL, T_RMETAL)
@@ -993,8 +1171,9 @@ def pbr_material(mat, base_path, rm_path, nrm_path):
 
 leg_imgs = bake_leg_textures()
 leg_base_img, leg_rm_img = pbr_material(leg_mat, leg_imgs["basecolor"], leg_imgs["rm"], leg_imgs["normal"])
-if "rustpart" in me.attributes:
-    me.attributes.remove(me.attributes["rustpart"])
+for _a in ("rustpart", "dark"):
+    if _a in me.attributes:
+        me.attributes.remove(me.attributes[_a])
 leg_mat.use_backface_culling = True    # legs are closed and outward-facing; body stays double-sided as delivered
 # check the blend: the leg plate just below the cuff band vs the Tripo paint just above the seam
 l_base, l_rm = sample_region(1, z_stump - 0.07, z_stump - 0.003, [leg_base_img, leg_rm_img])
