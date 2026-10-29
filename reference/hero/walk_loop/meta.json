@@ -1,0 +1,15 @@
+{
+  "prompt_id": "9784972f-bb0c-4935-99ff-dfeb5e334d60",
+  "workflow": "ref_to_video.json",
+  "workflow_sha256": "69012be1197d6211031d2fdb82f326e44114c0888a5cd00e4c76d83f057cd553",
+  "params": {
+    "image": "snapshot_side.png",
+    "seed": 1101,
+    "seconds": 5,
+    "prompt": "The character in <Picture 1> walks forward at a steady, relaxed walking pace in a continuous, looping walk cycle, seen in strict side view (profile), facing left. The camera tracks alongside like a treadmill shot so the character stays centered; the full body from the top of the hood to the feet is always in frame and the feet are always visible. Keep exactly the same character design: chainmail mesh hood over a pale face, dark rust-stained armoured torso, black box backpack, wide boxy rust-orange armoured thigh plates down to the knee, and DIGITIGRADE mechanical legs: thin dark shins that slant backward from the knee to a raised hock, and feet made of three long curved blade tines forming a backward hook whose tips plant on the ground. Each step: a blade foot plants on the ground, the backward-bending hock compresses, then the leg pushes off and swings forward. Arms swing naturally opposite to the legs. Plain neutral grey seamless studio background, even soft studio lighting, realistic 3D render, no other objects, no text."
+  },
+  "outputs": [
+    "MiniMax_H3_00004_.mp4"
+  ],
+  "created": "2026-10-29T21:28:57+00:00"
+}

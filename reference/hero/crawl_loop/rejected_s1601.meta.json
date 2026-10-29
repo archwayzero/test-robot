@@ -1,0 +1,15 @@
+{
+  "prompt_id": "118a180c-ece0-4bf2-b46e-27f7c829b405",
+  "workflow": "ref_to_video.json",
+  "workflow_sha256": "69012be1197d6211031d2fdb82f326e44114c0888a5cd00e4c76d83f057cd553",
+  "params": {
+    "image": "snapshot_side.png",
+    "seed": 1601,
+    "seconds": 6,
+    "prompt": "The character in <Picture 1> crawls forward slowly on all fours on the floor, on hands and knees, body low and roughly horizontal, head up, in a continuous, steady, looping crawl cycle (opposite hand and knee move together). Seen in strict side view (profile), facing left; the camera tracks alongside like a treadmill shot so the character stays centered and the whole body stays in frame. Same dim lighting and same plain flat uniform grey background as <Picture 1>, no pattern, no spots. The rounded knee joints touch the floor at each step, the thin backward-bending shins and the curved blade-tine feet trail behind the knees with the blade tips dragging lightly on the ground, each hand reaches forward and plants flat on the floor. The character does not stand up. The full body including hands, knees and blade feet is always in frame. Keep exactly the same character design: chainmail mesh hood over a pale face, dark rust-stained armoured torso, black box backpack, wide boxy rust-orange armoured thigh plates down to the knee, and DIGITIGRADE mechanical legs: thin dark shins that slant backward from the knee to a raised hock, and feet made of three long curved blade tines forming a backward hook whose tips touch the ground. Plain neutral grey seamless studio background, even soft studio lighting, realistic 3D render, no other objects, no text."
+  },
+  "outputs": [
+    "MiniMax_H3_00011_.mp4"
+  ],
+  "created": "2026-10-29T21:49:12+00:00"
+}

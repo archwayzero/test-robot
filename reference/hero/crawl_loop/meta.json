@@ -1,0 +1,15 @@
+{
+  "prompt_id": "f3033a22-97d6-42a4-bb1f-61e4fe27494c",
+  "workflow": "ref_to_video.json",
+  "workflow_sha256": "69012be1197d6211031d2fdb82f326e44114c0888a5cd00e4c76d83f057cd553",
+  "params": {
+    "image": "snapshot_side.png",
+    "seed": 1603,
+    "seconds": 6,
+    "prompt": "Wide shot in an empty, smooth, matte grey photo studio cyclorama, exactly the same dim grey backdrop as <Picture 1>. The character in <Picture 1> crawls forward slowly on all fours on the floor, on hands and knees, body low and roughly horizontal, in a continuous, steady, looping crawl cycle: the left hand and right knee move forward together, then the right hand and left knee. Seen in strict side view (profile), facing left; the camera is far back and tracks alongside like a treadmill shot, so the character stays centered and small, filling only the middle half of the frame; the whole body, including both hands, both knees and the blade feet behind, is always fully inside the frame. At each step a rounded knee joint slides forward and plants on the floor, the thin backward-bending shins and the curved blade-tine feet trail behind the knees with the blade tips dragging lightly on the ground, and each hand reaches forward and plants flat on the floor. The character does not stand up. Keep exactly the same character design: chainmail mesh hood over a pale face, dark rust-stained armoured torso, black box backpack, wide boxy rust-orange armoured thigh plates down to the knee, and DIGITIGRADE mechanical legs: thin dark shins that slant backward from the knee to a raised hock, and feet made of three long curved blade tines forming a backward hook whose tips touch the ground. Plain neutral grey seamless studio background, even soft studio lighting, realistic 3D render, no other objects, no text."
+  },
+  "outputs": [
+    "MiniMax_H3_00013_.mp4"
+  ],
+  "created": "2026-10-29T21:56:37+00:00"
+}

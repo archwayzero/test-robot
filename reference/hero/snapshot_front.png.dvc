@@ -1,0 +1,5 @@
+outs:
+- md5: 6e7e9d2a652e70f4db942a18c4fc028e
+  size: 1023049
+  hash: md5
+  path: snapshot_front.png

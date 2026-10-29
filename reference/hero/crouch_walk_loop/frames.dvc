@@ -1,0 +1,6 @@
+outs:
+- md5: 2eaa83841e3c80e2e94846c629eb01fb.dir
+  size: 7439419
+  nfiles: 63
+  hash: md5
+  path: frames

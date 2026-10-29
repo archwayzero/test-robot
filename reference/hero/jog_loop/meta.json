@@ -1,0 +1,15 @@
+{
+  "prompt_id": "7843024b-d685-45af-9d54-f5a2c143d6bc",
+  "workflow": "ref_to_video.json",
+  "workflow_sha256": "69012be1197d6211031d2fdb82f326e44114c0888a5cd00e4c76d83f057cd553",
+  "params": {
+    "image": "snapshot_side.png",
+    "seed": 1201,
+    "seconds": 5,
+    "prompt": "The character in <Picture 1> jogs forward at a steady, moderate running pace (a light jog, faster than walking, with a brief flight phase where both feet are off the ground) in a continuous, looping jog cycle, seen in strict side view (profile), facing left. The camera tracks alongside like a treadmill shot so the character stays centered; the full body from the top of the hood to the feet is always in frame and the feet are always visible. Each stride: a blade foot plants on the ground under the body, the backward-bending hock compresses, the leg pushes off strongly and the knee drives forward. Arms bent, swinging opposite to the legs, slight forward lean. Keep exactly the same character design: chainmail mesh hood over a pale face, dark rust-stained armoured torso, black box backpack, wide boxy rust-orange armoured thigh plates down to the knee, and DIGITIGRADE mechanical legs: thin dark shins that slant backward from the knee to a raised hock, and feet made of three long curved blade tines forming a backward hook whose tips touch the ground. Plain neutral grey seamless studio background, even soft studio lighting, realistic 3D render, no other objects, no text."
+  },
+  "outputs": [
+    "MiniMax_H3_00005_.mp4"
+  ],
+  "created": "2026-10-29T21:32:14+00:00"
+}

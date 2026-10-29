@@ -1,0 +1,15 @@
+{
+  "prompt_id": "20a807dd-4c37-4341-950e-352a668f6065",
+  "workflow": "ref_to_video.json",
+  "workflow_sha256": "69012be1197d6211031d2fdb82f326e44114c0888a5cd00e4c76d83f057cd553",
+  "params": {
+    "image": "snapshot_side.png",
+    "seed": 1301,
+    "seconds": 5,
+    "prompt": "The character in <Picture 1> holds a low crouch in place, seen in strict side view (profile), facing left, with a locked static camera. Knees deeply bent, body lowered by about a third of its height, torso leaning slightly forward, hands held loosely in front of the body, alert stance. The backward-bending hocks are strongly compressed and the blade feet stay planted flat on the ground without sliding. Subtle continuous idle loop: slow breathing and a small weight shift, otherwise holding the low crouch. The character does not walk, stand up or turn. The full body from the top of the hood to the feet is always in frame and the feet are always visible. Keep exactly the same character design: chainmail mesh hood over a pale face, dark rust-stained armoured torso, black box backpack, wide boxy rust-orange armoured thigh plates down to the knee, and DIGITIGRADE mechanical legs: thin dark shins that slant backward from the knee to a raised hock, and feet made of three long curved blade tines forming a backward hook whose tips touch the ground. Plain neutral grey seamless studio background, even soft studio lighting, realistic 3D render, no other objects, no text."
+  },
+  "outputs": [
+    "MiniMax_H3_00007_.mp4"
+  ],
+  "created": "2026-10-29T21:37:45+00:00"
+}
