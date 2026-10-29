@@ -199,6 +199,55 @@ def leg_local(c):
     return {"upper_leg": wt, "lower_leg": (1 - wt) * w_sh, "metatarsal": rem * w_me, "foot": rem * (1 - w_me)}
 
 
+GROIN_TO_HIPS = 0.30     # share of the thigh weight moved onto hips on the front-groin ring
+FOLD_SMOOTH_ITERS = 8
+
+
+def smooth_folds(me, W, arm_of):
+    """Soften the deep-flexion folds (crouch/crawl): (1) on the front-groin ring (vertices shared by hips and a
+    thigh) 30% of the thigh weight goes to hips; (2) Laplacian smoothing of the weights in the groin band and in
+    the back-of-knee band, so the compression spreads over several face rows instead of collapsing one."""
+    nb = [[] for _ in me.vertices]
+    for e in me.edges:
+        a, b = e.vertices
+        nb[a].append(b)
+        nb[b].append(a)
+    co = [v.co for v in me.vertices]
+    for i, c in enumerate(co):
+        if i in arm_of or not (0.72 < c.z < 0.93 and c.y > -0.03 and abs(c.x) < 0.20):
+            continue
+        h = W[i].get("hips", 0.0)
+        if 0.02 < h < 0.98:
+            for sd in SIDES:
+                k = f"upper_leg_{sd}"
+                if k in W[i]:
+                    m = W[i][k] * (GROIN_TO_HIPS + 0.40 * sstep(0.06, 0.0, abs(c.x)))   # crotch centre: 70%
+                    W[i][k] -= m
+                    W[i]["hips"] = W[i].get("hips", 0.0) + m
+
+    def region(c):
+        groin = 0.70 < c.z < 0.95 and abs(c.x) < 0.22 and c.y > -0.065
+        knee = 0.38 < c.z < 0.54 and c.y < 0.10 and abs(c.x) > 0.05
+        return groin or knee
+
+    R_ = [i for i, c in enumerate(co) if i not in arm_of and region(c)]
+    for _ in range(FOLD_SMOOTH_ITERS):
+        new = {}
+        for i in R_:
+            acc = {}
+            ns = [j for j in nb[i] if j not in arm_of]
+            if not ns:
+                continue
+            for j in ns:
+                for bn, x in W[j].items():
+                    acc[bn] = acc.get(bn, 0.0) + x / len(ns)
+            w = {bn: 0.5 * W[i].get(bn, 0.0) + 0.5 * acc.get(bn, 0.0) for bn in set(acc) | set(W[i])}
+            new[i] = w
+        for i, w in new.items():
+            W[i] = w
+    print("fold smoothing: verts", len(R_))
+
+
 def compute_weights(hero):
     global POD_CENTER
     me = hero.data
@@ -274,6 +323,7 @@ def compute_weights(hero):
                 for b, x in W[j].items():
                     w[b] = w.get(b, 0) + x * k
                 W[i] = w
+    smooth_folds(me, W, arm_of)
     for i, w in enumerate(W):
         w = {b: x for b, x in w.items() if x > 1e-4}
         top = sorted(w.items(), key=lambda kv: -kv[1])[:4]
@@ -605,7 +655,7 @@ STAND_HIPS_Z = 0.90
 class Gait:
     def __init__(self, solver, v, T, duty, y_off=0.0, strike_pitch=10.0, strike_frac=0.12, off_frac=0.35,
                  off_pitch=-30.0, lift=0.10, swing_pitch=-15.0, stance_pitch=None, width=0.0,
-                 pivot_flat=True, tangent_k=1.0, kick=0.0):
+                 pivot_flat=True, tangent_k=1.0, kick=0.0, stance_bump=0.0):
         self.S, self.v, self.T, self.duty = solver, v, T, duty
         self.y_off, self.a0, self.f1, self.f2 = y_off, strike_pitch, strike_frac, off_frac
         self.phi, self.lift, self.swp, self.width = off_pitch, lift, swing_pitch, width
@@ -613,6 +663,7 @@ class Gait:
         self.Lst = v * T * duty
         self.tk = tangent_k
         self.kick = kick     # extra backward/upward heel kick early in the swing (m)
+        self.sbump = stance_bump   # extra tip-pivot pitch at mid-stance (deg; crouch: hock low under the hip)
 
     def stance_F(self, sd, tau):
         """tau = time since strike (s). Planted pivots move back at exactly v."""
@@ -622,7 +673,7 @@ class Gait:
         yc = self.y_off + self.Lst / 2 - self.v * tau      # contact-centre y if the blade were flat
         if self.stance_pitch is not None:   # tip pivot all the time (rolled forward crouch gait)
             th0, th1 = self.stance_pitch
-            th = th0 + (th1 - th0) * ease_out(tau / Tst)
+            th = th0 + (th1 - th0) * ease_out(tau / Tst) + self.sbump * math.sin(math.pi * tau / Tst)
             piv = BLADE_TIP
         else:
             u = tau / Tst
@@ -679,14 +730,15 @@ def hips_z_limits(S, P, sd, dmin=0.34, dmax=0.540):
     return lo, hi
 
 
-def fit_hips_z(S, poses, base, cyclic=True, smooth_iter=3, dmin=0.34, dmax=0.540):
+def fit_hips_z(S, poses, base, cyclic=True, smooth_iter=3, dmin=0.34, dmax=0.540, swing_free=False):
+    """swing_free: only planted legs constrain the hips (swinging feet are moved instead, see unfold_swing)."""
     n = len(poses) - 1 if cyclic else len(poses)   # cyclic: last pose duplicates the first
     lo = np.zeros(n)
     hi = np.zeros(n)
     for i, P in enumerate(poses[:n]):
-        l1, h1 = hips_z_limits(S, P, "l", dmin, dmax)
-        l2, h2 = hips_z_limits(S, P, "r", dmin, dmax)
-        lo[i], hi[i] = max(l1, l2), min(h1, h2)
+        lims = [hips_z_limits(S, P, sd, dmin, dmax) for sd in SIDES
+                if not swing_free or getattr(P, "stance", {}).get(sd, True)]
+        lo[i], hi[i] = max(l for l, _ in lims), min(h for _, h in lims)
     z = np.clip(np.array(base[:n], float), lo, hi)
     for _ in range(smooth_iter):
         if cyclic:
@@ -704,10 +756,47 @@ def fit_hips_z(S, poses, base, cyclic=True, smooth_iter=3, dmin=0.34, dmax=0.540
     return bad, float(z.min()), float(z.max())
 
 
-def knee_heights(S, P):
+def unfold_swing(S, poses, dmin):
+    """Move a swinging foot unit away from the hip (along hip->hock) where the leg would fold past dmin."""
+    n = 0
+    for P in poses:
+        for sd in SIDES:
+            if getattr(P, "stance", {}).get(sd, True):
+                continue
+            s = SIDES[sd]
+            F = P.feet[sd][1]
+            T = F @ mir(HOCK, s)
+            Hj = P.hips_pos + P.hips_rot @ (mir(HIP, s) - Vector((0, SPINE_Y[0], SPINE_Z[0])))
+            d = (T - Hj).length
+            if d < dmin:   # continuous fix: lower the swinging foot toward the floor, then pitch it toe-down
+                def dist(G):
+                    return (G @ mir(HOCK, s) - Hj).length
+                G = F
+                for _ in range(40):
+                    mz = S.foot_min_z(sd, G)
+                    if dist(G) >= dmin or mz <= 0.016:
+                        break
+                    G = Matrix.Translation((0, 0, -min(0.004, mz - 0.015))) @ G
+                tip = G @ mir(BLADE_TIP, s)
+                for _ in range(40):
+                    if dist(G) >= dmin:
+                        break
+                    G = TR(tip, Rx(-2.0)) @ Matrix.Translation(-tip) @ G
+                    mz = S.foot_min_z(sd, G)
+                    if mz < 0.015:
+                        G = Matrix.Translation((0, 0, 0.015 - mz)) @ G
+                        tip = G @ mir(BLADE_TIP, s)
+                P.feet[sd] = ("foot", G)
+                n += 1
+    return n
+
+
+def knee_heights(S, P, stance_only=False):
     Wm = {"hips": TR(P.hips_pos, P.hips_rot @ S.rest_rot("hips"))}
     out = []
     for sd in SIDES:
+        if stance_only and not getattr(P, "stance", {}).get(sd, True):
+            continue
         Q = Pose()
         Q.hips_pos, Q.hips_rot, Q.feet = P.hips_pos, P.hips_rot, P.feet
         S.solve_leg(sd, Q, Wm)
@@ -715,7 +804,7 @@ def knee_heights(S, P):
     return min(out)
 
 
-def raise_for_knees(S, poses, kmin, cyclic=True):
+def raise_for_knees(S, poses, kmin, cyclic=True, stance_only=False):
     """Raise the hips where a knee joint would sink below kmin (knee pod into the floor); keeps loops closed."""
     n = len(poses) - 1 if cyclic else len(poses)
     add = np.zeros(n)
@@ -723,7 +812,7 @@ def raise_for_knees(S, poses, kmin, cyclic=True):
         P = poses[i]
         z0 = P.hips_pos.z
         for _ in range(12):
-            k = knee_heights(S, P)
+            k = knee_heights(S, P, stance_only)
             if k >= kmin - 1e-4:
                 break
             P.hips_pos.z += (kmin - k) * 0.8 + 0.001
@@ -758,12 +847,12 @@ def clip_idle(S):
                        + math.exp(-((t - 1.16) / 0.07) ** 2) + math.exp(-((t + 0.33) / 0.08) ** 2))
         br = math.sin(2 * math.pi * 3 * t)          # 3 breaths per loop
         sway = math.sin(2 * math.pi * t)
-        P.hips_pos = Vector((0.010 * sway, SPINE_Y[0] + 0.004 * br, STAND_HIPS_Z - 0.006 - dip))
-        torso(P, lean=2.0 + 1.5 * dip / 0.012, roll=-1.0 * sway, head_pitch=0.0, breathe=0.8 * br,
-              head_yaw=3.0 * math.sin(2 * math.pi * t + 1.0))
+        P.hips_pos = Vector((0.018 * sway, SPINE_Y[0] + 0.006 * br, STAND_HIPS_Z - 0.006 - dip))
+        torso(P, lean=2.0 + 2.0 * dip / 0.012 + 0.8 * br, roll=-2.0 * sway, head_pitch=1.0 * br,
+              breathe=1.6 * br, head_yaw=7.0 * math.sin(2 * math.pi * t + 1.0))
         for sd, ph in (("l", 0.0), ("r", math.pi)):
-            arm_fk(P, sd, swing=1.5 * math.sin(2 * math.pi * t + ph) - 1.5 * dip / 0.012, abd=4.0,
-                   bend=10.0 + 3 * math.sin(2 * math.pi * 2 * t + ph))
+            arm_fk(P, sd, swing=2.5 * math.sin(2 * math.pi * t + ph) - 2.0 * dip / 0.012 + 1.0 * br,
+                   abd=4.0 + 1.5 * br, bend=10.0 + 5 * math.sin(2 * math.pi * 2 * t + ph), clav=0.0)
         standing_feet(S, P)
         poses.append(P)
     return poses, N, True, {}
@@ -771,7 +860,8 @@ def clip_idle(S):
 
 def locomotion(S, name, v, T_frames, duty, base_z, bob, lean, arm_amp, elbow, arm_fwd=0.0, gait_kw=None,
                head_pitch=0.0, twist=6.0, roll=2.0, sway=0.012, elbow_amp=0.0, hips_y=0.0, z_phase=0.0,
-               dmin=0.34, dmax=0.540, arm_abd=6.0, clav=0.0, knee_min=None):
+               dmin=0.34, dmax=0.540, arm_abd=6.0, clav=0.0, knee_min=None, hips_share=0.6, lean_amp=0.0,
+               head_bob=0.0, swing_free=False):
     N = T_frames
     T = N / FPS
     g = Gait(S, v, T, duty, **(gait_kw or {}))
@@ -782,58 +872,77 @@ def locomotion(S, name, v, T_frames, duty, base_z, bob, lean, arm_amp, elbow, ar
         ph = 2 * math.pi * (f / N)
         P.hips_pos = Vector((sway * math.sin(ph), SPINE_Y[0] + hips_y, base_z))
         base.append(base_z + bob * math.cos(2 * ph + z_phase))
-        torso(P, lean=lean, twist=twist * math.sin(ph), roll=roll * math.sin(ph), head_pitch=head_pitch,
-              breathe=0.0)
+        torso(P, lean=lean + lean_amp * math.cos(2 * ph + z_phase), twist=twist * math.sin(ph),
+              roll=roll * math.sin(ph), head_pitch=head_pitch + head_bob * math.cos(2 * ph + z_phase), breathe=0.0,
+              hips_share=hips_share)
         P.feet["l"] = ("foot", g.foot("l", t, 0.0))
         P.feet["r"] = ("foot", g.foot("r", t, 0.5))
+        P.stance = {sd: (((t / T) + ph0) % 1.0) * T <= T * duty + 1e-9 for sd, ph0 in (("l", 0.0), ("r", 0.5))}
         # arms opposite to the legs (left leg strikes at phase 0 = forward-most -> left arm back)
         for sd, off in (("l", 0.0), ("r", math.pi)):
             c = math.cos(ph + off - 0.35)
             arm_fk(P, sd, swing=arm_fwd - arm_amp * c, abd=arm_abd, bend=elbow + elbow_amp * (-c),
                    clav=clav)
         poses.append(P)
-    bad, zmin, zmax = fit_hips_z(S, poses, base, cyclic=True, dmin=dmin, dmax=dmax)
+    bad, zmin, zmax = fit_hips_z(S, poses, base, cyclic=True, dmin=dmin, dmax=dmax, swing_free=swing_free)
     if knee_min:
-        r = raise_for_knees(S, poses, knee_min)
+        r = raise_for_knees(S, poses, knee_min, stance_only=swing_free)
         zs = [P.hips_pos.z for P in poses]
         zmin, zmax = min(zs), max(zs)
         print(f"{name}: knee raise max {r:.3f}")
+    if swing_free:
+        print(f"{name}: unfolded swing frames {unfold_swing(S, poses, dmin + 0.005)}")
     return poses, N, True, {"cycle_s": T, "stride_m": v * T, "stance_travel_m": g.Lst, "duty": duty,
                             "hips_z": (round(zmin, 3), round(zmax, 3)), "infeasible_frames": bad, "speed": v}
 
 
 def clip_walk(S):
-    return locomotion(S, "walk_loop", v=1.6, T_frames=24, duty=0.57, base_z=0.875, bob=0.010, lean=5.0,
-                      arm_amp=18.0, elbow=14.0, elbow_amp=6.0, head_pitch=0.0,
-                      gait_kw=dict(strike_pitch=12.0, strike_frac=0.15, off_frac=0.40, off_pitch=-38.0,
-                                   lift=0.08, swing_pitch=-20.0, y_off=0.03))
+    # 0.8 s cycle (stride 1.28 m at 1.6 m/s; the reference cadence, 44 src frames = 1.8 s, would need a 2.9 m stride
+    # at game speed, so only its poses are used). Reach: contacts shifted forward (y_off), flatter swing.
+    return locomotion(S, "walk_loop", v=1.6, T_frames=24, duty=0.56, base_z=0.885, bob=0.012, lean=10.0,
+                      arm_amp=22.0, elbow=14.0, elbow_amp=8.0, head_pitch=1.0, twist=10.0, roll=2.5,
+                      sway=0.014, hips_share=0.5,
+                      gait_kw=dict(strike_pitch=16.0, strike_frac=0.15, off_frac=0.40, off_pitch=-36.0,
+                                   lift=0.055, swing_pitch=-14.0, y_off=0.05, tangent_k=1.1))
 
 
 def clip_jog(S):
-    return locomotion(S, "jog_loop", v=4.0, T_frames=18, duty=0.32, base_z=0.85, bob=0.022, lean=15.0,
-                      arm_amp=30.0, elbow=80.0, elbow_amp=10.0, arm_fwd=8.0, head_pitch=4.0, twist=10.0,
-                      z_phase=math.pi, sway=0.008,
+    return locomotion(S, "jog_loop", v=4.0, T_frames=18, duty=0.32, base_z=0.85, bob=0.024, lean=25.0,
+                      arm_amp=46.0, elbow=84.0, elbow_amp=14.0, arm_fwd=10.0, head_pitch=6.0, twist=13.0,
+                      z_phase=math.pi, sway=0.008, hips_share=0.7, lean_amp=1.5,
                       gait_kw=dict(strike_pitch=6.0, strike_frac=0.15, off_frac=0.50, off_pitch=-50.0,
-                                   lift=0.24, swing_pitch=-75.0, y_off=-0.01, tangent_k=0.3, kick=0.12))
+                                   lift=0.34, swing_pitch=-70.0, y_off=0.0, tangent_k=0.3, kick=0.10))
 
 
-CROUCH_HIPS = (-0.06, 0.45)   # hips head (y, z) in the crouch
-CROUCH_LEAN = 54.0
+CROUCH_HIPS = (-0.04, 0.47)   # hips head (y, z) in the crouch
+CROUCH_LEAN = 38.0            # reference 20-30 deg; 38 keeps the head under the 1.25 m crouch height
+CROUCH_FOOT_Y, CROUCH_FOOT_TH = -0.17, -62.0
+CROUCH_HEAD = 16.0            # world head pitch (deg, + = face down): eyes forward, slightly down
 
 
 def crouch_base(P, S, t=0.0, f_amp=1.0):
-    br = math.sin(2 * math.pi * t)
-    P.hips_pos = Vector((0.0, CROUCH_HIPS[0], CROUCH_HIPS[1] + 0.008 * br * f_amp))
-    torso(P, lean=CROUCH_LEAN + 1.0 * br * f_amp, head_pitch=32.0, breathe=0.6 * br * f_amp)
-    for sd, ph in (("l", 0.0), ("r", 1.3)):
-        arm_fk(P, sd, swing=58.0 + 2.0 * math.sin(2 * math.pi * t + ph) * f_amp, abd=8.0, bend=44.0, wrist=10.0)
+    """Alert crouch hold: torso fairly upright, thighs ~40 deg below horizontal, hands loose in front of the
+    knees. Life: 3 breaths, one slow side-to-side weight shift with a small settle, head scanning."""
+    br = math.sin(2 * math.pi * 3 * t)
+    sh = math.sin(2 * math.pi * t)
+    settle = 0.5 - 0.5 * math.cos(4 * math.pi * t)
+    P.hips_pos = Vector((0.018 * sh * f_amp, CROUCH_HIPS[0],
+                         CROUCH_HIPS[1] + (0.004 * br - 0.010 * settle) * f_amp))
+    torso(P, lean=CROUCH_LEAN + (0.8 * br + 2.0 * settle) * f_amp, roll=-2.5 * sh * f_amp,
+          head_pitch=CROUCH_HEAD + 3.0 * math.sin(2 * math.pi * 2 * t + 0.5) * f_amp, breathe=1.0 * br * f_amp,
+          hips_share=0.8, head_yaw=9.0 * math.sin(2 * math.pi * t + 0.9) * f_amp)
+    for sd, ph, sw0, bd0 in (("l", 0.0, 34.0, 44.0), ("r", 1.9, 28.0, 54.0)):
+        drift = math.sin(2 * math.pi * t + ph)
+        arm_fk(P, sd, swing=sw0 + 4.0 * drift * f_amp + 2.0 * br * f_amp, abd=10.0 + 2.0 * drift * f_amp,
+               bend=bd0 + 6.0 * math.sin(2 * math.pi * 2 * t + ph) * f_amp, wrist=18.0, twist=10.0)
     for sd in ("l", "r"):
         s = SIDES[sd]
-        P.feet[sd] = ("foot", S.foot_matrix(sd, BLADE_TIP, mir(BLADE_TIP, s) + Vector((0, -0.16, 0)), -62.0))
+        P.feet[sd] = ("foot", S.foot_matrix(sd, BLADE_TIP, mir(BLADE_TIP, s) + Vector((0, CROUCH_FOOT_Y, 0)),
+                                             CROUCH_FOOT_TH))
 
 
 def clip_crouch_idle(S):
-    N = 90
+    N = 120
     poses = []
     for f in range(N + 1):
         P = Pose()
@@ -842,23 +951,34 @@ def clip_crouch_idle(S):
     return poses, N, True, {}
 
 
+CW_KNEE_MIN, CW_PITCH, CW_YOFF, CW_BUMP, CW_LEAN = 0.137, (-42.0, -34.0), -0.32, -26.0, 44.0
+CW_LIFT, CW_SWP = 0.10, -40.0
+CW_BASE, CW_HS, CW_HEAD = 0.56, 1.0, 36.0
+
+
 def clip_crouch_walk(S):
     poses, N, loop, info = locomotion(
-        S, "crouch_walk_loop", v=1.0, T_frames=36, duty=0.66, base_z=CROUCH_HIPS[1], bob=0.008, lean=CROUCH_LEAN,
-        arm_amp=10.0, elbow=42.0, arm_fwd=56.0, head_pitch=34.0, twist=5.0, roll=1.5, sway=0.010,
-        hips_y=CROUCH_HIPS[0] - SPINE_Y[0], dmin=0.31, dmax=0.535, arm_abd=8.0, knee_min=0.085,
-        gait_kw=dict(stance_pitch=(-38.0, -72.0), lift=0.05, swing_pitch=-88.0, y_off=-0.30))
+        S, "crouch_walk_loop", v=1.0, T_frames=36, duty=0.66, base_z=CW_BASE, bob=0.008,
+        lean=CW_LEAN, arm_amp=14.0, elbow=40.0, arm_fwd=46.0, head_pitch=CW_HEAD, twist=6.0,
+        roll=1.5, sway=0.010, hips_y=CROUCH_HIPS[0] - SPINE_Y[0], dmin=0.31, dmax=0.535, arm_abd=9.0,
+        knee_min=CW_KNEE_MIN, hips_share=CW_HS, swing_free=True,
+        gait_kw=dict(stance_pitch=CW_PITCH, lift=CW_LIFT, swing_pitch=CW_SWP, y_off=CW_YOFF, stance_bump=CW_BUMP))
     return poses, N, loop, info
 
 
 # ---- crawl -----------------------------------------------------------------------------------------------
-CRAWL_LEAN = 118.0       # torso pitched slightly nose-down so the shoulders (and backpack) stay low
+# Posture trade-off (top <= 0.70 incl. the backpack): with the lean put almost entirely into the pelvis
+# (CRAWL_HIPS_SHARE 0.95, straight spine) the backpack's highest point is its lumbar end, so the shoulders can sit
+# ~6 cm higher than with a curled spine at the same top height. That buys nearly straight arms.
+CRAWL_LEAN = 99.0        # torso pitch (deg from vertical): shoulders a little below the hips
+CRAWL_HIPS_SHARE = 0.95
 CRAWL_HIPS_Y = -0.10
-CRAWL_KNEE_Z = 0.075     # knee joint height when the knee pod rests on the floor
-CRAWL_KNEE_DX = 0.14     # knees slightly abducted (outside the hip joints)
+CRAWL_KNEE_Z = 0.0440    # knee joint height: the knee pod's lowest vertex rests at ~0.005 m
+CRAWL_KNEE_DX = 0.17     # knees slightly abducted (outside the hip joints)
 CRAWL_TIP_BACK = 0.42    # blade tips this far behind the knee (shin nearly flat, hook arching up)
-CRAWL_HAND_X = 0.22
-CRAWL_HAND_FWD = 0.06    # wrists this far ahead of the shoulder joints
+CRAWL_HAND_X = 0.21
+CRAWL_HAND_FWD = 0.15    # neutral wrists this far ahead of the shoulder joints (arms angled slightly forward)
+CRAWL_HEAD = 18.0        # world pitch of the head (deg, + = face down): looks forward-down
 _CRAWL_REF = {}
 
 
@@ -868,7 +988,7 @@ def crawl_ref(S):
         P = Pose()
         _CRAWL_REF["hipj_y"] = 0.0
         _CRAWL_REF["sh_y"] = 0.0
-        crawl_pose(S, P, {sd: (0.0, 0.0, 0.0, 0.0) for sd in SIDES}, {}, CRAWL_LEAN)
+        crawl_pose(S, P, {sd: (0.0, 0.0, 0.0, 0.0, True) for sd in SIDES}, {}, CRAWL_LEAN)
         hj = P.hips_pos + P.hips_rot @ (mir(HIP, -1) - Vector((0, SPINE_Y[0], SPINE_Z[0])))
         _, Wm = S.solve(P)
         _CRAWL_REF["hipj_y"] = hj.y
@@ -878,105 +998,228 @@ def crawl_ref(S):
     return _CRAWL_REF
 
 
-def crawl_pose(S, P, legs, hands, lean, roll=0.0, yaw=0.0, head_pitch=None, breathe=0.0, knee_out=None):
-    """legs: side -> (knee_dy, knee_lift, tip_dy, tip_lift) relative to the reference hip-joint y;
-    hands: side -> (wrist_dy, lift) relative to the reference shoulder y."""
+def crawl_needs(S, P, legs, knee_out=None):
+    """Hips-head z at which each leg's thigh exactly reaches its knee target (current hips xy/rotation)."""
     ref = _CRAWL_REF or {"hipj_y": 0.0, "sh_y": 0.0}
-    P.hips_pos = Vector((0.0, CRAWL_HIPS_Y, 0.45))
-    torso(P, lean=lean, head_pitch=(lean - 72.0) if head_pitch is None else head_pitch, hips_share=0.8,
-          breathe=breathe)
-    P.hips_rot = Rz(yaw) @ Ry(roll) @ P.hips_rot
     a = S.L_thigh
-    need = []
-    targets = {}
-    for sd, (kdy, kl, tdy, tl) in legs.items():
+    need, targets = {}, {}
+    for sd, leg in legs.items():
+        kdy, kl, tdy, tl = leg[:4]
         s = SIDES[sd]
         dx = CRAWL_KNEE_DX + (knee_out or {}).get(sd, 0.0)
         off = P.hips_rot @ (mir(HIP, s) - Vector((0, SPINE_Y[0], SPINE_Z[0])))
         hjx, hjy = P.hips_pos.x + off.x, P.hips_pos.y + off.y
         K = Vector((s * (abs(HIP.x) + dx), ref["hipj_y"] + kdy, CRAWL_KNEE_Z + kl))
         h2 = (K.x - hjx) ** 2 + (K.y - hjy) ** 2
-        need.append(K.z + math.sqrt(max(a * a - h2, 0.0)) - off.z)
-        tip = Vector((s * (abs(BLADE_TIP.x) + CRAWL_KNEE_DX), ref["hipj_y"] + tdy, tl))
+        need[sd] = K.z + math.sqrt(max(a * a - h2, 0.0)) - off.z
+        tip = Vector((s * (abs(BLADE_TIP.x) + dx), ref["hipj_y"] + tdy, tl))
         targets[sd] = (K, tip)
-    if need:
-        P.hips_pos.z = max(need)
+    return need, targets
+
+
+def crawl_pose(S, P, legs, hands, lean, roll=0.0, yaw=0.0, head_pitch=None, breathe=0.0, knee_out=None,
+               hips_dy=0.0, hips_dz=0.0, shoulder_push=0.0):
+    """legs: side -> (knee_dy, knee_lift, tip_dy, tip_lift, in_stance) relative to the reference hip-joint y;
+    hands: side -> (wrist_dy, lift) relative to the reference shoulder y. The hips height is set so every stance
+    knee exactly touches (callers equalise two stance knees with hips_dy)."""
+    ref = _CRAWL_REF or {"hipj_y": 0.0, "sh_y": 0.0}
+    P.hips_pos = Vector((0.0, CRAWL_HIPS_Y + hips_dy, 0.45))
+    torso(P, lean=lean, head_pitch=CRAWL_HEAD if head_pitch is None else head_pitch, hips_share=CRAWL_HIPS_SHARE,
+          breathe=breathe)
+    P.hips_rot = Rz(yaw) @ Ry(roll) @ P.hips_rot
+    need, targets = crawl_needs(S, P, legs, knee_out)
+    st = [need[sd] for sd, leg in legs.items() if leg[4]] or list(need.values())
+    if st:
+        P.hips_pos.z = max(st) + hips_dz
     for sd, (K, tip) in targets.items():
         P.feet[sd] = ("crawl", K, tip)
     for sd, (wdy, wl) in hands.items():
         s = SIDES[sd]
         Wt = Vector((CRAWL_HAND_X * s, ref["sh_y"] + CRAWL_HAND_FWD + wdy, 0.027 + wl))
-        P.hands[sd] = (Wt, Vector((0.55 * s, -1.0, -0.2)), Vector((0.10 * s, 1.0, -0.03 - 0.3 * wl)),
+        P.hands[sd] = (Wt, Vector((0.45 * s, -1.0, -0.1)), Vector((0.10 * s, 1.0, -0.03 - 0.3 * wl)),
                        Vector((0, 0, -1)))
-        P.fk[f"shoulder_{sd}"] = Rx(32.0) @ Ry(-s * 6.0)
+        P.fk[f"shoulder_{sd}"] = Rz(-s * CRAWL_PHI0) @ Rx(32.0 + shoulder_push) @ Ry(-s * 6.0)
+    return need
+
+
+CRAWL_PHI0 = 10.0       # shoulder elevation (deg, raises the shoulder joint dorsally ~2.8 cm; no effect on the top)
+CRAWL_ARM_D = 0.448     # shoulder->wrist distance kept in hand stance (elbow ~25 deg: arms nearly straight)
+
+
+def crawl_arm_phi(S, P, lo=0.0, hi=24.0):
+    """Per-side shoulder elevation so the arm keeps length CRAWL_ARM_D (the shoulder rises over a planted hand)."""
+    out = {}
+    for sd in P.hands:
+        s = SIDES[sd]
+        base = P.fk[f"shoulder_{sd}"]
+        Wt = P.hands[sd][0]
+
+        def dist(phi):
+            P.fk[f"shoulder_{sd}"] = Rz(-s * (phi - CRAWL_PHI0)) @ base
+            Q = Pose()
+            Q.hips_pos, Q.hips_rot, Q.fk, Q.feet = P.hips_pos, P.hips_rot, P.fk, P.feet
+            _, Wm = S.solve(Q)
+            return (Wm[f"upper_arm_{sd}"].translation - Wt).length
+
+        a, b = lo, hi
+        if dist(a) >= CRAWL_ARM_D:
+            phi = a
+        elif dist(b) <= CRAWL_ARM_D:
+            phi = b
+        else:
+            for _ in range(14):
+                m = 0.5 * (a + b)
+                if dist(m) < CRAWL_ARM_D:
+                    a = m
+                else:
+                    b = m
+            phi = 0.5 * (a + b)
+        P.fk[f"shoulder_{sd}"] = Rz(-s * (phi - CRAWL_PHI0)) @ base
+        out[sd] = phi
+    return out
+
+
+def smooth_phi(poses, phis, cyclic=True, it=2):
+    """Smooth the solved shoulder elevations over time (only changes elbow bend, never the hand contact)."""
+    n = len(poses) - 1 if cyclic else len(poses)
+    for sd in ("l", "r"):
+        x = np.array([phis[i][sd] for i in range(n)])
+        for _ in range(it):
+            x = 0.25 * np.roll(x, 1) + 0.5 * x + 0.25 * np.roll(x, -1)
+        for i, P in enumerate(poses):
+            s = SIDES[sd]
+            P.fk[f"shoulder_{sd}"] = Rz(-s * (x[i % n] - phis[i % n][sd])) @ P.fk[f"shoulder_{sd}"]
 
 
 def clip_crawl_idle(S):
     crawl_ref(S)
     N = 90
-    poses = []
+    poses, phis = [], []
     for f in range(N + 1):
         t = f / N
-        br = math.sin(2 * math.pi * t)
+        br = math.sin(2 * math.pi * 2 * t)            # 2 breaths per loop
+        sw = math.sin(2 * math.pi * t)                # one slow fore-aft weight shift per loop
         P = Pose()
-        legs = {sd: (0.0, 0.0, -CRAWL_TIP_BACK, 0.0) for sd in SIDES}
+        legs = {sd: (0.0, 0.0, -CRAWL_TIP_BACK, 0.0, True) for sd in SIDES}
         hands = {sd: (0.0, 0.0) for sd in SIDES}
-        crawl_pose(S, P, legs, hands, CRAWL_LEAN + 1.0 * br, breathe=0.8 * br)
-        P.hips_pos.z += 0.005 * br
-        P.fk["neck"] = P.fk["neck"] @ Rx(1.5 * math.sin(2 * math.pi * 2 * t))
+        crawl_pose(S, P, legs, hands, CRAWL_LEAN + 1.5 * br - 2.0 * sw, breathe=1.2 * br,
+                   head_pitch=CRAWL_HEAD - 4.0 * sw + 3.0 * math.sin(2 * math.pi * 3 * t + 0.7),
+                   hips_dy=0.025 * sw, roll=1.2 * math.sin(2 * math.pi * t + 1.2))
+        P.fk["neck"] = P.fk["neck"] @ Rz(4.0 * math.sin(2 * math.pi * t + 0.4))
+        phis.append(crawl_arm_phi(S, P))
         poses.append(P)
+    smooth_phi(poses, phis)
     return poses, N, True, {}
 
 
+CRAWL_V, CRAWL_N, CRAWL_DUTY, CRAWL_HAND_DUTY = 0.5, 36, 0.57, 0.45
+
+
 def clip_crawl(S):
+    """Contralateral crawl (left knee with the right hand). Cycle 1.2 s, stride 0.6 m at 0.5 m/s. Each knee is
+    planted 62% of the cycle (forward of the hip at the plant = knee under, hips high; behind the hip before the
+    lift = leg extended back, hips low). Double-stance frames shift the hips fore-aft so both planted knees touch."""
     crawl_ref(S)
-    v, N, duty = 0.5, 30, 0.70
+    v, N, duty, hduty = CRAWL_V, CRAWL_N, CRAWL_DUTY, CRAWL_HAND_DUTY
     T = N / FPS
-    Lst = v * T * duty
-    poses = []
-    for f in range(N + 1):
+    Lst, Lh = v * T * duty, v * T * hduty
+
+    def limb(t, phase0, center, lift_h, d, L):
+        p = ((t / T) + phase0) % 1.0
+        if p < d:
+            return center + L / 2 - v * p * T, 0.0, 0.0, True
+        s_ = (p - d) / (1 - d)
+        y = hermite(center - L / 2, center + L / 2, -v * T * (1 - d), -v * T * (1 - d), s_)
+        ramp = min(1.0, 7.0 * s_, 7.0 * (1 - s_))
+        return y, lift_h * (0.5 * ramp + 0.5 * bump(s_)), bump(s_), False
+
+    def frame_setup(f):
         t = f / FPS
-
-        def limb(phase0, center, lift_h):
-            p = ((t / T) + phase0) % 1.0
-            if p < duty:
-                return center + Lst / 2 - v * p * T, 0.0, 0.0
-            s_ = (p - duty) / (1 - duty)
-            y = hermite(center - Lst / 2, center + Lst / 2, -v * T * (1 - duty), -v * T * (1 - duty), s_)
-            ramp = min(1.0, 7.0 * s_, 7.0 * (1 - s_))
-            return y, lift_h * (0.5 * ramp + 0.5 * bump(s_)), bump(s_)
-
         legs, hands, out, swing = {}, {}, {}, {}
         for sd, ph_leg, ph_arm in (("l", 0.0, 0.5), ("r", 0.5, 0.0)):   # left knee moves with the right hand
-            ky, kl, sw = limb(ph_leg, 0.0, 0.02)
-            ty, tl, _ = limb(ph_leg, -CRAWL_TIP_BACK, 0.03)
-            wy, wl, _ = limb(ph_arm + 0.05, 0.0, 0.05)
-            legs[sd] = (ky, kl, ty, tl)
+            ky, kl, sw, st = limb(t, ph_leg, 0.03, 0.035, duty, Lst)
+            ty, tl, _, _ = limb(t, ph_leg, 0.03 - CRAWL_TIP_BACK, 0.04, duty, Lst)
+            wy, wl, _, _ = limb(t, ph_arm + 0.06, 0.0, 0.06, hduty, Lh)
+            legs[sd] = (ky, kl, ty, tl, st)
             hands[sd] = (wy, wl)
             out[sd] = 0.03 * sw
             swing[sd] = sw
-        roll = 4.0 * (swing["l"] - swing["r"])     # hike the swing-side hip
-        ph = 2 * math.pi * f / N
+        roll = 5.0 * (swing["l"] - swing["r"])     # hike the swing-side hip (0 in double stance)
+        return legs, hands, out, roll
+
+    def pose_at(f, hy):
+        legs, hands, out, roll = frame_setup(f)
         P = Pose()
-        crawl_pose(S, P, legs, hands, CRAWL_LEAN, roll=roll, yaw=3.0 * math.sin(ph), knee_out=out)
+        ph = 2 * math.pi * f / N
+        need = crawl_pose(S, P, legs, hands, CRAWL_LEAN + 2.0 * math.cos(2 * ph), roll=roll,
+                          yaw=2.5 * math.sin(ph), knee_out=out, hips_dy=hy,
+                          head_pitch=CRAWL_HEAD + 3.0 * math.cos(2 * ph))
+        return P, need, legs
+
+    # pass 1: hips fore-aft offset that equalises the two planted knees (double stance frames)
+    def gap(f, h):
+        need = pose_at(f, h)[1]
+        return need["l"] - need["r"]
+
+    hy_keys = []
+    for f in range(N):
+        legs = frame_setup(f)[0]
+        if legs["l"][4] and legs["r"][4]:
+            lo, hi = -0.15, 0.15
+            glo = gap(f, lo)
+            for _ in range(30):
+                mid = 0.5 * (lo + hi)
+                gm = gap(f, mid)
+                if glo * gm <= 0:
+                    hi = mid
+                else:
+                    lo, glo = mid, gm
+            hy_keys.append((f, 0.5 * (lo + hi)))
+    # pass 2: smooth periodic Catmull-Rom through the double-stance values
+    ext = [(k - N, x) for k, x in hy_keys] + hy_keys + [(k + N, x) for k, x in hy_keys]
+    hy = []
+    for f in range(N + 1):
+        i = max(j for j in range(len(ext)) if ext[j][0] <= f)
+        (f0, p0), (f1, p1) = ext[i], ext[i + 1]
+        m0 = (p1 - ext[i - 1][1]) / (f1 - ext[i - 1][0]) * (f1 - f0)
+        m1 = (ext[i + 2][1] - p0) / (ext[i + 2][0] - f0) * (f1 - f0)
+        hy.append(hermite(p0, p1, m0, m1, (f - f0) / (f1 - f0)))
+    poses, phis = [], []
+    for f in range(N + 1):
+        P, need, legs = pose_at(f % N, hy[f])
+        phis.append(crawl_arm_phi(S, P))
         poses.append(P)
-    return poses, N, True, {"cycle_s": T, "stride_m": v * T, "stance_travel_m": Lst, "duty": duty, "speed": v}
+    smooth_phi(poses, phis)
+    print("crawl hips_dy keys", [(k, round(x, 3)) for k, x in hy_keys])
+    return poses, N, True, {"cycle_s": T, "stride_m": v * T, "stance_travel_m": Lst, "duty": duty,
+                            "hand_duty": hduty, "speed": v}
+
+
+JUMP_TAKEOFF, JUMP_TOUCHDOWN = 3, 27
 
 
 def clip_jump(S):
-    N = 36
-    K = {   # frame: (hips_dz, hips_dy, lean, foot_theta, foot_lift, arm_swing, elbow, head_pitch)
-        "hz": [(0, 0.0), (3, -0.03), (6, -0.22), (8, -0.08), (10, 0.0), (14, 0.0), (19, -0.01), (22, -0.04),
-               (26, -0.22), (31, -0.06), (36, 0.0)],
-        "hy": [(0, 0.0), (6, -0.08), (10, 0.0), (22, 0.0), (26, -0.07), (36, 0.0)],
-        "lean": [(0, 2.0), (6, 30.0), (9, 8.0), (14, 6.0), (22, 10.0), (26, 28.0), (31, 10.0), (36, 2.0)],
-        "th": [(0, 0.0), (3, -5.0), (6, -45.0), (8, -40.0), (10, -35.0), (14, -55.0), (19, -20.0), (22, -8.0),
-               (26, -45.0), (31, -15.0), (36, 0.0)],
-        "lift": [(0, 0.0), (8, 0.0), (10, 0.06), (14, 0.30), (18, 0.12), (21, 0.02), (22, 0.0), (36, 0.0)],
-        "arm": [(0, 0.0), (6, -50.0), (9, 45.0), (14, 70.0), (19, 40.0), (22, 10.0), (26, -30.0), (31, -5.0),
-                (36, 0.0)],
-        "elbow": [(0, 10.0), (6, 20.0), (9, 40.0), (14, 45.0), (22, 25.0), (26, 30.0), (36, 10.0)],
-        "head": [(0, 0.0), (6, 10.0), (14, -5.0), (26, 12.0), (36, 0.0)],
+    """Matches the game jump (instant launch at 4.0 m/s, g 9.8 -> 0.82 s airborne): a 2-frame push-off dip, blades
+    leave the floor at frame 3, tuck (knees up, blades hanging behind) until ~frame 14, legs reach down for the
+    landing from ~frame 18, blade tips touch at frame 27, compression to frame 31, recovered by frame 38.
+    In place: the game moves the body, so the airborne feet are lifted relative to the hips (tuck), not the hips."""
+    N = 40
+    K = {
+        "hz": [(0, 0.0), (2, -0.045), (3, -0.01), (5, 0.03), (9, 0.02), (16, 0.01), (24, 0.0), (27, -0.01),
+               (29, -0.12), (31, -0.15), (34, -0.07), (38, -0.005), (40, 0.0)],
+        "hy": [(0, 0.0), (2, -0.03), (4, 0.0), (27, 0.0), (31, -0.05), (36, -0.01), (40, 0.0)],
+        "lean": [(0, 2.0), (2, 13.0), (4, 3.0), (9, 9.0), (15, 11.0), (22, 6.0), (27, 6.0), (31, 24.0),
+                 (35, 9.0), (40, 2.0)],
+        "th": [(0, 0.0), (1, -3.0), (2, -6.0), (3, -12.0), (6, -40.0), (12, -52.0), (17, -42.0), (22, -20.0),
+               (25, -10.0), (27, -6.0), (29, 0.0), (40, 0.0)],
+        "lift": [(0, 0.0), (2, 0.0), (3, 0.015), (5, 0.09), (9, 0.24), (13, 0.29), (17, 0.24), (21, 0.11),
+                 (24, 0.035), (27, 0.0), (40, 0.0)],
+        "back": [(0, 0.0), (3, 0.0), (8, 0.12), (13, 0.17), (18, 0.10), (23, 0.02), (27, 0.0), (40, 0.0)],
+        "arm": [(0, 0.0), (2, -38.0), (4, 25.0), (8, 62.0), (14, 55.0), (20, 30.0), (25, 12.0), (27, 5.0),
+                (30, -22.0), (34, -8.0), (40, 0.0)],
+        "elbow": [(0, 10.0), (2, 18.0), (5, 32.0), (12, 42.0), (22, 25.0), (27, 20.0), (31, 32.0), (40, 10.0)],
+        "abd": [(0, 4.0), (8, 14.0), (16, 18.0), (24, 12.0), (30, 8.0), (40, 4.0)],
+        "head": [(0, 0.0), (2, 6.0), (6, -6.0), (14, -3.0), (22, 6.0), (27, 8.0), (31, 12.0), (40, 0.0)],
     }
     poses = []
     for f in range(N + 1):
@@ -985,19 +1228,21 @@ def clip_jump(S):
         P.hips_pos = Vector((0.0, SPINE_Y[0] + g["hy"], STAND_HIPS_Z - 0.006 + g["hz"]))
         torso(P, lean=g["lean"], head_pitch=g["head"] + g["lean"] * 0.2)
         for sd in ("l", "r"):
-            arm_fk(P, sd, swing=g["arm"], abd=6.0 + max(0, g["arm"]) * 0.05, bend=g["elbow"])
-        lift = max(0.0, g["lift"])
+            arm_fk(P, sd, swing=g["arm"], abd=g["abd"], bend=g["elbow"])
+        air = JUMP_TAKEOFF <= f < JUMP_TOUCHDOWN
+        lift = max(0.0, g["lift"]) if air else 0.0
         th = min(0.0, g["th"])
         for sd in ("l", "r"):
             s = SIDES[sd]
-            piv = BLADE_TIP
-            pw = mir(piv, s) + Vector((0, -0.04 * min(1, lift / 0.2), lift))
-            P.feet[sd] = ("foot", S.foot_matrix(sd, piv, pw, th, ground=0.0))
+            pw = mir(BLADE_TIP, s) + Vector((0, g["back"] if air else 0.0, lift))
+            gr = max(lift, 0.012) if air else 0.0     # airborne blades stay clearly off the floor
+            P.feet[sd] = ("foot", S.foot_matrix(sd, BLADE_TIP, pw, th, ground=gr))
         poses.append(P)
-    # keep the hips reachable (legs never over-extend)
+    # keep the hips reachable (legs never over-extend) and the tucked legs from folding completely
     base = [P.hips_pos.z for P in poses]
-    bad, zmin, zmax = fit_hips_z(S, poses, base, cyclic=False, smooth_iter=1, dmin=0.32, dmax=0.542)
-    return poses, N, False, {"hips_z": (round(zmin, 3), round(zmax, 3)), "infeasible_frames": bad}
+    bad, zmin, zmax = fit_hips_z(S, poses, base, cyclic=False, smooth_iter=1, dmin=0.30, dmax=0.542)
+    return poses, N, False, {"hips_z": (round(zmin, 3), round(zmax, 3)), "infeasible_frames": bad,
+                             "takeoff_frame": JUMP_TAKEOFF, "touchdown_frame": JUMP_TOUCHDOWN}
 
 
 CLIPS = [
@@ -1083,4 +1328,5 @@ def main():
     print("saved", OUT)
 
 
-main()
+if __name__ == "__main__":
+    main()

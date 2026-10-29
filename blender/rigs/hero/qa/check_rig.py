@@ -13,8 +13,11 @@ Metrics (evaluated deformed mesh, every frame):
 - joints: bones in the armature (all exported as skin joints).
 - max edge stretch: largest length ratio (stretch or compression) of any edge >= 5 mm vs. rest, and the bone that
   dominates it. Informational (weight-painting weak spots), not a pass/fail criterion.
-- arm-torso / leg-leg / thigh-torso: penetration estimate = 3rd-deepest vertex of one part found inside the other's
-  surface (nearest-surface normal test, ignoring the shoulder seam), max over frames (cm) and frames with > 1 cm.
+- leg min z / knee-down / knee slip: lowest thigh/knee-pod/shin vertex over the clip; crawl: share of frames each
+  knee rests (lowest vertex <= 1 cm; the idle needs 100%) and knee slip (same rule as blades) while it rests.
+- arm-torso / leg-leg / thigh-torso: penetration = depth of the 3rd-deepest vertex of one part found inside the other
+  part (ray-parity test, majority of 3 directions, candidates up to 20 cm from the surface, so deep intersections
+  are found; shoulder seam ignored), max over frames (cm) and frames with > 1 cm.
 """
 import sys
 
@@ -50,6 +53,7 @@ clav_w = W("shoulder_l", "shoulder_r")
 leg_w = {s: W(f"upper_leg_{s}", f"lower_leg_{s}", f"metatarsal_{s}", f"foot_{s}") for s in "lr"}
 foot_ids = {s: np.where(W(f"foot_{s}") > 0.5)[0] for s in "lr"}
 hand_ids = {s: np.where(W(f"hand_{s}") > 0.5)[0] for s in "lr"}
+knee_ids = {s: np.where(W(f"upper_leg_{s}", f"lower_leg_{s}") > 0.5)[0] for s in "lr"}   # thigh, knee pod, shin
 arm_ids = {s: np.where((arm_w[s] > 0.5) & (W(f"shoulder_{s}") < 0.05))[0] for s in "lr"}
 torso_mask = (arm_w["l"] + arm_w["r"] < 0.01) & (leg_w["l"] + leg_w["r"] < 0.01)
 torso_mask &= ~((rest[:, 2] > 1.30) & (np.abs(rest[:, 0]) > 0.12))      # shoulder seam excluded
@@ -66,6 +70,13 @@ def faces_of(mask):
 torso_faces = faces_of(torso_mask)
 torso_hi_faces = faces_of(torso_hi_mask)
 leg_faces = {s: faces_of(leg_w[s] > 0.5) for s in "lr"}
+# armpit seam: arm vertices of the armpit band (rest z > 1.10) that are within 5 cm of the torso at rest sit in the
+# torso's arm opening, where the parity test is ambiguous (one is modeled inside the torso); they are the arm-torso
+# connection, not an intersection. Everywhere else on the arm the test applies.
+_rb = BVHTree.FromPolygons([Vector(c) for c in rest], torso_faces, all_triangles=False)
+arm_ids = {s: np.array([i for i in arm_ids[s]
+                        if not (rest[i, 2] > 1.10 and _rb.find_nearest(Vector(rest[i]), 0.05)[0] is not None)])
+           for s in "lr"}
 
 
 def eval_co():
@@ -80,20 +91,42 @@ def eval_co():
     return co @ M[:3, :3].T + M[:3, 3]
 
 
-def penetration(co, ids, faces):
+RAY_DIRS = [Vector((0.267, 0.534, 0.802)).normalized(), Vector((-0.80, 0.27, -0.53)).normalized(),
+            Vector((0.33, -0.89, 0.30)).normalized()]
+
+
+def inside(bvh, p, max_hits=24):
+    """Ray-parity inside test against a (possibly open) part surface: majority vote of 3 ray directions (odd hit
+    count = inside). No depth limit (the old nearest-face normal test only saw points within 4 cm)."""
+    votes = 0
+    for k, d in enumerate(RAY_DIRS):
+        o, n = p.copy(), 0
+        for _ in range(max_hits):
+            loc, nrm, idx, dist = bvh.ray_cast(o, d)
+            if loc is None:
+                break
+            n += 1
+            o = loc + d * 1e-5
+        votes += n % 2
+        if votes >= 2 or (k == 1 and votes == 0):
+            break
+    return votes >= 2
+
+
+def penetration(co, ids, faces, reach=0.20):
+    """Depth (distance to the other part's surface) of the 3rd-deepest vertex of `ids` found inside `faces`."""
     if not len(ids) or not faces:
         return 0.0
     bvh = BVHTree.FromPolygons([Vector(c) for c in co], faces, all_triangles=False)
     depths = [0.0, 0.0, 0.0]
     for i in ids:
         p = Vector(co[i])
-        hit = bvh.find_nearest(p, 0.04)
-        if hit[0] is None:
+        hit = bvh.find_nearest(p, reach)       # candidates: anything within 20 cm of the other surface
+        if hit[0] is None or hit[3] < 1e-4:
             continue
-        loc, nrm, _, dist = hit
-        if (p - loc).dot(nrm) < 0:
-            depths.append(dist)
-    return sorted(depths)[-3]   # 3rd deepest: single flipped-normal vertices are ignored
+        if inside(bvh, p):
+            depths.append(hit[3])
+    return sorted(depths)[-3]   # 3rd deepest: single stray vertices are ignored
 
 
 def pose_snapshot():
@@ -118,6 +151,10 @@ for act in bpy.data.actions:
     hand_err = {s: 0.0 for s in "lr"}
     worst_hand = {s: 0.0 for s in "lr"}
     contact_bad = 0
+    knee_err = {s: 0.0 for s in "lr"}
+    worst_knee = {s: 0.0 for s in "lr"}
+    leg_min = 9.0
+    knee_low = {s: [] for s in "lr"}
     pen = {"arm": [0.0, 0], "leg": [0.0, 0], "thigh": [0.0, 0]}
     first = last = None
     stretch = [0.0, None]
@@ -154,6 +191,14 @@ for act in bpy.data.actions:
                 else:
                     phase_err[s] = 0.0
                 if name.startswith("crawl"):
+                    kz, pkz = co[knee_ids[s], 2], prev[knee_ids[s], 2]
+                    kb = (kz < 0.01) & (pkz < 0.01)
+                    if kb.any():
+                        d = co[knee_ids[s]][kb, :2] - prev[knee_ids[s]][kb, :2]
+                        knee_err[s] += np.linalg.norm(d - np.array([0.0, -v / FPS]), axis=1).mean()
+                        worst_knee[s] = max(worst_knee[s], knee_err[s])
+                    else:
+                        knee_err[s] = 0.0
                     hz, phz = co[hand_ids[s], 2], prev[hand_ids[s], 2]
                     hb = (hz < 0.01) & (phz < 0.01)
                     if hb.any():
@@ -162,6 +207,9 @@ for act in bpy.data.actions:
                         worst_hand[s] = max(worst_hand[s], hand_err[s])
                     else:
                         hand_err[s] = 0.0
+        for s in "lr":
+            knee_low[s].append(float(co[knee_ids[s], 2].min()))
+        leg_min = min(leg_min, min(knee_low[s][-1] for s in "lr"))
         # contact: at least one blade on the floor (except jump air frames / crawl handled by tips)
         mins = [co[foot_ids[s], 2].min() for s in "lr"]
         if name not in ("jump", "jog_loop") and min(mins) > 0.01:
@@ -183,17 +231,29 @@ for act in bpy.data.actions:
         lim = LIMITS["crawl"]
     slip = max(worst_slip.values()) * 100
     hslip = max(worst_hand.values()) * 100 if name.startswith("crawl") else float("nan")
+    kslip = max(worst_knee.values()) * 100 if name.startswith("crawl") else float("nan")
+    # knee contact (crawl): per side, frames where the knee is down (lowest thigh/pod/shin vertex <= 1 cm) and the
+    # highest such resting value; the idle must rest on both knees in every frame
+    if name.startswith("crawl"):
+        kdown = {s: [z for z in knee_low[s] if z <= 0.01] for s in "lr"}
+        kfrac = min(len(kdown[s]) / len(knee_low[s]) for s in "lr")
+        kcol = f"{leg_min:+.3f} / {kfrac * 100:.0f}% / {kslip:.2f}"
+    else:
+        kfrac = 1.0
+        kcol = f"{leg_min:+.3f} / - / -"
     ok = (top <= lim and low >= -0.01 and (not loop or seam < 0.001) and slip <= 2.0
-          and (np.isnan(hslip) or hslip <= 2.0) and contact_bad == 0 and pen["arm"][0] <= 0.02)
+          and (np.isnan(hslip) or hslip <= 2.0) and (np.isnan(kslip) or kslip <= 2.0) and contact_bad == 0
+          and pen["arm"][0] <= 0.02 and (name != "crawl_idle_loop" or kfrac == 1.0))
     rows.append((name, f"{f0}-{f1}", f"{(f1 - f0) / FPS:.2f}", "-" if not loop else f"{seam * 100:.2f}",
                  f"{top:.3f} (<= {lim})", f"{low:+.4f}", f"{v:.1f}", f"{slip:.2f}",
-                 "-" if np.isnan(hslip) else f"{hslip:.2f}", str(contact_bad), str(len(arm.data.bones)),
+                 "-" if np.isnan(hslip) else f"{hslip:.2f}", kcol, str(contact_bad), str(len(arm.data.bones)),
                  f"{stretch[0]:.1f} ({stretch[1][1]})",
                  f"{pen['arm'][0] * 100:.1f} / {pen['arm'][1]}", f"{pen['leg'][0] * 100:.1f} / {pen['leg'][1]}",
                  f"{pen['thigh'][0] * 100:.1f} / {pen['thigh'][1]}", "PASS" if ok else "FAIL"))
     print("row", rows[-1], "lowest", low_who, "highest", top_who)
 
 hdr = ("clip", "frames", "len s", "seam cm", "top m", "min z m", "speed", "blade slip cm", "hand slip cm",
+       "leg min z m / knee-down frames / knee slip cm",
        "no-contact frames", "joints", "max edge stretch (where)", "arm-torso cm / frames>1cm", "leg-leg cm / n", "thigh-torso cm / n", "result")
 lines = ["| " + " | ".join(hdr) + " |", "|" + "---|" * len(hdr)]
 lines += ["| " + " | ".join(r) + " |" for r in rows]
