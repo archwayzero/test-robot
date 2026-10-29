@@ -49,7 +49,13 @@ Then run `python3 tools/qa/check_budgets.py` and include the asset's row; an ass
   stumps at mid-thigh. Arms hang down (I-pose). Front faces glTF +Z (needs a 180 deg turn to face -Z).
 - **Full-body reference (human-provided):** `reference/hero/full_body.png` (side view; DVC via T037). Lower body:
   armoured, rust-stained thigh plates down to the knee; thin mechanical shins bent backwards (digitigrade, reverse
-  knee/hock); feet are curved blades, three tines per foot, toes forward.
+  knee/hock); feet are reverse-C hooks of three nested curved blade tines: they leave the hock going BACKWARD,
+  arch at about hock height (outer tine's rearmost point ~0.85 H behind the hock, H = hock height), sweep down and
+  hook FORWARD at ground level, tips landing under or just ahead of the hock; the outer arc is longest and lowest
+  (measured in reference/hero/full_body.md).
+- **Turnaround (T038):** `reference/hero/turnaround/` (8-angle stills `full_*.png`, `legs_*.png`, NOTES.md). The
+  modeler renders the model at the same angles and compares per angle. Only 90 deg is the real source view; the
+  others are AI interpretations (listed inventions in NOTES.md are ignored); `full_body.png` wins on conflict.
 - Conform (modeler, `blender/models/hero/conform.py` -> `hero_model.blend`):
   - Keep the Tripo upper body's look and topology; generate the lower body from scratch to match the reference
     (thigh plates continuing the existing stumps, hock joint, shins, three-tine blade feet) and attach it as part of
