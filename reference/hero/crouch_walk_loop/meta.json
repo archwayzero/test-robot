@@ -1,0 +1,15 @@
+{
+  "prompt_id": "19c1fc23-9a6f-4e95-95f6-381a5381f9b2",
+  "workflow": "ref_to_video.json",
+  "workflow_sha256": "69012be1197d6211031d2fdb82f326e44114c0888a5cd00e4c76d83f057cd553",
+  "params": {
+    "image": "snapshot_side.png",
+    "seed": 1401,
+    "seconds": 5,
+    "prompt": "The character in <Picture 1> sneaks forward in a deep crouch, walking slowly and carefully in a continuous, looping crouch-walk cycle, seen in strict side view (profile), facing left. Knees deeply bent the whole time, body kept low (about a third lower than standing), torso leaning forward, arms bent and held low in front. The camera tracks alongside like a treadmill shot so the character stays centered; the full body from the top of the hood to the feet is always in frame and the feet are always visible. Each slow step: a blade foot reaches forward and plants on the ground, the strongly compressed backward-bending hock takes the weight, then the rear foot lifts and swings forward low over the ground. The character never stands up. Keep exactly the same character design: chainmail mesh hood over a pale face, dark rust-stained armoured torso, black box backpack, wide boxy rust-orange armoured thigh plates down to the knee, and DIGITIGRADE mechanical legs: thin dark shins that slant backward from the knee to a raised hock, and feet made of three long curved blade tines forming a backward hook whose tips touch the ground. Plain neutral grey seamless studio background, even soft studio lighting, realistic 3D render, no other objects, no text."
+  },
+  "outputs": [
+    "MiniMax_H3_00008_.mp4"
+  ],
+  "created": "2026-10-29T21:40:25+00:00"
+}
