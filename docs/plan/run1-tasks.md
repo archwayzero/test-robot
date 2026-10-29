@@ -17,9 +17,10 @@ one task at a time; a task starts only after its dependencies are merged. Milest
 | T008 | module-dev | cloud_save | Autosave policy, local + fake backend | T002 | M1 |
 | T009 | module-dev | game | Main scene composition, environment, phases | T003-T008 | M1 |
 | T010 | qa | - | M1: e2e tests E1-E15, budgets, gameplay videos | T009 | M1 |
-| T011 | modeler | hero | Conform hero (adult height, pivot, -Z, textures <= 2048, PBR) | | M2 |
+| T037 | reference-director | hero | Track human-provided `reference/hero/full_body.png` with DVC, unchanged | | M2 |
+| T011 | modeler | hero | Conform hero: generate digitigrade legs from reference, attach to Tripo upper body; 1.75 m, -Z, PBR, textures <= 2048 | T037 | M2 |
 | T012 | reference-director | hero | Hero reference clips (8, see asset contract) | T011 | M2 |
-| T013 | rigger-animator | hero | Hero rig (humanoid profile) + 8 clips | T012 | M2 |
+| T013 | rigger-animator | hero | Hero rig (humanoid, digitigrade legs, I-pose rest, armpit weight isolation) + 8 clips | T012 | M2 |
 | T014 | qa | hero | Hero budgets + animation vs reference | T013 | M2 |
 | T015 | modeler | crypt_kit | Modular crypt pieces per docs/contracts/crypt-kit.md | arch/run1-plan | M2 |
 | T016 | modeler | wall_lamp | Wall lamp prop | arch/run1-plan | M2 |

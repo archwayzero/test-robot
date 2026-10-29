@@ -45,9 +45,26 @@ Then run `python3 tools/qa/check_budgets.py` and include the asset's row; an ass
 
 ## Asset: hero (run 1)
 - Provided original: `blender/models/hero/source/hero.glb` (Tripo, 19,001 tris, 0.98 m tall as delivered, no rig).
-- Conform (modeler): scale to a plausible ADULT height chosen by the modeler (1.65-1.85 m) and record it here and in
-  the task report; feet at origin, facing -Z in Godot; apply transforms; textures <= 2048 px; standard PBR material
-  (drop `KHR_materials_volume`). Export `godot/assets/hero/model/hero.glb`.
+- **The provided mesh is upper body only** (found in T011): head/hood, torso, arms, backpack; both legs end in capped
+  stumps at mid-thigh. Arms hang down (I-pose). Front faces glTF +Z (needs a 180 deg turn to face -Z).
+- **Full-body reference (human-provided):** `reference/hero/full_body.png` (side view; DVC via T037). Lower body:
+  armoured, rust-stained thigh plates down to the knee; thin mechanical shins bent backwards (digitigrade, reverse
+  knee/hock); feet are curved blades, three tines per foot, toes forward.
+- Conform (modeler, `blender/models/hero/conform.py` -> `hero_model.blend`):
+  - Keep the Tripo upper body's look and topology; generate the lower body from scratch to match the reference
+    (thigh plates continuing the existing stumps, hock joint, shins, three-tine blade feet) and attach it as part of
+    the same single mesh object (seam closed at the stumps, no gap visible from the game camera).
+  - Leg materials match the existing dark rusted metal (reuse the Tripo material/texture where UVs allow, or a
+    second PBR material with procedurally baked textures <= 2048 px; at most 2 materials total).
+  - Height: head top (hood) at **1.75 m** with the blade tips/contact points at y = 0 (stand capsule stays 1.75).
+    Feet at origin, facing -Z in Godot; transforms applied; textures <= 2048 px; standard PBR (drop
+    `KHR_materials_volume`, `FB_ngon_encoding`). Total <= the hero triangle budget (docs/qa/budgets.json); reduce
+    the upper body only if the legs do not fit.
+  - Export `godot/assets/hero/model/hero.glb`.
+- Rig notes for the rigger-animator (human decision, T011): rig in the delivered I-pose (no A-pose source will be
+  provided). Isolate arm and torso weights at the armpits (no torso deformation when the upper arm moves).
+  Optionally re-rest to A/T via the armature. Legs are digitigrade: thigh, shin, an extra metatarsal/hock bone and a
+  foot/toe bone per leg so foot contact and stride work; locomotion clips keep the blades planted without sliding.
 - Clips (rigger-animator), 30 fps, in-place (no root motion):
   `idle_loop`, `walk_loop`, `jog_loop`, `crouch_idle_loop`, `crouch_walk_loop`, `crawl_idle_loop`, `crawl_loop`, `jump`.
   Walk cycle stride should match `PlayerController.WALK_SPEED` 1.6 m/s, jog 4.0, crouch walk 1.0, crawl 0.5.
