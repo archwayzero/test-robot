@@ -255,6 +255,17 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
   figure in the asset notes was stump-to-head. Found by the modeler's first inspection render. The human supplied a
   full-body reference; the modeler generates digitigrade legs. Next game: check every provided model with front/side/
   below renders and a completeness checklist (head, hands, feet, pose) before planning, and ask for A-pose sources.
+- **Modeler worked from a single side view (T011):** two scripted leg passes guessed the unseen angles; the
+  orchestrator only used reference-director for motion clips (after modelling), as the plan listed it. The human
+  pointed out that the same ComfyUI workflow can produce a turnaround first (T038: 360 deg orbit + 8-angle stills,
+  ~20 min). Next game: the asset pipeline starts with a turnaround for every image-based asset, and the modeler
+  compares renders per angle (now in ARCHITECTURE.md "Turnaround references").
+- **Reference notes need review against the image:** the first T038 notes (and the contract) described the hero's
+  feet as "toes forward"; they actually sweep backward and hook forward at the tips. The reviewer caught it by
+  measuring on a pixel grid. Next game: describe shapes with direction + measured proportions, not one-word summaries.
+- **Scripted Blender limits for organic shapes:** primitives along hand-placed paths give stiff mechanical parts.
+  Better scripted routes: curves traced from the reference with bevel/taper, high-poly (remesh/subdivide) baked to
+  a low-poly normal map; or generate the part with image-to-3D (Tripo) and conform it.
 - **Agent definitions cannot be updated through git inside the sandbox:** `.claude/agents/` is read-only to shell
   commands, so `git switch`/`git pull` fail when a commit changes those files; the human ran the pull. Next game
   (kit): make `.claude/agents/` writable for git in the sandbox, or keep agent rules that change during a run in docs/.

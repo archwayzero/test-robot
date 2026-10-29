@@ -18,6 +18,7 @@ one task at a time; a task starts only after its dependencies are merged. Milest
 | T009 | module-dev | game | Main scene composition, environment, phases | T003-T008 | M1 |
 | T010 | qa | - | M1: e2e tests E1-E15, budgets, gameplay videos | T009 | M1 |
 | T037 | reference-director | hero | Track human-provided `reference/hero/full_body.png` with DVC, unchanged | | M2 |
+| T038 | reference-director | hero | Turnaround reference (orbit videos, 8-angle stills, notes) for modeler self-check | T037 | M2 |
 | T011 | modeler | hero | Conform hero: generate digitigrade legs from reference, attach to Tripo upper body; 1.75 m, -Z, PBR, textures <= 2048 | T037 | M2 |
 | T012 | reference-director | hero | Hero reference clips (8, see asset contract) | T011 | M2 |
 | T013 | rigger-animator | hero | Hero rig (humanoid, digitigrade legs, I-pose rest, armpit weight isolation) + 8 clips | T012 | M2 |
