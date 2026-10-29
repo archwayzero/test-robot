@@ -1,0 +1,15 @@
+{
+  "prompt_id": "ab209cbb-3830-4993-a605-9385d3f7b772",
+  "workflow": "ref_to_video.json",
+  "workflow_sha256": "69012be1197d6211031d2fdb82f326e44114c0888a5cd00e4c76d83f057cd553",
+  "params": {
+    "image": "full_body.png",
+    "seconds": 9,
+    "seed": 101,
+    "prompt": "A slow, smooth 360-degree turntable camera orbit around the character in <Picture 1>. The character stands completely still in a neutral standing pose, arms relaxed at the sides; no walking, no stepping, no limb motion, no head turning. Only the camera moves: it orbits horizontally around the character at hip-to-chest height at constant speed, starting from the front (face visible), passing the left side, the back, the right side, and returning to the front. The full body stays in frame at all times, from the top of the hood down to the tips of the foot blades. Plain neutral grey seamless studio background, even soft studio lighting, realistic 3D render. Keep exactly the same character design as <Picture 1>: chainmail mesh hood over a pale face, dark weathered armoured torso with rust-orange wear, green box backpack on straps with a hose to the hood, wide boxy rust-stained armoured thigh plates reaching to the knee, thin mechanical digitigrade shins bent backwards with a large rounded knee joint, and feet made of three long curved blade tines each, touching the ground at their tips."
+  },
+  "outputs": [
+    "MiniMax_H3_00001_.mp4"
+  ],
+  "created": "2026-10-29T03:37:54+00:00"
+}
