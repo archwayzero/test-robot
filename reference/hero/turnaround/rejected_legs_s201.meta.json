@@ -1,0 +1,15 @@
+{
+  "prompt_id": "f687aa01-108a-40fd-a0f6-a0aa1cb74b1f",
+  "workflow": "ref_to_video.json",
+  "workflow_sha256": "69012be1197d6211031d2fdb82f326e44114c0888a5cd00e4c76d83f057cd553",
+  "params": {
+    "image": "legs_input.png",
+    "seconds": 9,
+    "seed": 201,
+    "prompt": "A slow, smooth 360-degree turntable camera orbit around the mechanical legs in <Picture 1>, framed close on the lower body only: from the armoured thigh plates down to the tips of the foot blades, which stay fully in frame. The legs stand completely still; no walking, no stepping, no motion of the legs at all. Only the camera moves: it orbits horizontally around the legs at knee height at constant speed, from the left side, around the back, the right side, the front, and back to the left side. Plain neutral grey seamless studio background, even soft studio lighting, realistic 3D render, sharp detail. Keep exactly the same design as <Picture 1>: wide boxy rust-stained armoured thigh plates reaching to the knee, thin dark mechanical digitigrade shins bent backwards with a large rounded knee joint, a small spring at the ankle, and feet made of three long curved blade tines each, curving forward and touching the ground at their tips."
+  },
+  "outputs": [
+    "MiniMax_H3_00002_.mp4"
+  ],
+  "created": "2026-10-29T03:43:26+00:00"
+}
