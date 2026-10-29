@@ -1,8 +1,8 @@
 #!/bin/bash
-# usage: compare.sh <tag> [full|legs ...] -> .captures/T011/v4/compare_<set>_<tag>.png (reference left, model right)
+# usage: compare.sh <tag> [full|legs ...] -> .captures/T011/v5/compare_<set>_<tag>.png (reference left, model right)
 set -e
 cd /home/archwayzero/game
-T=reference/hero/turnaround; R=.captures/T011/v4/r; O=.captures/T011/v4; tag=$1; shift
+T=reference/hero/turnaround; R=.captures/T011/v5/r; O=.captures/T011/v5; tag=$1; shift
 sets=${@:-full legs}
 F=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
 L="fontfile=$F:fontsize=18:fontcolor=white:x=6:y=6:box=1:boxcolor=black@0.6:boxborderw=2"

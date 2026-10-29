@@ -1,0 +1,1131 @@
+{
+ "scale": {
+  "image": "reference/hero/full_body.png",
+  "hood_top_y": 8.0,
+  "ground_y": 801.0,
+  "px_per_m": 453.14,
+  "note": "x right = character's back; f = forward of the ankle (towards the face), dz = above the ankle"
+ },
+ "which_is_near": "near = the leg drawn in front: thigh plate R (x 100-185) with the near hand over it, knee pod B over plate R, shin to the spring at (222,681), rear foot slightly lifted (tip y 789). far = plate F (x 62-110, partly hidden), pod A, planted front foot with the flat ground run (y 800). (full_body.md / turnaround NOTES call the planted foot the near one; the occlusion says otherwise.)",
+ "landmarks_px": {
+  "near": {
+   "hip_disc_centre": [
+    113,
+    402
+   ],
+   "plate_front_edge": [
+    [
+     102,
+     470
+    ],
+    [
+     107,
+     510
+    ],
+    [
+     112,
+     550
+    ]
+   ],
+   "plate_back_edge": [
+    [
+     160,
+     442
+    ],
+    [
+     170,
+     510
+    ],
+    [
+     184,
+     575
+    ]
+   ],
+   "plate_top_y": 395,
+   "plate_bottom_edge": [
+    [
+     147,
+     583
+    ],
+    [
+     184,
+     576
+    ]
+   ],
+   "plate_segment_lines": [
+    [
+     [
+      120,
+      468
+     ],
+     [
+      160,
+      466
+     ]
+    ],
+    [
+     [
+      130,
+      520
+     ],
+     [
+      170,
+      510
+     ]
+    ]
+   ],
+   "knee_pod_outline": [
+    [
+     115,
+     551
+    ],
+    [
+     113,
+     558
+    ],
+    [
+     116,
+     575
+    ],
+    [
+     118,
+     590
+    ],
+    [
+     125,
+     602
+    ],
+    [
+     140,
+     596
+    ],
+    [
+     136,
+     575
+    ],
+    [
+     128,
+     556
+    ]
+   ],
+   "knee_centre": [
+    143,
+    592
+   ],
+   "shin_front_edge": [
+    [
+     118,
+     590
+    ],
+    [
+     129,
+     607
+    ],
+    [
+     140,
+     614
+    ],
+    [
+     155,
+     622
+    ],
+    [
+     170,
+     640
+    ],
+    [
+     180,
+     650
+    ],
+    [
+     190,
+     660
+    ],
+    [
+     205,
+     668
+    ]
+   ],
+   "shin_back_edge": [
+    [
+     169,
+     590
+    ],
+    [
+     174,
+     600
+    ],
+    [
+     179,
+     611
+    ],
+    [
+     182,
+     626
+    ],
+    [
+     186,
+     633
+    ],
+    [
+     194,
+     640
+    ],
+    [
+     206,
+     660
+    ],
+    [
+     214,
+     666
+    ]
+   ],
+   "hock": [
+    180,
+    637
+   ],
+   "spring": [
+    [
+     212,
+     666
+    ],
+    [
+     228,
+     685
+    ]
+   ],
+   "ankle": [
+    222,
+    681
+   ],
+   "tines": {
+    "outer": [
+     [
+      190,
+      635
+     ],
+     [
+      204,
+      650
+     ],
+     [
+      215,
+      658
+     ],
+     [
+      225,
+      662
+     ],
+     [
+      240,
+      666
+     ],
+     [
+      255,
+      667
+     ],
+     [
+      270,
+      667
+     ],
+     [
+      280,
+      668
+     ],
+     [
+      290,
+      672
+     ],
+     [
+      300,
+      679
+     ],
+     [
+      308,
+      688
+     ],
+     [
+      313,
+      697
+     ],
+     [
+      315,
+      703
+     ],
+     [
+      313,
+      712
+     ],
+     [
+      309,
+      722
+     ],
+     [
+      303,
+      732
+     ],
+     [
+      296,
+      742
+     ],
+     [
+      288,
+      752
+     ],
+     [
+      280,
+      761
+     ],
+     [
+      270,
+      770
+     ],
+     [
+      258,
+      777
+     ],
+     [
+      244,
+      782
+     ],
+     [
+      230,
+      786
+     ],
+     [
+      214,
+      789
+     ]
+    ],
+    "middle": [
+     [
+      214,
+      668
+     ],
+     [
+      225,
+      664
+     ],
+     [
+      240,
+      668
+     ],
+     [
+      255,
+      669
+     ],
+     [
+      270,
+      669
+     ],
+     [
+      282,
+      671
+     ],
+     [
+      292,
+      676
+     ],
+     [
+      301,
+      683
+     ],
+     [
+      307,
+      692
+     ],
+     [
+      311,
+      700
+     ],
+     [
+      311,
+      707
+     ],
+     [
+      306,
+      717
+     ],
+     [
+      300,
+      730
+     ],
+     [
+      293,
+      742
+     ],
+     [
+      286,
+      752
+     ],
+     [
+      278,
+      762
+     ],
+     [
+      268,
+      771
+     ],
+     [
+      262,
+      775
+     ]
+    ],
+    "inner": [
+     [
+      226,
+      679
+     ],
+     [
+      240,
+      675.5
+     ],
+     [
+      250,
+      675
+     ],
+     [
+      260,
+      676
+     ],
+     [
+      270,
+      681
+     ],
+     [
+      281,
+      691
+     ],
+     [
+      290,
+      701
+     ],
+     [
+      294,
+      711
+     ],
+     [
+      295,
+      720
+     ],
+     [
+      294,
+      733
+     ],
+     [
+      290,
+      743
+     ],
+     [
+      287,
+      751
+     ]
+    ]
+   }
+  },
+  "far": {
+   "plate_front_edge": [
+    [
+     62,
+     435
+    ],
+    [
+     67,
+     500
+    ],
+    [
+     71,
+     550
+    ]
+   ],
+   "knee_pod_outline": [
+    [
+     58,
+     545
+    ],
+    [
+     57,
+     550
+    ],
+    [
+     62,
+     570
+    ],
+    [
+     70,
+     590
+    ],
+    [
+     78,
+     600
+    ],
+    [
+     80,
+     580
+    ],
+    [
+     72,
+     556
+    ]
+   ],
+   "knee_centre": [
+    85,
+    596
+   ],
+   "shin_front_edge": [
+    [
+     70,
+     600
+    ],
+    [
+     84,
+     620
+    ],
+    [
+     98,
+     636
+    ],
+    [
+     108,
+     654
+    ],
+    [
+     118,
+     670
+    ],
+    [
+     134,
+     688
+    ]
+   ],
+   "shin_back_edge": [
+    [
+     108,
+     600
+    ],
+    [
+     110,
+     620
+    ],
+    [
+     116,
+     640
+    ],
+    [
+     126,
+     656
+    ],
+    [
+     136,
+     674
+    ],
+    [
+     142,
+     690
+    ]
+   ],
+   "hock": [
+    113,
+    645
+   ],
+   "spring": [
+    [
+     134,
+     686
+    ],
+    [
+     146,
+     701
+    ]
+   ],
+   "ankle": [
+    141,
+    699
+   ],
+   "tines": {
+    "outer": [
+     [
+      118,
+      643
+     ],
+     [
+      127,
+      658
+     ],
+     [
+      131,
+      664
+     ],
+     [
+      139,
+      673
+     ],
+     [
+      150,
+      681
+     ],
+     [
+      160,
+      686
+     ],
+     [
+      170,
+      689
+     ],
+     [
+      181,
+      691
+     ],
+     [
+      191,
+      694
+     ],
+     [
+      201,
+      699
+     ],
+     [
+      210,
+      704
+     ],
+     [
+      219,
+      716
+     ],
+     [
+      223,
+      726
+     ],
+     [
+      225,
+      734
+     ],
+     [
+      222,
+      746
+     ],
+     [
+      216,
+      758
+     ],
+     [
+      208,
+      768
+     ],
+     [
+      196,
+      778
+     ],
+     [
+      186,
+      786
+     ],
+     [
+      176,
+      793
+     ],
+     [
+      166,
+      798
+     ],
+     [
+      158,
+      800
+     ],
+     [
+      140,
+      800
+     ],
+     [
+      120,
+      800
+     ],
+     [
+      104,
+      800
+     ]
+    ],
+    "middle": [
+     [
+      132,
+      683
+     ],
+     [
+      140,
+      684
+     ],
+     [
+      150,
+      685
+     ],
+     [
+      160,
+      689
+     ],
+     [
+      170,
+      692
+     ],
+     [
+      181,
+      694
+     ],
+     [
+      191,
+      697
+     ],
+     [
+      200,
+      702
+     ],
+     [
+      208,
+      708
+     ],
+     [
+      215,
+      718
+     ],
+     [
+      219,
+      728
+     ],
+     [
+      219,
+      740
+     ],
+     [
+      213,
+      756
+     ],
+     [
+      205,
+      768
+     ],
+     [
+      195,
+      778
+     ],
+     [
+      186,
+      786
+     ],
+     [
+      180,
+      790
+     ]
+    ],
+    "inner": [
+     [
+      143,
+      697
+     ],
+     [
+      150,
+      696
+     ],
+     [
+      160,
+      696
+     ],
+     [
+      170,
+      698
+     ],
+     [
+      180,
+      703
+     ],
+     [
+      190,
+      710
+     ],
+     [
+      197,
+      720
+     ],
+     [
+      200,
+      730
+     ],
+     [
+      201,
+      742
+     ],
+     [
+      200,
+      754
+     ],
+     [
+      196,
+      766
+     ],
+     [
+      190,
+      776
+     ],
+     [
+      184,
+      781
+     ]
+    ]
+   }
+  }
+ },
+ "near": {
+  "shin_len_m": 0.1286,
+  "meta_len_m": 0.1342,
+  "knee_to_ankle_m": 0.2626,
+  "shin_angle_from_vertical_deg": 39.4278,
+  "meta_angle_from_vertical_deg": 43.6678,
+  "hock_angle_deg": 4.24,
+  "knee_z_m": 0.4612,
+  "hock_z_m": 0.3619,
+  "ankle_z_m": 0.2648,
+  "hip_z_m": 0.8805,
+  "thigh_len_m": 0.4245,
+  "thigh_angle_from_vertical_deg": 8.9726,
+  "knee_angle_deg": 30.4552,
+  "shin_thickness_m": {
+   "25%": 0.0662,
+   "50%": 0.0287,
+   "85%": 0.0232
+  },
+  "H_px": 108,
+  "H_m": 0.2383,
+  "foot_H": {
+   "outer": {
+    "root": [
+     0.2963,
+     0.4259
+    ],
+    "arch_top": [
+     -0.3056,
+     0.1296
+    ],
+    "rearmost": [
+     -0.8611,
+     -0.2037
+    ],
+    "lowest": [
+     0.0741,
+     -1.0
+    ],
+    "tip": [
+     0.0741,
+     -1.0
+    ],
+    "path_len_H": 2.7212,
+    "thickness_m": {
+     "root_third": 0.0077,
+     "mid": 0.0061,
+     "tip_third": 0.0033
+    }
+   },
+   "middle": {
+    "root": [
+     0.0741,
+     0.1204
+    ],
+    "arch_top": [
+     -0.0278,
+     0.1574
+    ],
+    "rearmost": [
+     -0.8241,
+     -0.1759
+    ],
+    "lowest": [
+     -0.3704,
+     -0.8704
+    ],
+    "tip": [
+     -0.3704,
+     -0.8704
+    ],
+    "path_len_H": 1.8874,
+    "thickness_m": {
+     "root_third": 0.0077,
+     "mid": 0.016,
+     "tip_third": 0.0099
+    }
+   },
+   "inner": {
+    "root": [
+     -0.037,
+     0.0185
+    ],
+    "arch_top": [
+     -0.2593,
+     0.0556
+    ],
+    "rearmost": [
+     -0.6759,
+     -0.3611
+    ],
+    "lowest": [
+     -0.6019,
+     -0.6481
+    ],
+    "tip": [
+     -0.6019,
+     -0.6481
+    ],
+    "path_len_H": 1.1683,
+    "thickness_m": {
+     "root_third": 0.0055,
+     "mid": 0.0061,
+     "tip_third": 0.0066
+    }
+   }
+  }
+ },
+ "far": {
+  "shin_len_m": 0.1245,
+  "meta_len_m": 0.1342,
+  "knee_to_ankle_m": 0.2587,
+  "shin_angle_from_vertical_deg": 29.7449,
+  "meta_angle_from_vertical_deg": 27.4076,
+  "hock_angle_deg": -2.3373,
+  "knee_z_m": 0.4524,
+  "hock_z_m": 0.3443,
+  "ankle_z_m": 0.2251,
+  "thigh_angle_from_vertical_deg (plate edge)": 4.4749,
+  "knee_angle_deg (vs plate edge)": 25.27,
+  "shin_thickness_m": {
+   "25%": 0.0596,
+   "50%": 0.0386,
+   "85%": 0.0221
+  },
+  "H_px": 101,
+  "H_m": 0.2229,
+  "foot_H": {
+   "outer": {
+    "root": [
+     0.2277,
+     0.5545
+    ],
+    "arch_top": [
+     -0.2871,
+     0.099
+    ],
+    "rearmost": [
+     -0.8317,
+     -0.3465
+    ],
+    "lowest": [
+     -0.1683,
+     -1.0
+    ],
+    "tip": [
+     0.3663,
+     -1.0
+    ],
+    "path_len_H": 2.9875,
+    "thickness_m": {
+     "root_third": 0.0055,
+     "mid": 0.011,
+     "tip_third": 0.0088
+    }
+   },
+   "middle": {
+    "root": [
+     0.0891,
+     0.1584
+    ],
+    "arch_top": [
+     0.0099,
+     0.1485
+    ],
+    "rearmost": [
+     -0.7723,
+     -0.2871
+    ],
+    "lowest": [
+     -0.3861,
+     -0.901
+    ],
+    "tip": [
+     -0.3861,
+     -0.901
+    ],
+    "path_len_H": 1.7933,
+    "thickness_m": {
+     "root_third": 0.0044,
+     "mid": 0.0094,
+     "tip_third": 0.0044
+    }
+   },
+   "inner": {
+    "root": [
+     -0.0198,
+     0.0198
+    ],
+    "arch_top": [
+     -0.0891,
+     0.0297
+    ],
+    "rearmost": [
+     -0.5941,
+     -0.4257
+    ],
+    "lowest": [
+     -0.4257,
+     -0.8119
+    ],
+    "tip": [
+     -0.4257,
+     -0.8119
+    ],
+    "path_len_H": 1.2823,
+    "thickness_m": {
+     "root_third": 0.005,
+     "mid": 0.0061,
+     "tip_third": 0.0066
+    }
+   }
+  }
+ },
+ "foot_pose_check": {
+  "near_to_far_rotation_deg": 9.0,
+  "mean_landmark_residual_H": 0.076,
+  "note": "the two feet are the same shape up to a pitch about the ankle -> foot shape is pose-invariant"
+ },
+ "plate": {
+  "depth_side_m": {
+   "z0.66 (y 500)": 0.139,
+   "z0.55 (y 550)": 0.1501,
+   "bottom (y 578)": 0.1545
+  },
+  "width_front_m (legs_000)": {
+   "upper": 0.13,
+   "bottom": 0.1
+  },
+  "segment_lines_z_m": [
+   0.7371,
+   0.6311
+  ],
+  "bottom_z_m": {
+   "back": 0.4965,
+   "front (behind pod)": 0.4767
+  },
+  "near_thigh_angle_from_vertical_deg (front/back edges)": [
+   7.125,
+   10.229
+  ]
+ },
+ "shin_width_front_m (legs_000, approx)": {
+  "knee bulb": 0.08,
+  "mid": 0.035,
+  "bottom": 0.035
+ },
+ "tine_width_front_m (legs_000, approx)": 0.014,
+ "not_measurable": {
+  "middle.arch_top": "hidden behind the outer tine in both feet (single line in the image)",
+  "middle.thickness_mid": "the middle tine's mid sample lies in the stretch hidden behind the outer tine's arch (both dark lines merge)"
+ },
+ "merged_end": {
+  "middle.lowest": 14,
+  "middle.tip": 14
+ },
+ "targets": {
+  "thigh_len_m": 0.4245,
+  "shin_len_m": 0.1266,
+  "meta_len_m": 0.1342,
+  "knee_angle_deg": 30.4552,
+  "hock_angle_deg": 4.24,
+  "shin_thickness_m": {
+   "25%": 0.0662,
+   "50%": 0.0287,
+   "85%": 0.0232
+  },
+  "foot_H_source": "far (planted) foot: the rest pose stands on the ground",
+  "foot_H": {
+   "outer": {
+    "root": [
+     0.2277,
+     0.5545
+    ],
+    "arch_top": [
+     -0.2871,
+     0.099
+    ],
+    "rearmost": [
+     -0.8317,
+     -0.3465
+    ],
+    "lowest": [
+     -0.1683,
+     -1.0
+    ],
+    "tip": [
+     0.3663,
+     -1.0
+    ],
+    "path_len_H": 2.9875,
+    "thickness_m": {
+     "root_third": 0.0055,
+     "mid": 0.011,
+     "tip_third": 0.0088
+    }
+   },
+   "middle": {
+    "root": [
+     0.0891,
+     0.1584
+    ],
+    "arch_top": [
+     0.0099,
+     0.1485
+    ],
+    "rearmost": [
+     -0.7723,
+     -0.2871
+    ],
+    "lowest": [
+     -0.3861,
+     -0.901
+    ],
+    "tip": [
+     -0.3861,
+     -0.901
+    ],
+    "path_len_H": 1.7933,
+    "thickness_m": {
+     "root_third": 0.0044,
+     "mid": 0.0094,
+     "tip_third": 0.0044
+    }
+   },
+   "inner": {
+    "root": [
+     -0.0198,
+     0.0198
+    ],
+    "arch_top": [
+     -0.0891,
+     0.0297
+    ],
+    "rearmost": [
+     -0.5941,
+     -0.4257
+    ],
+    "lowest": [
+     -0.4257,
+     -0.8119
+    ],
+    "tip": [
+     -0.4257,
+     -0.8119
+    ],
+    "path_len_H": 1.2823,
+    "thickness_m": {
+     "root_third": 0.005,
+     "mid": 0.0061,
+     "tip_third": 0.0066
+    }
+   }
+  },
+  "H_m": 0.2229
+ }
+}

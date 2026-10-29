@@ -1,16 +1,18 @@
-"""Scratch renders of hero_model.blend (Cycles CPU) -> .captures/T011/v4/r/.
+"""Scratch renders of hero_model.blend (Cycles CPU) -> .captures/T011/v5/r/.
 usage: blender -b <blend> -P render.py -- <tag> <views> [samples] [pose]
 views (comma list): side_ref (reference-aligned ortho 414x807, transparent), full, legs (8 turnaround angles each,
 framed like reference/hero/turnaround), game, threeq, seam, foot, knee, front, back
 pose: 'stride' rotates the legs at the hips (scratch only) so the knees land on the reference knees."""
 import bpy, math, sys, json
+import re as _re
+CUT_Z = float(_re.search(r"^CUT_Z = ([0-9.]+)", open("/home/archwayzero/game/blender/models/hero/conform.py").read(), _re.M).group(1))
 import bmesh
 from mathutils import Vector, Matrix
 argv = sys.argv[sys.argv.index("--") + 1:]
 tag, views = argv[0], argv[1].split(",")
 samples = int(argv[2]) if len(argv) > 2 else 24
 pose = argv[3] if len(argv) > 3 else ""
-OUT = "/home/archwayzero/game/.captures/T011/v4/r/"
+OUT = "/home/archwayzero/game/.captures/T011/v5/r/"
 PPM, GROUND = 793 / 1.75, 801.0
 HIP_PX = (113.0, 402.0)          # reference near hip disc centre
 HIP_Y, HIP_Z = 0.0686, 0.8708    # model hip disc centre (measured by check_legs.py)
@@ -19,19 +21,19 @@ obj = bpy.data.objects["hero"]
 
 if pose in ("stride", "stride_joints"):
     # rotate each leg's faces (material 1) about the hip axis (X) so the knee hits the reference knee position
-    lm = json.load(open("/home/archwayzero/game/.captures/T011/v4/reference_landmarks.json"))["landmarks_px"]
+    lm = json.load(open("/home/archwayzero/game/blender/models/hero/qa/reference_landmarks.json"))["landmarks_px"]
     me = obj.data
     bm = bmesh.new(); bm.from_mesh(me)
     lp = bm.faces.layers.float["lm_part"]; lt = bm.faces.layers.float["lm_t"]
     for side, leg in ((-1, "near"), (1, "far")):        # camera at -X: the -X leg is the near one
         vs = {v for f in bm.faces if f.material_index == 1 and f.calc_center_median().x * side > 0 for v in f.verts}
-        vs = {v for v in vs if v.co.z < 0.779}          # keep the welded cut loop in place
+        vs = {v for v in vs if v.co.z < CUT_Z - 0.001}          # keep the welded cut loop in place
         knee_ring = [v for f in bm.faces if f.material_index == 1 and int(round(f[lp])) == 4 and abs(f[lt]) < 1e-4
                      and f.calc_center_median().x * side > 0 for v in f.verts]
         K = sum((v.co for v in knee_ring), Vector()) / len(knee_ring)
         kx, ky = lm[leg]["knee_centre"]
         try:      # upper-body alignment of the unposed render (overlay.py): model appears shifted by dx px
-            kx -= json.load(open("/home/archwayzero/game/.captures/T011/v4/align.json"))["dx_px"]
+            kx -= json.load(open("/home/archwayzero/game/.captures/T011/v5/align.json"))["dx_px"]
         except FileNotFoundError:
             pass
         # image -> model: z = (GROUND - y)/PPM ; y = HIP_Y + (HIP_PX[0] - x)/PPM
@@ -46,11 +48,15 @@ if pose in ("stride", "stride_joints"):
                  and f.calc_center_median().x * side > 0 for v in f.verts}
             s_ = a & b
             return sum((v.co for v in s_), Vector()) / len(s_)
-        Jm, Am = ringc(0.38, 0.4855), ringc(0.985, 1.0)
+        lts = sorted({round(f[lt], 5) for f in bm.faces if f.material_index == 1 and int(round(f[lp])) in (4, 5, 6)
+                      and f.calc_center_median().x * side > 0})
+        def before(t):
+            return max(x for x in lts if x < t - 1e-6)
+        Jm, Am = ringc(before(0.4855), 0.4855), ringc(before(1.0), 1.0)
         for v in vs:
             v.co = R @ v.co
         if pose == "stride_joints":   # also bend knee and ankle (pose-dependent joints) onto the reference
-            dx_ = json.load(open("/home/archwayzero/game/.captures/T011/v4/align.json"))["dx_px"]
+            dx_ = json.load(open("/home/archwayzero/game/.captures/T011/v5/align.json"))["dx_px"]
             def to_m(px):
                 return Vector((0, HIP_Y + (HIP_PX[0] - (px[0] - dx_)) / PPM, (GROUND - px[1]) / PPM))
             Kp, Ap = R @ K, R @ Am
@@ -65,7 +71,7 @@ if pose in ("stride", "stride_joints"):
                 v.co = Rk @ v.co
             # foot pitch about the ankle: the near foot is the far foot rotated (reference foot_pose_check)
             if leg == "near":
-                fr = json.load(open("/home/archwayzero/game/.captures/T011/v4/reference_landmarks.json"))["foot_pose_check"]["near_to_far_rotation_deg"]
+                fr = json.load(open("/home/archwayzero/game/blender/models/hero/qa/reference_landmarks.json"))["foot_pose_check"]["near_to_far_rotation_deg"]
                 Ap2 = Rk @ Ap
                 Ra = (Matrix.Translation((0, Ap2.y, Ap2.z)) @ Matrix.Rotation(math.radians(-fr), 4, "X")
                       @ Matrix.Translation((0, -Ap2.y, -Ap2.z)))
@@ -75,7 +81,7 @@ if pose in ("stride", "stride_joints"):
                     if v.co.z < Ap2.z + 0.03:
                         v.co = Ra @ v.co
             print(f"  joints {leg}: knee bend {math.degrees(b1 - b0):+.1f} deg")
-        dxp = json.load(open("/home/archwayzero/game/.captures/T011/v4/align.json"))["dx_px"] if __import__("os").path.exists("/home/archwayzero/game/.captures/T011/v4/align.json") else 0
+        dxp = json.load(open("/home/archwayzero/game/.captures/T011/v5/align.json"))["dx_px"] if __import__("os").path.exists("/home/archwayzero/game/.captures/T011/v5/align.json") else 0
         def img(p):
             p = R @ p
             return (round(HIP_PX[0] + (HIP_Y - p.y) * PPM + dxp, 1), round(GROUND - p.z * PPM, 1))

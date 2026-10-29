@@ -22,9 +22,9 @@ d = np.abs(a - bg).max(2)
 print("bg residual on sel: p50 %.4f p99 %.4f max %.4f" % (np.percentile(d[sel], 50), np.percentile(d[sel], 99), d[sel].max()))
 thr = float(sys.argv[1]) if len(sys.argv) > 1 else 0.06
 m = d > thr
-np.save(R + ".captures/T011/v4/ref_mask.npy", m)
+np.save(R + ".captures/T011/v5/ref_mask.npy", m)
 vis = a.copy(); vis[m] = vis[m] * 0.4 + np.array((1, 0, 0)) * 0.6
-save(R + ".captures/T011/v4/ref_mask.png", vis)
+save(R + ".captures/T011/v5/ref_mask.png", vis)
 rows = np.where(m.any(1))[0]; print("mask rows", rows.min(), rows.max())
 for y in range(780, 807):
     xs = np.where(m[y])[0]

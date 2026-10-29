@@ -1,27 +1,34 @@
-"""T011 hero conform (pass 4): Tripo upper body (provided) + continuous digitigrade legs -> hero_model.blend.
+"""T011 hero conform (pass 5): Tripo upper body (provided) + continuous digitigrade legs -> hero_model.blend.
 
 Build (re-runnable, deterministic), then export:
   python3 tools/qa/memguard.py --expect-peak-mb 2000 -- blender -b -P blender/models/hero/conform.py
   python3 tools/qa/memguard.py --expect-peak-mb 2000 -- \
     blender -b blender/models/hero/hero_model.blend -P tools/blender/export_gltf.py -- \
     --out godot/assets/hero/model/hero.glb --no-anim
+Check: blender -b blender/models/hero/hero_model.blend -P blender/models/hero/qa/check_legs.py
 
 Steps:
   1. Import source/hero.glb (untouched), merge split vertices, drop the encoded custom normals.
-  2. Cut the Tripo thighs at the hip line (z = CUT_Z = 0.78 m after scaling, below the hip disc and under the
+  2. Cut the Tripo thighs at the hip line (z = CUT_Z = 0.79 m after scaling, below the hip disc and under the
      hand): everything of the thighs below it is removed; one clean boundary loop per side remains.
   3. Build ONE continuous leg per side (bmesh), welded to that loop, measured on reference/hero/full_body.png
-     (landmark sheet: qa/ref_landmarks.py -> .captures/T011/v4/reference_landmarks.json; 453 px/m):
-       - thigh plate: lofted from the cut loop along the thigh axis (hip disc centre -> knee, 0.4245 m) with a
-         cuff band, two telescoping segment lines (reference z 0.737 / 0.631 = fractions 0.342 / 0.595 of the
-         thigh), boxy superellipse sections (depth 0.15-0.16 m, width 0.13 -> 0.11 m), a slanted bottom edge
-         (back 2 cm higher) that rolls inwards into
-       - the knee / shin: the same surface continues as a 16-sided loft: knee bulb under the plate (depth 9 cm),
-         tapering shin slanting back, the hock bend, the metatarsal (12-sided), a coil-spring thread (4 turns)
-         and the ankle cap. Side profile = the measured front/back edge offsets of the near reference shin.
-       - knee pod: rounded capsule at the plate's front-bottom, boolean-unioned (welded) into the plate/shin.
-       - three nested reverse-C tines per foot: centrelines = the traced reference polylines of the planted
-         foot (in ankle heights H), roots embedded in the shin/spring and boolean-unioned (welded).
+     (landmark sheet: qa/ref_landmarks.py -> qa/reference_landmarks.json; 453 px/m):
+       - thigh plate: lofted from the cut loop. The first ring continues the Tripo surface along its tangent
+         (measured against the body section 1.5 cm above the cut) and eases into the plate section (flush join: no
+         lip, no groove); two telescoping segment lines at the reference z 0.737 / 0.631 (3 bands as in the
+         reference), boxy superellipse sections, a slanted bottom edge (back 2 cm higher) that rolls inwards into
+       - the knee / shin: the same surface continues as an 18-sided loft (stations densified with Catmull-Rom, no
+         visible kinks): knee bulb under the plate (depth 9 cm), tapering shin slanting back, a back-of-shin bulge
+         and a sharp hock (the back edge stops converging and runs down the metatarsal), the metatarsal
+         (12-sided), a coil-spring thread (4 turns) and the ankle cap.
+       - knee pod: capsule at the plate's front-bottom (front flush with the plate front, 4 mm proud of its side,
+         bottom 2.2 cm below the knee), boolean-unioned; its union boundary is a sharp crease (own outline).
+       - three reverse-C tines per foot nested into one blade bundle (lateral offsets +-1 mm): flat blades
+         (rounded-rectangle section, 16 -> 12 mm wide, ~5-6 mm thick, outer rear arch 9 mm), centrelines = the
+         traced reference polylines of the planted foot (in ankle heights H), boolean-unioned (welded).
+       - cleanup after the union: merge near-coincident vertices (1e-5), dissolve_degenerate, triangulate the
+         boolean n-gons, delete back-to-back duplicate triangles and fix zero-area slivers, so the exported glb is
+         manifold after any weld.
      Edge loops at the hip (cut loop), the plate grooves, the knee, the hock, the ankle and along the tines.
      Face attributes kept in the .blend for measurement / weighting (not exported): lm_part (1 plate, 2 groove,
      3 rim, 4 shin, 5 spring, 6 ankle, 7 pod, 10/11/12 outer/middle/inner tine), lm_t (position along the part).
@@ -50,8 +57,8 @@ TEX = os.path.join(HERE, "textures")
 
 HEAD_TOP = 1.75          # m, hood top
 SCALE = 1.12             # upper-body scale (proportions measured against reference/hero/full_body.png)
-TRI_TARGET = 19800       # total, leaves margin under the 20,000 character budget
-CUT_Z = 0.78             # m (final): Tripo thighs are cut here (one simple loop per side, below the hip disc)
+TRI_TARGET = 19950       # total, leaves margin under the 20,000 character budget
+CUT_Z = 0.79            # m (final): Tripo thighs are cut here (one simple loop per side, below the hip disc)
 LEG_TEX = {"basecolor": 1024, "normal": 1024, "rm": 512}
 
 # ---- measured leg layout (reference_landmarks.json; near leg unless noted). Rest pose = neutral standing.
@@ -63,17 +70,25 @@ SPLAY_SHIN_DEG = 5.0
 KNEE_TO_ANKLE = 0.2606   # mean of the near (0.2626) and far (0.2587) legs
 HOCK_T = 0.4855          # hock position along knee -> ankle (shin 0.1266 / metatarsal 0.1342)
 ANKLE_Z = 0.2229         # H = ankle height of the planted reference foot (101 px)
-PLATE_FRAC_GROOVES = (0.342, 0.595)   # segment lines, fractions of the hip->knee length
+PLATE_GROOVE_Z = (0.737, 0.631)       # segment lines (reference z, near plate); the first visible line below the seam
 PLATE_BOTTOM_UP = (0.016, 0.035)      # plate bottom above the knee centre along the thigh: front, back
 # shin side profile: (t along knee->ankle, depth, width, forward offset of the centre from the knee-ankle line);
 # depth/offset from the near reference shin edges, width from the front view (legs_000)
+# pass 5: back-of-shin bulge (+4 mm at t 0.38-0.43) and a sharper hock: the back edge stops converging at the hock and
+# runs parallel down the metatarsal (reference near back edge (182,626) -> (186,633) -> (194,640): -14.6 / -10.9 /
+# -13.9 mm from the knee-ankle line at t 0.43 / 0.50 / 0.59)
 SHIN_ST = [(0.00, 0.090, 0.076, 0.000), (0.13, 0.082, 0.070, -0.0045), (0.25, 0.064, 0.058, -0.0070),
-           (0.38, 0.038, 0.042, 0.0015), (HOCK_T, 0.029, 0.035, 0.0055), (0.58, 0.027, 0.033, 0.0060)]
-META_ST = [(0.65, 0.026, 0.031, 0.0050), (0.76, 0.024, 0.028, 0.0030), (0.84, 0.022, 0.026, 0.0020)]
+           (0.38, 0.042, 0.042, -0.0005), (0.43, 0.037, 0.038, 0.0020), (HOCK_T, 0.032, 0.035, 0.0045),
+           (0.58, 0.032, 0.033, 0.0040)]
+META_ST = [(0.65, 0.028, 0.031, 0.0040), (0.76, 0.024, 0.028, 0.0030), (0.84, 0.022, 0.026, 0.0020)]
+SHIN_SIDES = 18          # upper shin loft (knee bulb .. hock); the metatarsal / spring / ankle stay 12-sided
+SHIN_SUBDIV = 0.07       # extra interpolated rings (Catmull-Rom through the stations) where a span exceeds this t
 SPRING_T = (0.865, 0.985)
 SPRING_CORE, SPRING_AMP, SPRING_TURNS, SPRING_RPT = 0.0085, 0.0045, 4.0, 6
 ANKLE_ST = [(1.00, 0.021, 0.022, 0.0), (1.035, 0.017, 0.018, 0.0)]
-POD = {"up": (-0.035, 0.095), "fwd_gap": 0.008, "r_fwd": 0.026, "r_lat": 0.036, "out": 0.016}
+# knee pod: front flush with the plate front, 4 mm proud of the plate side, bottom 2.2 cm below the knee centre
+# (reference near pod outline y 551..602 vs knee centre y 592), creased along the union boundary
+POD = {"up": (-0.012, 0.080), "fwd_gap": 0.012, "r_fwd": 0.026, "r_lat": 0.036, "out": 0.020, "cap": 0.010}
 # tines: traced centrelines of the planted (far) reference foot, px; ankle (141, 699), H = 101 px
 REF_ANKLE_PX, REF_H_PX = (141.0, 699.0), 101.0
 TINE_PX = {
@@ -85,10 +100,13 @@ TINE_PX = {
     "inner": [(143, 697), (150, 696), (160, 696), (170, 698), (180, 703), (190, 710), (197, 720), (200, 730), (201, 742),
               (200, 754), (196, 766), (190, 776), (184, 781)],
 }
-# (lateral offset outward m, half width lateral root/tip, half thickness in profile root/tip, samples, part id)
-TINE_SPEC = {"outer": (0.006, (0.0055, 0.0035), (0.0036, 0.0020), 30, 10),     # flat blades, ~1.1 cm wide
-             "middle": (-0.006, (0.0050, 0.0032), (0.0032, 0.0020), 22, 11),
-             "inner": (-0.006, (0.0050, 0.0035), (0.0029, 0.0029), 18, 12)}
+# flat blades nested into one bundle (legs_000/045/225: one ~14 mm blade per foot in the front view):
+# (lateral offset outward m, half width lateral root/tip, half thickness in profile root/tip, samples, part id,
+#  (arch half thickness, arch start, arch end) or None). Rounded-rectangle section (superellipse TINE_N, TINE_SIDES).
+TINE_SPEC = {"outer": (0.001, (0.0080, 0.0060), (0.0028, 0.0028), 26, 10, (0.0045, 0.40, 0.70)),
+             "middle": (-0.001, (0.0080, 0.0060), (0.0025, 0.0022), 17, 11, None),
+             "inner": (-0.001, (0.0080, 0.0060), (0.0027, 0.0033), 14, 12, None)}
+TINE_SIDES, TINE_N = 8, 3.0
 # rust coverage (fraction of the surface classified as rust, same classifier as the Tripo sampling)
 RUST_FRAC_PLATE = 0.37                # measured on the near reference plate (qa/ref_rust.py)
 RUST_THR_SHIN = 0.66
@@ -172,6 +190,44 @@ def cut_loops(bm, zc, tol):
 
 loops_src = cut_thighs(bm)
 log("source tris", src_tris, "cut loops", {s: len(l) for s, l in loops_src.items()})
+
+
+def loop_tangents(loop, side, dz=0.015, max_slope=0.6):
+    """Per cut-loop vertex: the downward direction of the Tripo surface just above the cut, in final coordinates
+    (the leg loft continues along it: flush join). Measured against the body cross-section dz above the cut, at the
+    same angle around the loop centre (robust to the thin bisect triangles); slope clamped to max_slope."""
+    z1 = CUT_SRC + dz / SCALE
+    cx = sum(v.co.x for v in loop) / len(loop)
+    cy = sum(v.co.y for v in loop) / len(loop)
+    rmax = max(math.hypot(v.co.x - cx, v.co.y - cy) for v in loop)
+    pts = []
+    for e in bm.edges:
+        a, b = e.verts[0].co, e.verts[1].co
+        if (a.z - z1) * (b.z - z1) >= 0 or a.x * side <= 0:
+            continue
+        p = a.lerp(b, (z1 - a.z) / (b.z - a.z))
+        if math.hypot(p.x - cx, p.y - cy) <= 1.3 * rmax:
+            pts.append((math.atan2(p.y - cy, p.x - cx), p))
+    pts.sort(key=lambda q: (q[0], q[1].x, q[1].y))
+    R3 = M.to_3x3()
+    out = []
+    for v in loop:
+        th = math.atan2(v.co.y - cy, v.co.x - cx)
+        near = sorted(pts, key=lambda q: (abs((q[0] - th + math.pi) % (2 * math.pi) - math.pi), q[1].x, q[1].y))[:2]
+        p = (near[0][1] + near[1][1]) / 2 if len(near) == 2 else Vector((v.co.x, v.co.y, z1))
+        d = R3 @ (v.co - p)
+        h = math.hypot(d.x, d.y)
+        if h > max_slope * -d.z:
+            d = Vector((d.x / h * max_slope * -d.z, d.y / h * max_slope * -d.z, d.z))
+        out.append(d.normalized())
+    return out
+
+
+TANG_SRC = {s: loop_tangents(l, 1 if s > 0 else -1) for s, l in loops_src.items()}
+for _s, _t in sorted(TANG_SRC.items()):
+    _sl = [math.hypot(d.x, d.y) / -d.z for d in _t]
+    log("cut loop", _s, "surface slope below the cut (horizontal / vertical): max", round(max(_sl), 3),
+        "median", round(sorted(_sl)[len(_sl) // 2], 3))
 
 
 # ----------------------------------------------------------------------------------------------- helpers
@@ -350,15 +406,19 @@ class Builder:
             ring.append(self.bm.verts.new(C + L * u + F * v + Td * (slant * v / b)))
         return ring
 
-    def tube(self, centers, lat, radii, sides, phase):
+    def tube(self, centers, lat, radii, sides, phase, n=2.0):
+        """closed rings along centers; radii (lateral, normal) half sizes; n = superellipse exponent (2 = ellipse,
+        > 2 = rounded rectangle)"""
         rings = []
         for i, c in enumerate(centers):
             t = (centers[min(i + 1, len(centers) - 1)] - centers[max(i - 1, 0)]).normalized()
             nrm = t.cross(lat).normalized()
             rx, rf = radii[i]
-            rings.append([self.bm.verts.new(c + lat * (rx * math.cos(2 * math.pi * j / sides + phase))
-                                            + nrm * (rf * math.sin(2 * math.pi * j / sides + phase)))
-                          for j in range(sides)])
+            ring = []
+            for j in range(sides):
+                u, v = superellipse(2 * math.pi * j / sides + phase, rx, rf, n)
+                ring.append(self.bm.verts.new(c + lat * u + nrm * v))
+            rings.append(ring)
         return rings
 
 
@@ -390,7 +450,7 @@ def shin_point(K, da, Fs, t, off):
     return K + da * (KNEE_TO_ANKLE * t) + Fs * off
 
 
-def build_leg(B, loop_co, side):
+def build_leg(B, loop_co, side, tang):
     """One continuous leg, closed (top capped with material 2, removed after the union):
     thigh plate -> rim -> knee bulb -> shin -> hock -> metatarsal -> spring -> ankle."""
     bm = B.bm
@@ -410,37 +470,36 @@ def build_leg(B, loop_co, side):
     top = [bm.verts.new(c) for c in loop_co]
     rings = [top]
 
-    def scaled_loop(k, z):
-        return [bm.verts.new(Vector((cx + (c.x - cx) * k, cy + (c.y - cy) * k, z))) for c in loop_co]
+    def tangent_loop(dz):
+        """the cut loop continued dz below along the Tripo surface tangent"""
+        return [Vector(c) + d * (dz / -d.z) for c, d in zip(loop_co, tang)]
+
+    def flush_ring(dz):
+        return [bm.verts.new(p) for p in tangent_loop(dz)]
 
     def plate_centre(z):
         s = (Hp.z - z) / -dt.z
         return Hp + dt * s + Ft * (-0.013 * s / THIGH_LEN)
 
-    def plate_ring(z, hb, hw, n, slant=0.0, blend=None, k_loop=1.0):
+    def plate_ring(z, hb, hw, n, slant=0.0, blend=None):
         r = B.section_ring(plate_centre(z), dt, thetas, hw, hb, n, slant=slant)
-        if blend is not None:      # blend towards the (scaled) Tripo loop shape at height z
-            for v, c in zip(r, loop_co):
-                v.co = v.co.lerp(Vector((cx + (c.x - cx) * k_loop, cy + (c.y - cy) * k_loop, z)), blend)
+        if blend is not None:      # blend towards the Tripo surface continued along its tangent (flush, no lip)
+            for v, p in zip(r, tangent_loop(z0 - z)):
+                v.co = v.co.lerp(p, blend)
         return r
 
-    zg1 = Hp.z + dt.z * THIGH_LEN * PLATE_FRAC_GROOVES[0]
-    zg2 = Hp.z + dt.z * THIGH_LEN * PLATE_FRAC_GROOVES[1]
+    zg1, zg2 = PLATE_GROOVE_Z
     zb = K.z - dt.z * (PLATE_BOTTOM_UP[0] + PLATE_BOTTOM_UP[1]) / 2
     slant_b = (PLATE_BOTTOM_UP[1] - PLATE_BOTTOM_UP[0]) / 2   # front lower (moves along the downward axis)
     spec = [
-        (lambda: scaled_loop(0.985, z0 - 0.003), 1),                                   # tuck under the Tripo edge
-        (lambda: plate_ring(z0 - 0.007, 0.083, 0.072, 3.0, blend=0.5, k_loop=1.035), 1),  # cuff band
-        (lambda: plate_ring(z0 - 0.017, 0.082, 0.071, 3.0), 1),
-        (lambda: plate_ring(z0 - 0.021, 0.077, 0.067, 3.1), 1),                         # step in below the cuff
+        (lambda: flush_ring(0.004), 1),                       # the Tripo surface continued (flush, no lip/groove)
+        (lambda: plate_ring(z0 - 0.012, 0.081, 0.070, 3.0, blend=0.55), 1),   # eases into the plate section
         (lambda: plate_ring(zg1 + 0.004, 0.076, 0.066, 3.2), 1),
         (lambda: plate_ring(zg1, 0.072, 0.062, 3.2), 2),                                 # segment line 1
         (lambda: plate_ring(zg1 - 0.004, 0.078, 0.067, 3.3), 1),
-        (lambda: plate_ring((zg1 + zg2) / 2, 0.0775, 0.065, 3.4), 1),
         (lambda: plate_ring(zg2 + 0.004, 0.0775, 0.062, 3.4), 1),
         (lambda: plate_ring(zg2, 0.0745, 0.059, 3.4), 2),                                # segment line 2
         (lambda: plate_ring(zg2 - 0.004, 0.0800, 0.064, 3.5), 1),
-        (lambda: plate_ring((zg2 + zb) / 2, 0.0795, 0.058, 3.6), 1),
         (lambda: plate_ring(zb, 0.0790, 0.054, 3.6, slant=slant_b), 1),                 # bottom edge (slanted)
         (lambda: plate_ring(zb + 0.006, 0.0745, 0.050, 3.4, slant=slant_b), 3),         # inner lip
     ]
@@ -460,32 +519,49 @@ def build_leg(B, loop_co, side):
         capf.normal_flip()
 
     # ---- knee / shin / metatarsal / spring / ankle: one 16 -> 12 sided loft starting inside the plate rim
-    ph16 = angles_from(thetas[0], 16, direction)
+    NS = SHIN_SIDES
+    phS = angles_from(thetas[0], NS, direction)
     ph12 = angles_from(thetas[0], 12, direction)
     zr = zb + 0.012 * -dt.z                      # recessed 1.2 cm inside the rim
     t_top = (zr - K.z) / (da.z * KNEE_TO_ANKLE)   # negative: above the knee on the shin line
     C0 = shin_point(K, da, Fs, t_top, 0.0)
-    r0 = B.section_ring(C0, dt, ph16, 0.072 / 2, 0.084 / 2, 2.4, slant=slant_b * 0.6)
-    zf = B.zipper(rings[-1], fractions(thetas, direction), r0, [j / 16 for j in range(16)])
+    r0 = B.section_ring(C0, dt, phS, 0.072 / 2, 0.084 / 2, 2.4, slant=slant_b * 0.6)
+    zf = B.zipper(rings[-1], fractions(thetas, direction), r0, [j / NS for j in range(NS)])
     B.planar_island(zf, plate_centre(zb), Lt, Ft)
     B.tag(zf, 3, rust=1.0, name="thigh plate")
 
-    ctrl = [shin_point(K, da, Fs, t, off) for t, _, _, off in SHIN_ST + META_ST]
+    # stations densified with Catmull-Rom (t, depth, width, offset all interpolated) so the side outline has
+    # no visible kinks; every station stays an exact edge loop (knee t = 0, hock t = HOCK_T)
+    st = [(t_top, 0.084, 0.072, 0.0)] + SHIN_ST + META_ST[:1]
+    dense = []
+    for i in range(len(SHIN_ST)):
+        a, b = st[i + 1], st[i + 2] if i + 2 < len(st) else None
+        dense.append(a)
+        if b is None or a[0] >= HOCK_T - 1e-6:      # no extra rings below the hock
+            continue
+        nsub = int((b[0] - a[0]) / SHIN_SUBDIV)
+        p0, p3 = st[i], st[min(i + 3, len(st) - 1)]
+        for k in range(1, nsub + 1):
+            u = k / (nsub + 1)
+            dense.append(tuple(0.5 * ((2 * a[c]) + (-p0[c] + b[c]) * u + (2 * p0[c] - 5 * a[c] + 4 * b[c] - p3[c]) * u * u
+                                      + (-p0[c] + 3 * a[c] - 3 * b[c] + p3[c]) * u ** 3) for c in range(4)))
+    ctrl = [shin_point(K, da, Fs, t, off) for t, _, _, off in dense] + \
+        [shin_point(K, da, Fs, t, off) for t, _, _, off in META_ST]
     srings, ts = [r0], [t_top]
-    for i, (t, dep, wid, off) in enumerate(SHIN_ST):
+    for i, (t, dep, wid, off) in enumerate(dense):
         prev = ctrl[i - 1] if i > 0 else C0
         T = ctrl[i + 1] - prev
-        srings.append(B.section_ring(ctrl[i], T, ph16, wid / 2, dep / 2, 2.3 if t < 0.3 else 2.2))
-        ts.append(t)
+        srings.append(B.section_ring(ctrl[i], T, phS, wid / 2, dep / 2, 2.3 if t < 0.3 else 2.2))
+        ts.append(round(t, 5))
     rows = B.ring_strip(srings)
     for i, row in enumerate(rows):
         B.tag(row, 4, t=ts[i], name="knee/shin")
     lower, mts = [], []
     for j, (t, dep, wid, off) in enumerate(META_ST):
-        lower.append(B.section_ring(ctrl[len(SHIN_ST) + j], da, ph12, wid / 2, dep / 2, 2.2))
+        lower.append(B.section_ring(ctrl[len(dense) + j], da, ph12, wid / 2, dep / 2, 2.2))
         mts.append(t)
-    zf = B.zipper(srings[-1], [j / 16 for j in range(16)], lower[0], [j / 12 for j in range(12)])
-    B.planar_island(zf, ctrl[len(SHIN_ST) - 1], *frame(da))
+    zf = B.zipper(srings[-1], [j / NS for j in range(NS)], lower[0], [j / 12 for j in range(12)])
+    B.planar_island(zf, ctrl[len(dense) - 1], *frame(da))
     B.tag(zf, 4, t=0.62, name="knee/shin")
     # spring: helical thread on a thin core (4 turns), then the ankle block and a rounded cap
     L12, F12 = frame(da)
@@ -520,7 +596,7 @@ def build_parts(B, geo, side):
     K, A, dt, Ft, da = geo["knee"], geo["ankle"], geo["dt"], geo["Ft"], geo["da"]
     U = -dt
     X = Vector((1, 0, 0))
-    # knee pod: capsule parallel to the thigh, its front 5 mm ahead of the plate front
+    # knee pod: capsule parallel to the thigh, its front flush with the plate front (POD fwd_gap)
     pc = (geo["plate_front"] - K).dot(Ft) + POD["fwd_gap"] - POD["r_fwd"]
     out = Vector((side * POD["out"], 0, 0))      # on the outer front corner of the plate (visible from the side)
     p0 = K + U * POD["up"][0] + Ft * pc + out
@@ -529,8 +605,8 @@ def build_parts(B, geo, side):
     cen = [p0.lerp(p1, t) for t, _ in prof]
     rings = B.tube(cen, X, [(POD["r_lat"] * k, POD["r_fwd"] * k) for _, k in prof], 10, 0.0)
     faces = [f for r in B.ring_strip(rings) for f in r]
-    faces += B.cap(rings[0], cen[0] - cen[1], bulge=0.010)
-    faces += B.cap(rings[-1], cen[-1] - cen[-2], bulge=0.010)
+    faces += B.cap(rings[0], cen[0] - cen[1], bulge=POD["cap"])
+    faces += B.cap(rings[-1], cen[-1] - cen[-2], bulge=POD["cap"])
     bmesh.ops.recalc_face_normals(B.bm, faces=faces)
     B.tag(faces, 7, name="knee pod")
     geo["pod"] = (p0, p1)
@@ -541,7 +617,7 @@ def build_parts(B, geo, side):
     Z = Vector((0, 0, 1))
     geo["tines"] = {}
     for name, px in TINE_PX.items():
-        lat, hw, ht, nsamp, pid = TINE_SPEC[name]
+        lat, hw, ht, nsamp, pid, arch = TINE_SPEC[name]
         pts = [A + Y * ((REF_ANKLE_PX[0] - x) / REF_H_PX * H) + Z * ((REF_ANKLE_PX[1] - y + 1.0) / REF_H_PX * H)
                + Vector((side * lat, 0, 0)) for x, y in px]   # +1 px: the traced line centre is 1 px above the ground
         # embed the root inside the shin / spring core so the union welds it cleanly
@@ -564,8 +640,14 @@ def build_parts(B, geo, side):
         for i, c in enumerate(cum):
             t = c / Lp
             k = 0.45 if i == len(cum) - 1 else (0.75 if i == len(cum) - 2 else 1.0)
-            rad.append(((hw[0] + (hw[1] - hw[0]) * t) * k, (ht[0] + (ht[1] - ht[0]) * t) * k))
-        trings = B.tube(path, X, rad, 6, math.pi / 6)
+            th = ht[0] + (ht[1] - ht[0]) * t
+            if arch:          # thicker rear arch (outer tine): smooth ramps 0.1 on either side of [start, end]
+                a_th, a0, a1 = arch
+                w = min(1.0, max(0.0, min((t - (a0 - 0.1)) / 0.1, ((a1 + 0.1) - t) / 0.1)))
+                w = w * w * (3 - 2 * w)
+                th += (a_th - th) * w
+            rad.append(((hw[0] + (hw[1] - hw[0]) * t) * k, th * k))
+        trings = B.tube(path, X, rad, TINE_SIDES, 0.0, n=TINE_N)
         faces = []
         for i, row in enumerate(B.ring_strip(trings)):
             B.tag(row, pid, t=cum[i] / Lp, name="tines")
@@ -636,7 +718,7 @@ GEO = {}
 for s_src in sorted(loops_src):
     pos = [M @ v.co for v in loops_src[s_src]]
     side = 1 if sum(p.x for p in pos) > 0 else -1
-    GEO[side] = build_leg(B, pos, side)
+    GEO[side] = build_leg(B, pos, side, TANG_SRC[s_src])
     build_parts(PB, GEO[side], side)
 leg_faces_closed = [f for f in lbm.faces]
 bmesh.ops.recalc_face_normals(lbm, faces=leg_faces_closed)
@@ -661,6 +743,95 @@ lbm.from_mesh(leg_obj.data)
 bmesh.ops.delete(lbm, geom=[f for f in lbm.faces if f.material_index == 2], context="FACES_ONLY")
 for v in [v for v in lbm.verts if not v.link_faces]:
     lbm.verts.remove(v)
+# boolean slivers: collapse degenerate edges/faces (zero-area triangles at the tine/pod intersections)
+n_f0 = len(lbm.faces)
+# near-coincident boolean vertices (not sharing an edge) would be merged by any weld downstream (glTF round trip,
+# engine import): merge them here, away from the cut loop (welded to the body later)
+n_v0 = len(lbm.verts)
+bmesh.ops.remove_doubles(lbm, verts=[v for v in lbm.verts if abs(v.co.z - CUT_Z) > 1e-4], dist=1e-5)
+log("leg remove_doubles 1e-5: verts", n_v0, "->", len(lbm.verts))
+bmesh.ops.dissolve_degenerate(lbm, dist=1e-5, edges=list(lbm.edges))
+for v in [v for v in lbm.verts if not v.link_faces]:
+    lbm.verts.remove(v)
+log("dissolve_degenerate: faces", n_f0, "->", len(lbm.faces))
+
+
+def tri_area(a, b, c):
+    return (b - a).cross(c - a).length / 2
+
+
+def fix_slivers(bmx, eps=1e-8, top_z=None):
+    """Zero-area triangles inside the boolean n-gons (collinear vertices) get dropped by the glTF round trip and
+    leave holes: triangulate only the faces whose loop triangulation contains one, then remove each sliver by
+    rotating its longest edge (collinear 'cap') or collapsing its shortest edge ('needle')."""
+    bad_faces = {lt[0].face for lt in bmx.calc_loop_triangles()
+                 if tri_area(*(l.vert.co for l in lt)) < eps}
+    bad_faces |= {f for f in bmx.faces if len(f.verts) > 4}      # boolean n-gons (may overlap back to back)
+    bmx.verts.index_update()
+    if bad_faces:
+        bmesh.ops.triangulate(bmx, faces=sorted(bad_faces, key=lambda f: f.index),
+                              quad_method="BEAUTY", ngon_method="BEAUTY")
+    # a triangle duplicated inside a quad: triangulate that quad first (so the copies become two triangle faces)
+    cnt = {}
+    for lt in bmx.calc_loop_triangles():
+        cnt.setdefault(frozenset(l.vert.index for l in lt), set()).add(lt[0].face)
+    quads = {f for fs in cnt.values() if len(fs) > 1 for f in fs if len(f.verts) == 4}
+    if quads:
+        bmesh.ops.triangulate(bmx, faces=sorted(quads, key=lambda f: f.index), quad_method="BEAUTY")
+    # two boolean faces covering the same small triangle with opposite winding: the copies cancel, delete both
+    seen, dup = {}, []
+    bmx.faces.index_update()
+    for f in bmx.faces:
+        if len(f.verts) != 3:
+            continue
+        key = frozenset(v.index for v in f.verts)
+        if key in seen:
+            dup += [seen.pop(key), f]
+        else:
+            seen[key] = f
+    if dup:
+        bmesh.ops.delete(bmx, geom=dup, context="FACES_ONLY")
+        bmesh.ops.delete(bmx, geom=[e for e in bmx.edges if not e.link_faces], context="EDGES")
+        for v in [v for v in bmx.verts if not v.link_faces]:
+            bmx.verts.remove(v)
+    log("slivers: back-to-back duplicate triangles removed", len(dup))
+    fixed = 0
+    for it in range(200):
+        bmx.faces.index_update()
+        slivers = [f for f in bmx.faces if len(f.verts) == 3 and tri_area(*(v.co for v in f.verts)) < eps]
+        if not slivers:
+            break
+        f = slivers[0]
+        es = sorted(f.edges, key=lambda e: (e.calc_length(), e.index))
+        lon = es[-1]
+        apex = [v for v in f.verts if v not in lon.verts][0]       # the (near-)collinear middle vertex
+        on_top = top_z is not None and abs(apex.co.z - top_z) < 1e-4
+        done = False
+        if it % 2 == 0 and len(lon.link_faces) == 2 and not on_top:
+            # cap: flip the long edge across to the neighbour's apex (if that makes both triangles non-degenerate)
+            g = [x for x in lon.link_faces if x is not f][0]
+            if len(g.verts) == 3:
+                other = [v for v in g.verts if v not in lon.verts][0]
+                a0, a1 = lon.verts
+                if tri_area(apex.co, other.co, a0.co) > eps and tri_area(apex.co, other.co, a1.co) > eps:
+                    done = bool(bmesh.ops.rotate_edges(bmx, edges=[lon], use_ccw=False)["edges"])
+        if not done and not on_top:
+            # merge the middle vertex onto the nearer end of the long edge (it lies on that line: no shape change)
+            tgt = min(lon.verts, key=lambda v: ((v.co - apex.co).length, v.index))
+            bmesh.ops.pointmerge(bmx, verts=[apex, tgt], merge_co=tgt.co.copy())
+            done = True
+        if not done:
+            break
+        fixed += 1
+    left = sum(1 for lt in bmx.calc_loop_triangles() if tri_area(*(l.vert.co for l in lt)) < eps)
+    return len(bad_faces), fixed, left
+
+
+_nb, _fx, _left = fix_slivers(lbm, top_z=CUT_Z)
+log("slivers: faces triangulated", _nb, "slivers fixed", _fx, "left", _left)
+assert _left == 0, "zero-area triangles left in the legs"
+for f in lbm.faces:
+    f.smooth = True
 lbm.to_mesh(leg_obj.data)
 leg_tris = sum(len(f.verts) - 2 for f in lbm.faces)
 _lp = lbm.faces.layers.float["lm_part"]
@@ -779,13 +950,20 @@ for side, g in sorted(GEO.items()):
     log("side", side, "hip", tuple(round(c, 4) for c in g["hip"]), "knee", tuple(round(c, 4) for c in g["knee"]),
         "ankle", tuple(round(c, 4) for c in g["ankle"]), "shin slant from vertical", round(g["shin_abs_deg"], 2))
 
-# sharp edges: leg edges with a dihedral angle above 55 deg (plate rim, caps)
+# sharp edges: leg edges with a dihedral angle above 55 deg (plate rim, caps) and the knee pod union boundary
 bm.edges.index_update()
 sharp_idx = set()
+_lpj = bm.faces.layers.float["lm_part"]
+n_pod_crease = 0
 for e in bm.edges:
     if len(e.link_faces) == 2 and all(f.material_index == 1 for f in e.link_faces):
-        if e.calc_face_angle(0.0) > math.radians(55):
+        pod = [int(round(f[_lpj])) == 7 for f in e.link_faces]
+        if pod[0] != pod[1]:              # knee pod union boundary: crease, so the pod reads as its own part
             sharp_idx.add(e.index)
+            n_pod_crease += 1
+        elif e.calc_face_angle(0.0) > math.radians(55):
+            sharp_idx.add(e.index)
+log("knee pod crease edges", n_pod_crease)
 bm.to_mesh(me)
 bm.free()
 sharp = me.attributes.get("sharp_edge") or me.attributes.new("sharp_edge", "BOOLEAN", "EDGE")

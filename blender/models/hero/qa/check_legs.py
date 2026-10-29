@@ -3,13 +3,16 @@ usage: blender -b blender/models/hero/hero_model.blend -P blender/models/hero/qa
 Model landmarks come from the geometry (face attributes lm_part / lm_t written by conform.py mark which loft
 ring / tine row a face belongs to): ring centroids for knee / hock / ankle, row centroids for the tine centre
 lines, slab cross-sections for thicknesses. Side-view quantities use the (y, z) projection like the reference.
-The near (character's left, -X) leg is measured; the rest pose is symmetric."""
+The near (character's left, -X) leg is measured; the rest pose is symmetric.
+usage tail: [-- <out.txt> [<glb>]]; the glb (default godot/assets/hero/model/hero.glb) is checked for leg non-manifold edges."""
 import bpy, bmesh, json, math, os, sys
+import re as _re
+CUT_Z = float(_re.search(r"^CUT_Z = ([0-9.]+)", open("/home/archwayzero/game/blender/models/hero/conform.py").read(), _re.M).group(1))
 from mathutils import Vector
 R = "/home/archwayzero/game/"
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-OUTTXT = argv[0] if argv else R + ".captures/T011/v4/check_legs.txt"
-ref = json.load(open(R + ".captures/T011/v4/reference_landmarks.json"))
+OUTTXT = argv[0] if argv else R + ".captures/T011/v5/check_legs.txt"
+ref = json.load(open(R + "blender/models/hero/qa/reference_landmarks.json"))
 T = ref["targets"]
 obj = bpy.data.objects["hero"]
 me = obj.data
@@ -122,16 +125,55 @@ def landmarks(pts):
         if best is None or s < best: best, ia = s, i
     zmin = min(p[1] for p in pts)
     ilow = min(i for i in range(len(pts)) if pts[i][1] <= zmin + 0.01)
-    return {"root": pts[0], "arch_top": pts[ia], "rearmost": pts[irear], "lowest": pts[ilow], "tip": pts[-1]}
+    low = pts[ilow]
+    if ilow > 0:      # model rows are sparser than the traced pixels: interpolate the crossing of zmin + 0.01
+        a_, b_ = pts[ilow - 1], pts[ilow]
+        u_ = (a_[1] - (zmin + 0.01)) / (a_[1] - b_[1]) if a_[1] != b_[1] else 1.0
+        low = (a_[0] + (b_[0] - a_[0]) * u_, a_[1] + (b_[1] - a_[1]) * u_)
+    return {"root": pts[0], "arch_top": pts[ia], "rearmost": pts[irear], "lowest": low, "tip": pts[-1]}
 def plen(p): return sum(math.dist(p[i], p[i - 1]) for i in range(1, len(p)))
+TINE_SIDES = 8
+CONTAM_PX = 3.0   # two ~2.7 px dark lines closer than this merge into one dip
+def _seg_dist(p, a, b):
+    ax, ay = a; bx, by = b; dx, dy = bx - ax, by - ay
+    t = max(0.0, min(1.0, ((p[0] - ax) * dx + (p[1] - ay) * dy) / (dx * dx + dy * dy or 1)))
+    return math.hypot(p[0] - ax - dx * t, p[1] - ay - dy * t)
+def contaminated(leg, name, key):
+    """same sample index as ref_landmarks.tine_thickness; True if another tine's centre line passes within CONTAM_PX"""
+    tines = ref["landmarks_px"][leg]["tines"]
+    path = tines[name]
+    i = {"root_third": max(2, len(path) // 4), "mid": len(path) // 2, "tip_third": len(path) * 3 // 4}[key]
+    p = path[i]
+    return any(_seg_dist(p, o[j - 1], o[j]) < CONTAM_PX for on, o in tines.items() if on != name
+               for j in range(1, len(o)))
+tine_xs = {}
 for name, pid in (("outer", 10), ("middle", 11), ("inner", 12)):
     fs = [f for f in legf if part(f) == pid]
     buckets = {}
     for f in fs:
         buckets.setdefault(round(f[lt], 5), []).append(f)
     keys = sorted(buckets)
-    # skip leading rows cut by the union (not a clean ring of 6 quads): their centroids are biased
-    while keys and not (len(buckets[keys[0]]) == 6 and all(len(f.verts) == 4 for f in buckets[keys[0]])):
+    # rings between consecutive rows (row k = quads between ring k and ring k+1, tagged with ring k's arclength
+    # fraction); a ring is clean when both rows are intact rings of TINE_SIDES quads (not cut by the union)
+    def clean_row(k):
+        return len(buckets[k]) == TINE_SIDES and all(len(f.verts) == 4 for f in buckets[k])
+    trings = []
+    for j in range(1, len(keys)):
+        sv = {v for f in buckets[keys[j - 1]] for v in f.verts} & {v for f in buckets[keys[j]] for v in f.verts}
+        if sv:
+            trings.append((keys[j], sum((v.co for v in sv), Vector()) / len(sv), sv,
+                           len(sv) == TINE_SIDES and clean_row(keys[j - 1]) and clean_row(keys[j])))
+    def ring_at(frac):
+        cands = [i for i, r in enumerate(trings) if r[3] and 0 < i < len(trings) - 1]
+        i = min(cands, key=lambda i: abs(trings[i][0] - frac))
+        tg = (yz(trings[i + 1][1]) - yz(trings[i - 1][1])).normalized(); nn = Vector((-tg.y, tg.x))
+        ds = [(yz(v.co) - yz(trings[i][1])).dot(nn) for v in trings[i][2]]
+        xs = [v.co.x for v in trings[i][2]]
+        return max(ds) - min(ds), max(xs) - min(xs), trings[i][0]
+    # centre line: skip the leading rows cut by the union with the shin (biased centroids), then every row (rows
+    # partly merged into a neighbouring tine are kept: their centroid moves by less than the blade half
+    # thickness, ~0.013 H)
+    while keys and not clean_row(keys[0]):
         keys.pop(0)
     pts3 = []
     for k in keys:
@@ -154,29 +196,53 @@ for name, pid in (("outer", 10), ("middle", 11), ("inner", 12)):
     rf = FOOT[name]
     for k in ("root", "arch_top", "rearmost", "lowest", "tip"):
         d = math.dist(lm[k], rf[k])
+        if f"{name}.{k}" in ref.get("merged_end", {}):
+            # the reference tine's end runs on top of another tine's line: the visible end is where the two lines
+            # meet. Model: the last row before the tine disappears into its neighbour; it must lie on the
+            # reference's shared stretch.
+            far = ref["landmarks_px"]["far"]; ax_, ay_ = far["ankle"]; Hpx = ref["far"]["H_px"]
+            sh = [((ax_ - x) / Hpx, (ay_ - y) / Hpx) for x, y in far["tines"][name][ref["merged_end"][f"{name}.{k}"]:]]
+            dd = min(_seg_dist(lm[k], sh[j - 1], sh[j]) for j in range(1, len(sh)))
+            row(f"{name} tine {k} = merge into the outer: distance to the shared stretch (H)", 0.0, dd, dd <= 0.1, "0.1 H")
+            continue
         if f"{name}.{k}" in ref.get("not_measurable", {}):
             row(f"  info: {name} tine {k} (not measurable in the reference)", tuple(rf[k]), tuple(lm[k]), True, "info")
             continue
         row(f"{name} tine {k} (f, dz in H rel. ankle)", tuple(rf[k]), tuple(lm[k]), d <= 0.1, "0.1 H")
     L = plen(pts)
     row(f"{name} tine path length (H)", rf["path_len_H"], L, abs(L / rf["path_len_H"] - 1) <= 0.10, "10%")
-    # profile thickness at 1/4, 1/2, 3/4 of the rows: extent across the centre line in the side plane
+    # profile thickness / front width at 1/4, 1/2, 3/4 of the tine's arclength, measured on a clean ring
+    # (the ring plane is perpendicular to the centre line: thickness = side-plane extent, width = X extent)
+    meas = {}
     for key, frac in (("root_third", 0.25), ("mid", 0.5), ("tip_third", 0.75)):
-        i = min(len(keys) - 2, max(1, int(len(keys) * frac)))
-        tg = (yz(pts3[i + 1]) - yz(pts3[i - 1])).normalized(); nn = Vector((-tg.y, tg.x))
-        vs = {v for f in buckets[keys[i]] for v in f.verts}
-        ds = [(yz(v.co) - yz(pts3[i])).dot(nn) for v in vs]
-        th = max(ds) - min(ds)
-        vals = [ref[leg]["foot_H"][name]["thickness_m"][key] for leg in ("near", "far")]
-        vals = [x for x in vals if 0.002 < x < 0.009]
-        if not vals:      # both reference values contaminated by the neighbouring tine: mean of the clean ones
-            vals = [ref[leg]["foot_H"][name]["thickness_m"][k2] for leg in ("near", "far")
-                    for k2 in ("root_third", "tip_third")]
-            vals = [x for x in vals if 0.002 < x < 0.009]
+        th, wd, tr = ring_at(frac)
+        meas[key] = (th, wd)
+        # reference value: both legs, minus the samples contaminated by a neighbouring tine (another traced tine
+        # centre line within CONTAM_PX of the sample point: the two dark lines merge into one dip)
+        vals = [ref[leg]["foot_H"][name]["thickness_m"][key] for leg in ("near", "far")
+                if not contaminated(leg, name, key) and 0.002 < ref[leg]["foot_H"][name]["thickness_m"][key] < 0.012]
+        if f"{name}.thickness_{key}" in ref.get("not_measurable", {}):
+            row(f"  info: {name} tine thickness {key} (not measurable in the reference)",
+                ref["far"]["foot_H"][name]["thickness_m"][key], th, True, "info")
+            continue
+        if not vals:      # both contaminated: mean of all clean root/tip-third samples (blade base thickness)
+            vals = [ref[leg]["foot_H"][t]["thickness_m"][k2] for leg in ("near", "far") for t in ("outer", "middle", "inner")
+                    for k2 in ("root_third", "tip_third") if not contaminated(leg, t, k2)]
         rt = sum(vals) / len(vals)
         row(f"{name} tine thickness {key} (m, profile)", rt, th, abs(th / rt - 1) <= 0.15 or abs(th - rt) <= 0.0011,
             "15% or 1 px")
+    rw = ref["tine_width_front_m (legs_000, approx)"]
+    th, wd = meas["mid"]
+    row(f"{name} tine front width mid (m, blade)", rw, wd, abs(wd / rw - 1) <= 0.15, "15%")
+    th, wd = meas["root_third"]
+    row(f"{name} tine blade aspect root third (width / profile thickness)", ">= 2.5", wd / th, wd / th >= 2.5, "2.5")
+    th, wd = meas["mid"]
+    row(f"  info: {name} tine blade aspect mid", "", wd / th, True, "info")
+    tine_xs[name] = [v.co.x for f in fs for v in f.verts if v.co.z < A.z - 0.02]
 
+allx = [x for v in tine_xs.values() for x in v]
+row("  info: foot bundle front width below the ankle (m, all three tines)", ref["tine_width_front_m (legs_000, approx)"],
+    max(allx) - min(allx), True, "info")
 # ---- connectivity per side: one component from the cut (hip) through the tines
 for side in (-1, 1):
     fs = {f for f in bm.faces if f.material_index == 1 and f.calc_center_median().x * side > 0}
@@ -193,7 +259,7 @@ for side in (-1, 1):
         comps.append(comp)
     parts = {int(round(f[lp])) for f in comps[0]}
     top = max(v.co.z for f in comps[0] for v in f.verts)
-    ok = len(comps) == 1 and {1, 4, 7, 10, 11, 12} <= parts and abs(top - 0.78) < 1e-3
+    ok = len(comps) == 1 and {1, 4, 7, 10, 11, 12} <= parts and abs(top - CUT_Z) < 1e-3
     row(f"leg {'left' if side < 0 else 'right'}: connected components hip->tines", 1,
         f"{len(comps)} comp, parts {sorted(parts)}, top z {top:.3f}", ok, "1")
 nme = [e for e in bm.edges if not e.is_manifold and e.link_faces and all(f.material_index == 1 for f in e.link_faces)]
@@ -224,9 +290,31 @@ kd.balance()
 hc = min(kd.find(c)[2] for c in hand)
 row("hand clearance to legs (m)", ">= 0.02", hc, hc >= 0.02, "contract")
 cont = [c.y for c in lv if c.z < 0.004]
-row("feet under the hip midpoint: contact y span contains hip y", f"hip y {Hp.y:.3f}",
-    f"contact {min(cont):+.3f}..{max(cont):+.3f}", min(cont) <= Hp.y <= max(cont), "contract")
-row("  info: miss distance hip y - contact front (m)", 0.0, Hp.y - max(cont), True, "info")
+# dropped by the orchestrator (pass 5): the rest pose keeps the reference angles, the rigger sets the idle pose
+row("  info: feet under the hip midpoint (dropped): contact y span vs hip y", f"hip y {Hp.y:.3f}",
+    f"contact {min(cont):+.3f}..{max(cont):+.3f}", True, "info")
+
+# ---- exported glb: leg faces welded at 1e-6 must be manifold (export splits verts at UV/normal seams)
+GLB = argv[1] if len(argv) > 1 else R + "godot/assets/hero/model/hero.glb"
+if os.path.exists(GLB):
+    for o in list(bpy.data.objects):
+        o.select_set(False)
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=GLB)
+    gobj = [o for o in bpy.data.objects if o not in before and o.type == "MESH"][0]
+    gm = gobj.data
+    li = [i for i, m in enumerate(gm.materials) if m and m.name.startswith("hero_legs")]
+    gb = bmesh.new(); gb.from_mesh(gm)
+    bmesh.ops.remove_doubles(gb, verts=gb.verts, dist=1e-6)
+    gne = [e for e in gb.edges if not e.is_manifold and e.link_faces and all(f.material_index in li for f in e.link_faces)]
+    for e in gne[:8]:
+        print("glb non-manifold leg edge at", tuple(round(c, 4) for c in (e.verts[0].co + e.verts[1].co) / 2),
+              "faces", len(e.link_faces))
+    gtris = sum(len(f.verts) - 2 for f in gb.faces)
+    row("glb: leg non-manifold edges after weld 1e-6", 0, len(gne), len(gne) == 0 and bool(li), "0")
+    row("glb: triangles", "<= 20000", gtris, gtris <= 20000, "budget")
+else:
+    row("glb: leg non-manifold edges after weld 1e-6", 0, "glb missing", False, "0")
 
 w = max(len(r[0]) for r in rows)
 lines = [f"{'quantity':<{w}}  {'reference':>34}  {'model':>34}  result  tol"]

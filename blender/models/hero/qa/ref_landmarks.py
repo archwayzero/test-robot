@@ -7,7 +7,7 @@ import numpy as np
 sys.path.insert(0, "/home/archwayzero/game/blender/models/hero/qa")
 from imgtool import load, save
 R = "/home/archwayzero/game/"
-OUT = R + ".captures/T011/v4/"
+OUT = R + ".captures/T011/v5/"
 TOP, GROUND = 8.0, 801.0
 PPM = (GROUND - TOP) / 1.75
 
@@ -180,7 +180,13 @@ out["tine_width_front_m (legs_000, approx)"] = 0.014
 
 # landmarks that cannot be measured: the middle tine's upper part runs hidden behind the outer tine (one line),
 # so its arch top is not visible (its traced upper points are an estimate); check_legs.py reports it as N/A
-out["not_measurable"] = {"middle.arch_top": "hidden behind the outer tine in both feet (single line in the image)"}
+out["not_measurable"] = {"middle.arch_top": "hidden behind the outer tine in both feet (single line in the image)",
+                         "middle.thickness_mid": "the middle tine's mid sample lies in the stretch hidden behind the "
+                                                 "outer tine's arch (both dark lines merge)"}
+
+# the middle tine's last stretch (traced points from index 14 = (195,778) on) lies on the outer tine's line in the
+# planted foot: its end is the merge point, compared against that shared stretch (index into the far trace)
+out["merged_end"] = {"middle.lowest": 14, "middle.tip": 14}
 
 # targets used by check_legs.py (rest pose: neutral; pose-dependent thigh angle not compared)
 n, f = out["near"], out["far"]
@@ -198,7 +204,7 @@ def rnd(o):
     if isinstance(o, (list, tuple)): return [rnd(x) for x in o]
     if isinstance(o, dict): return {k: rnd(v) for k, v in o.items()}
     return o
-json.dump(rnd(out), open(OUT + "reference_landmarks.json", "w"), indent=1)
+json.dump(rnd(out), open(R + "blender/models/hero/qa/reference_landmarks.json", "w"), indent=1)
 
 # ------------------------------------------------------------------ annotated overlay (3x, lower body)
 img = load(R + "reference/hero/full_body.png")
