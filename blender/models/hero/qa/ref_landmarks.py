@@ -7,7 +7,7 @@ import numpy as np
 sys.path.insert(0, "/home/archwayzero/game/blender/models/hero/qa")
 from imgtool import load, save
 R = "/home/archwayzero/game/"
-OUT = R + ".captures/T011/v6/"
+OUT = R + ".captures/T011/v7/"
 TOP, GROUND = 8.0, 801.0
 PPM = (GROUND - TOP) / 1.75
 
@@ -182,6 +182,10 @@ out["tine_width_front_m (legs_000 rows 380-420)"] = 0.024
 # projected ribbon widths at the rear arches in the 45 deg view (legs_045.png, horizontal dark runs < 0.7 x row
 # median): near foot rows 365-395 front ribbon 9-10 px, rear ribbon 11-15 px; far foot rows 340-360 9-11 / 12-13 px
 out["tine_rear_arch_width_045_px"] = {"front ribbon": [9, 11], "rear ribbon": [11, 15], "all": [9, 15]}
+# gap between the front (inner) and rear (outer + middle) runs (pass 7): legs_045.png near foot rows 363-393 gaps
+# 4 3 3 3 3 3 2 2 2 3 2 2 px (< 0.7 x row median); the orchestrator scores 1-4 px at 45 deg and the ribbons nearly
+# merged (0-2 px) in the 215 deg projection (legs_225 is ~210-215 deg: orthographic 45 / 225 are mirror images)
+out["tine_rear_arch_gap_px"] = {"045": [1, 4], "215": [0, 2]}
 
 # landmarks that cannot be measured: the middle tine's upper part runs hidden behind the outer tine (one line),
 # so its arch top is not visible (its traced upper points are an estimate); check_legs.py reports it as N/A

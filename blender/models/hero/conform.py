@@ -1,4 +1,4 @@
-"""T011 hero conform (pass 6): Tripo upper body (provided) + continuous digitigrade legs -> hero_model.blend.
+"""T011 hero conform (pass 7): Tripo upper body (provided) + continuous digitigrade legs -> hero_model.blend.
 
 Build (re-runnable, deterministic), then export:
   python3 tools/qa/memguard.py --expect-peak-mb 2000 -- blender -b -P blender/models/hero/conform.py
@@ -104,6 +104,10 @@ TINE_PX = {
     "inner": [(143, 697), (150, 696), (160, 696), (170, 698), (180, 703), (190, 710), (197, 720), (200, 730), (201, 742),
               (200, 754), (196, 766), (190, 776), (184, 781)],
 }
+# pass 7: px shift towards the heel (+x) per traced point, applied on top of the trace. The inner tine's rear arch
+# sat ~8 mm too far forward in profile: legs_045 near foot shows a 2-4 px gap between the front (inner) and rear
+# (outer + middle) ribbons, the model had 5-8 px. Root, arch top, tip and the planted-foot landmarks stay within 0.05 H.
+TINE_SHIFT_PX = {"inner": [0, 0, 0, 0, 1.2, 3.0, 4.2, 4.3, 4.4, 3.5, 1.9, 0.7, 0]}
 # flat blades nested into one bundle (legs_000/045/225: one ~14 mm blade per foot in the front view):
 # (lateral offset outward m, half width lateral root/tip, half thickness in profile root/tip, samples, part id,
 #  (arch half thickness, arch start, arch end) or None). Rounded-rectangle section (superellipse TINE_N[name], TINE_SIDES).
@@ -669,8 +673,9 @@ def build_parts(B, geo, side):
 
     for name, px in TINE_PX.items():
         lat, hw, ht, nsamp, pid, arch = TINE_SPEC[name]
-        pts = [A + Y * ((REF_ANKLE_PX[0] - x) / REF_H_PX * H) + Z * ((REF_ANKLE_PX[1] - y + 1.0) / REF_H_PX * H)
-               for x, y in px]   # +1 px: the traced line centre is 1 px above the ground
+        sh = TINE_SHIFT_PX.get(name, [0] * len(px))
+        pts = [A + Y * ((REF_ANKLE_PX[0] - x - d) / REF_H_PX * H) + Z * ((REF_ANKLE_PX[1] - y + 1.0) / REF_H_PX * H)
+               for (x, y), d in zip(px, sh)]   # +1 px: the traced line centre is 1 px above the ground
         pts = [Vector((axis_x(p.z) + side * lat, p.y, p.z)) for p in pts]
         c_root = 0.0
         if name == "outer":

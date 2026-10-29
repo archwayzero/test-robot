@@ -1034,6 +1034,16 @@
    15
   ]
  },
+ "tine_rear_arch_gap_px": {
+  "045": [
+   1,
+   4
+  ],
+  "215": [
+   0,
+   2
+  ]
+ },
  "not_measurable": {
   "middle.arch_top": "hidden behind the outer tine in both feet (single line in the image)",
   "middle.thickness_mid": "the middle tine's mid sample lies in the stretch hidden behind the outer tine's arch (both dark lines merge)"

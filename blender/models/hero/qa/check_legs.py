@@ -11,7 +11,7 @@ CUT_Z = float(_re.search(r"^CUT_Z = ([0-9.]+)", open("/home/archwayzero/game/ble
 from mathutils import Vector
 R = "/home/archwayzero/game/"
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-OUTTXT = argv[0] if argv else R + ".captures/T011/v6/check_legs.txt"
+OUTTXT = argv[0] if argv else R + ".captures/T011/v7/check_legs.txt"
 ref = json.load(open(R + "blender/models/hero/qa/reference_landmarks.json"))
 T = ref["targets"]
 obj = bpy.data.objects["hero"]
@@ -353,6 +353,30 @@ row(f"rear ribbon (outer + middle) dark-run width at the rear arch, 45 deg view 
     max(11, rw45['rear ribbon'][0]) <= rmed <= rw45['rear ribbon'][1], ">= 11 px, ref range")
 row("  info: 45 deg dark-run widths per scanline (front / rear, px)", "",
     " ".join(f"{x:.1f}" for x in fw) + " / " + " ".join(f"{x:.1f}" for x in rw), True, "info")
+# ---- gap between the front (inner tine) run and the rear (outer + middle) run on the same 9 scanlines (pass 7).
+# 0 = one merged run (inner faces inside the outer run). legs_045 near foot: 2-4 px; scored 1-4 px at 45 deg and
+# 0-2 px in the 215 deg projection (legs_225 is ~210-215 deg; orthographic 45 / 225 are mirror images).
+gref = ref["tine_rear_arch_gap_px"]
+def gaps_at(az):
+    gs = []
+    for j in range(9):
+        rs = runs_at(z_rear + j * 0.30 * H / 8, az)
+        rr = [r for r in rs if 10 in r[2]]
+        if not rr:
+            continue
+        fr = [r for r in rs if 12 in r[2] and 10 not in r[2]]
+        if not fr:
+            gs.append(0.0 if 12 in rr[0][2] else float("nan")); continue
+        a_, b_ = fr[0], min(rr, key=lambda r: min(abs(r[0] - fr[0][1]), abs(fr[0][0] - r[1])))
+        gs.append(max(0.0, b_[0] - a_[1], a_[0] - b_[1]))
+    return [g for g in gs if g == g]
+for az, key in ((45, "045"), (215, "215")):
+    gs = sorted(gaps_at(az))
+    gmed = gs[len(gs) // 2] if gs else -1.0
+    row(f"front/rear ribbon gap at the rear arch, {az} deg view (px, median of {len(gs)}/9 scanlines)",
+        f"{gref[key][0]}-{gref[key][1]}", round(gmed, 1), len(gs) >= 7 and gref[key][0] <= gmed <= gref[key][1],
+        "ref range")
+    row(f"  info: {az} deg gaps per scanline (px)", "", " ".join(f"{x:.1f}" for x in gs), True, "info")
 # ---- connectivity per side: one component from the cut (hip) through the tines
 for side in (-1, 1):
     fs = {f for f in bm.faces if f.material_index == 1 and f.calc_center_median().x * side > 0}
