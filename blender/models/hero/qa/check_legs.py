@@ -11,7 +11,7 @@ CUT_Z = float(_re.search(r"^CUT_Z = ([0-9.]+)", open("/home/archwayzero/game/ble
 from mathutils import Vector
 R = "/home/archwayzero/game/"
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-OUTTXT = argv[0] if argv else R + ".captures/T011/v5/check_legs.txt"
+OUTTXT = argv[0] if argv else R + ".captures/T011/v6/check_legs.txt"
 ref = json.load(open(R + "blender/models/hero/qa/reference_landmarks.json"))
 T = ref["targets"]
 obj = bpy.data.objects["hero"]
@@ -64,6 +64,22 @@ row("  info: thigh angle from vertical (pose)", ref["near"]["thigh_angle_from_ve
 row("  info: shin angle from vertical (pose)", ref["far"]["shin_angle_from_vertical_deg"], a_s, True, "info (far=planted)")
 row("ankle height H (m)", T["H_m"], H, abs(H / T["H_m"] - 1) <= 0.05, "5%")
 
+# ---- thigh plate depth (side view): horizontal slice of the plate (parts 1 plate, 2 groove, 3 rim) at the reference rows
+plate_f = [f for f in legf if part(f) in (1, 2, 3)]
+PPM_REF = 793 / 1.75
+for key, dref in ref["plate"]["depth_side_m"].items():
+    yrow = float(key.split("(y ")[1].rstrip(")"))
+    zq = (801.0 - yrow) / PPM_REF
+    ys = []
+    for f in plate_f:
+        P = [v.co for v in f.verts]
+        for i in range(len(P)):
+            a_, b_ = P[i], P[(i + 1) % len(P)]
+            if (a_.z - zq) * (b_.z - zq) < 0:
+                ys.append(a_.lerp(b_, (zq - a_.z) / (b_.z - a_.z)).y)
+    dep = max(ys) - min(ys) if ys else 0.0
+    row(f"thigh plate depth at {key.split(' (')[0]} (z {zq:.3f}) (m, side view)", dref, dep, abs(dep / dref - 1) <= 0.03, "3%")
+
 # ---- shin thickness (side view, perpendicular to knee->ankle) from a 3 mm slab cross-section, contiguous run
 alle = list({e for f in legf for e in f.edges})
 axis = (yz(A) - yz(K)); Ln = axis.length; u = axis / Ln; n = Vector((-u.y, u.x))
@@ -94,6 +110,38 @@ def section(c, u, n, faces):
     k = min(range(len(merged)), key=lambda i: 0 if merged[i][0] <= 0 <= merged[i][1]
             else min(abs(merged[i][0]), abs(merged[i][1])))
     return merged[k][1] - merged[k][0]
+def section_iv(c, u, n, faces):
+    """like section(), but returns the chosen merged interval (lo, hi) along n relative to c (None if empty)"""
+    iv = []
+    for f in faces:
+        P = [yz(v.co) for v in f.verts]
+        d = [(p - c).dot(u) for p in P]
+        hits = []
+        for i in range(len(P)):
+            j = (i + 1) % len(P)
+            if (d[i] > 0) != (d[j] > 0) and d[i] != d[j]:
+                hits.append((P[i] + (P[j] - P[i]) * (d[i] / (d[i] - d[j])) - c).dot(n))
+        if len(hits) >= 2:
+            iv.append((min(hits), max(hits)))
+    if not iv:
+        return None
+    iv.sort()
+    merged = [list(iv[0])]
+    for a_, b_ in iv[1:]:
+        if a_ <= merged[-1][1] + 0.001:
+            merged[-1][1] = max(merged[-1][1], b_)
+        else:
+            merged.append([a_, b_])
+    k = min(range(len(merged)), key=lambda i: 0 if merged[i][0] <= 0 <= merged[i][1]
+            else min(abs(merged[i][0]), abs(merged[i][1])))
+    return merged[k]
+loft2d = [f for f in legf if part(f) in (4, 5, 6)]
+def inside2d(p):
+    """p (3D) inside the side-view silhouette of the knee..ankle loft (section across the knee->ankle line)"""
+    q = yz(p)
+    c = yz(K) + u * (q - yz(K)).dot(u)
+    iv = section_iv(c, u, n, loft2d)
+    return iv is not None and iv[0] <= (q - c).dot(n) <= iv[1]
 for key, t in (("25%", 0.25), ("50%", 0.5), ("85%", 0.85)):
     th = section(yz(K) + axis * t, u, n, legf)
     if os.environ.get("CHECK_DEBUG"):
@@ -170,28 +218,35 @@ for name, pid in (("outer", 10), ("middle", 11), ("inner", 12)):
         ds = [(yz(v.co) - yz(trings[i][1])).dot(nn) for v in trings[i][2]]
         xs = [v.co.x for v in trings[i][2]]
         return max(ds) - min(ds), max(xs) - min(xs), trings[i][0]
-    # centre line: skip the leading rows cut by the union with the shin (biased centroids), then every row (rows
-    # partly merged into a neighbouring tine are kept: their centroid moves by less than the blade half
-    # thickness, ~0.013 H)
-    while keys and not clean_row(keys[0]):
-        keys.pop(0)
+    # centre line: every row's centroid (rows partly merged into a neighbouring tine are kept: their centroid moves by
+    # less than the blade half thickness, ~0.013 H). Pass 6: rows cut by the union with the leg are kept too when
+    # their centroid lies OUTSIDE the leg loft (a root lying on the shin surface is visible from where it surfaces);
+    # the leading rows whose centroid is inside the loft (wings of a blade crossing the spring core) are dropped.
     pts3 = []
     for k in keys:
         vs = {v for f in buckets[k] for v in f.verts}
         pts3.append(sum((v.co for v in vs), Vector()) / len(vs))
-    # root = where the centre line leaves the leg loft surface (drop the embedded rows inside the shin)
+    def outside(p):
+        loc, nrm, _, _ = bvh.find_nearest(p)
+        return loc is not None and (p - loc).dot(nrm) > 0
     i0 = 0
-    while i0 < len(pts3) - 3:
-        loc, nrm, _, _ = bvh.find_nearest(pts3[i0])
-        if loc is not None and (pts3[i0] - loc).dot(nrm) > 0:
-            break
+    while i0 < len(pts3) - 3 and not (outside(pts3[i0]) and outside(pts3[i0 + 1])):
         i0 += 1
     pts3 = pts3[i0:]; keys = keys[i0:]
-    # root = where the centre line (extended back from the first clean rows) meets the leg surface
+    # root = where the centre line, extended back from the first outside row, enters the leg's SIDE-VIEW silhouette
+    # (knee/shin/spring/ankle loft, 2D like the reference trace; a 3D ray would pass through the hole the union cut
+    # in the spring where the blade crosses it). 0.5 mm steps, up to 6 cm.
     d = (pts3[0] - pts3[1]).normalized()
-    hit, _, _, dist_ = bvh.ray_cast(pts3[0], d, 0.05)
-    root3 = hit if hit is not None else pts3[0]
+    root3 = pts3[0]
+    for k_ in range(1, 121):
+        q = pts3[0] + d * (0.0005 * k_)
+        if inside2d(q):
+            root3 = q
+            break
     pts = [((p.y - A.y) / H, (p.z - A.z) / H) for p in [root3] + pts3]
+    if os.environ.get("CHECK_DEBUG"):
+        print("CENTRE", name, [(round(a_, 3), round(b_, 3)) for a_, b_ in pts])
+        print("BUCKETS", name, [(round(k, 3), len(buckets[k])) for k in sorted(buckets)])
     lm = landmarks(pts)
     rf = FOOT[name]
     for k in ("root", "arch_top", "rearmost", "lowest", "tip"):
@@ -203,12 +258,12 @@ for name, pid in (("outer", 10), ("middle", 11), ("inner", 12)):
             far = ref["landmarks_px"]["far"]; ax_, ay_ = far["ankle"]; Hpx = ref["far"]["H_px"]
             sh = [((ax_ - x) / Hpx, (ay_ - y) / Hpx) for x, y in far["tines"][name][ref["merged_end"][f"{name}.{k}"]:]]
             dd = min(_seg_dist(lm[k], sh[j - 1], sh[j]) for j in range(1, len(sh)))
-            row(f"{name} tine {k} = merge into the outer: distance to the shared stretch (H)", 0.0, dd, dd <= 0.1, "0.1 H")
+            row(f"{name} tine {k} = merge into the outer: distance to the shared stretch (H)", 0.0, dd, dd <= 0.05, "0.05 H")
             continue
         if f"{name}.{k}" in ref.get("not_measurable", {}):
             row(f"  info: {name} tine {k} (not measurable in the reference)", tuple(rf[k]), tuple(lm[k]), True, "info")
             continue
-        row(f"{name} tine {k} (f, dz in H rel. ankle)", tuple(rf[k]), tuple(lm[k]), d <= 0.1, "0.1 H")
+        row(f"{name} tine {k} (f, dz in H rel. ankle)", tuple(rf[k]), tuple(lm[k]), d <= 0.05, "0.05 H")
     L = plen(pts)
     row(f"{name} tine path length (H)", rf["path_len_H"], L, abs(L / rf["path_len_H"] - 1) <= 0.10, "10%")
     # profile thickness / front width at 1/4, 1/2, 3/4 of the tine's arclength, measured on a clean ring
@@ -231,18 +286,73 @@ for name, pid in (("outer", 10), ("middle", 11), ("inner", 12)):
         rt = sum(vals) / len(vals)
         row(f"{name} tine thickness {key} (m, profile)", rt, th, abs(th / rt - 1) <= 0.15 or abs(th - rt) <= 0.0011,
             "15% or 1 px")
-    rw = ref["tine_width_front_m (legs_000, approx)"]
+    rw = ref["tine_width_front_m (legs_000 rows 380-420)"]
     th, wd = meas["mid"]
     row(f"{name} tine front width mid (m, blade)", rw, wd, abs(wd / rw - 1) <= 0.15, "15%")
     th, wd = meas["root_third"]
-    row(f"{name} tine blade aspect root third (width / profile thickness)", ">= 2.5", wd / th, wd / th >= 2.5, "2.5")
+    row(f"{name} tine blade aspect root third (width / profile thickness)", "3.0 .. 4.5", wd / th,
+        3.0 <= wd / th <= 4.5, "3-4.5")
     th, wd = meas["mid"]
     row(f"  info: {name} tine blade aspect mid", "", wd / th, True, "info")
     tine_xs[name] = [v.co.x for f in fs for v in f.verts if v.co.z < A.z - 0.02]
 
 allx = [x for v in tine_xs.values() for x in v]
-row("  info: foot bundle front width below the ankle (m, all three tines)", ref["tine_width_front_m (legs_000, approx)"],
-    max(allx) - min(allx), True, "info")
+row("foot bundle front width below the ankle (m, all three tines)", ref["tine_width_front_m (legs_000 rows 380-420)"],
+    max(allx) - min(allx), abs((max(allx) - min(allx)) / ref["tine_width_front_m (legs_000 rows 380-420)"] - 1) <= 0.15,
+    "15%")
+
+# ---- projected ribbon widths at the rear arch in the 45 deg turnaround view, measured like the reviewer measures the
+# images: horizontal dark runs on the 864x480 frame (orthographic, qa/render.py 'legs': camera at azimuth 45 deg,
+# 480 px over 0.967 m = 496.4 px/m). Here every leg face of the near leg is sliced by the horizontal plane of the
+# scanline (the camera is level within 1.6 deg), the slices are projected on the camera's horizontal axis and
+# overlapping intervals are merged into runs, exactly what the image shows as one dark run (verified against
+# Cycles renders, +-1 px). 9 scanlines from the inner tine's rearmost point up 0.30 H. In the 45 deg view the
+# outer and middle tines overlap into one "rear ribbon" run and the inner tine is the separate "front ribbon" run,
+# as in legs_045.png (near foot rows 365-395: front 9-10 px, rear 11-14 px; far foot 9-11 / 12-13 px).
+PPM45 = 480 / 0.967
+rw45 = ref["tine_rear_arch_width_045_px"]
+def runs_at(z0, az_deg):
+    az = math.radians(az_deg)
+    right = Vector((-math.cos(az), -math.sin(az), 0))     # camera at (-sin a, cos a) * d looking at the origin
+    ivs = []
+    for f in legf:
+        P = [v.co for v in f.verts]
+        xs = []
+        for i in range(len(P)):
+            a_, b_ = P[i], P[(i + 1) % len(P)]
+            if (a_.z - z0) * (b_.z - z0) < 0:
+                xs.append(a_.lerp(b_, (z0 - a_.z) / (b_.z - a_.z)).dot(right) * PPM45)
+        if xs:
+            ivs.append((min(xs), max(xs), part(f)))
+    ivs.sort(key=lambda r: (r[0], r[1], r[2]))
+    out = []
+    for lo, hi, p in ivs:
+        if out and lo <= out[-1][1] + 0.5:       # touching within half a pixel = one dark run
+            out[-1][1] = max(out[-1][1], hi); out[-1][2].add(p)
+        else:
+            out.append([lo, hi, {p}])
+    return out
+inner_f = [f for f in legf if part(f) == 12 and f.calc_center_median().z < A.z]
+z_rear = min({v for f in inner_f for v in f.verts}, key=lambda v: (v.co.y, v.index)).co.z
+fw, rw, per = [], [], {10: [], 11: [], 12: []}
+for j in range(9):
+    z0 = z_rear + j * 0.30 * H / 8
+    rs = runs_at(z0, 45)
+    fr = [r for r in rs if 12 in r[2] and 10 not in r[2]]
+    rr = [r for r in rs if 10 in r[2]]
+    if fr: fw.append(fr[0][1] - fr[0][0])
+    if rr: rw.append(rr[0][1] - rr[0][0])
+fw.sort(); rw.sort()
+fmed = fw[len(fw) // 2] if fw else 0.0
+rmed = rw[len(rw) // 2] if rw else 0.0
+row(f"front ribbon (inner tine) dark-run width at the rear arch, 45 deg view (px, median of {len(fw)}/9 scanlines)",
+    f"{rw45['front ribbon'][0]}-{rw45['front ribbon'][1]}", round(fmed, 1), len(fw) >= 7 and
+    rw45['front ribbon'][0] <= fmed <= rw45['front ribbon'][1], "ref range")
+row(f"rear ribbon (outer + middle) dark-run width at the rear arch, 45 deg view (px, median of {len(rw)}/9 scanlines)",
+    f"{rw45['rear ribbon'][0]}-{rw45['rear ribbon'][1]}", round(rmed, 1), len(rw) >= 7 and
+    max(11, rw45['rear ribbon'][0]) <= rmed <= rw45['rear ribbon'][1], ">= 11 px, ref range")
+row("  info: 45 deg dark-run widths per scanline (front / rear, px)", "",
+    " ".join(f"{x:.1f}" for x in fw) + " / " + " ".join(f"{x:.1f}" for x in rw), True, "info")
 # ---- connectivity per side: one component from the cut (hip) through the tines
 for side in (-1, 1):
     fs = {f for f in bm.faces if f.material_index == 1 and f.calc_center_median().x * side > 0}

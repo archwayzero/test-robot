@@ -1,4 +1,4 @@
-"""Scratch renders of hero_model.blend (Cycles CPU) -> .captures/T011/v5/r/.
+"""Scratch renders of hero_model.blend (Cycles CPU) -> .captures/T011/v6/r/.
 usage: blender -b <blend> -P render.py -- <tag> <views> [samples] [pose]
 views (comma list): side_ref (reference-aligned ortho 414x807, transparent), full, legs (8 turnaround angles each,
 framed like reference/hero/turnaround), game, threeq, seam, foot, knee, front, back
@@ -12,7 +12,7 @@ argv = sys.argv[sys.argv.index("--") + 1:]
 tag, views = argv[0], argv[1].split(",")
 samples = int(argv[2]) if len(argv) > 2 else 24
 pose = argv[3] if len(argv) > 3 else ""
-OUT = "/home/archwayzero/game/.captures/T011/v5/r/"
+OUT = "/home/archwayzero/game/.captures/T011/v6/r/"
 PPM, GROUND = 793 / 1.75, 801.0
 HIP_PX = (113.0, 402.0)          # reference near hip disc centre
 HIP_Y, HIP_Z = 0.0686, 0.8708    # model hip disc centre (measured by check_legs.py)
@@ -33,7 +33,7 @@ if pose in ("stride", "stride_joints"):
         K = sum((v.co for v in knee_ring), Vector()) / len(knee_ring)
         kx, ky = lm[leg]["knee_centre"]
         try:      # upper-body alignment of the unposed render (overlay.py): model appears shifted by dx px
-            kx -= json.load(open("/home/archwayzero/game/.captures/T011/v5/align.json"))["dx_px"]
+            kx -= json.load(open("/home/archwayzero/game/.captures/T011/v6/align.json"))["dx_px"]
         except FileNotFoundError:
             pass
         # image -> model: z = (GROUND - y)/PPM ; y = HIP_Y + (HIP_PX[0] - x)/PPM
@@ -56,7 +56,7 @@ if pose in ("stride", "stride_joints"):
         for v in vs:
             v.co = R @ v.co
         if pose == "stride_joints":   # also bend knee and ankle (pose-dependent joints) onto the reference
-            dx_ = json.load(open("/home/archwayzero/game/.captures/T011/v5/align.json"))["dx_px"]
+            dx_ = json.load(open("/home/archwayzero/game/.captures/T011/v6/align.json"))["dx_px"]
             def to_m(px):
                 return Vector((0, HIP_Y + (HIP_PX[0] - (px[0] - dx_)) / PPM, (GROUND - px[1]) / PPM))
             Kp, Ap = R @ K, R @ Am
@@ -81,7 +81,7 @@ if pose in ("stride", "stride_joints"):
                     if v.co.z < Ap2.z + 0.03:
                         v.co = Ra @ v.co
             print(f"  joints {leg}: knee bend {math.degrees(b1 - b0):+.1f} deg")
-        dxp = json.load(open("/home/archwayzero/game/.captures/T011/v5/align.json"))["dx_px"] if __import__("os").path.exists("/home/archwayzero/game/.captures/T011/v5/align.json") else 0
+        dxp = json.load(open("/home/archwayzero/game/.captures/T011/v6/align.json"))["dx_px"] if __import__("os").path.exists("/home/archwayzero/game/.captures/T011/v6/align.json") else 0
         def img(p):
             p = R @ p
             return (round(HIP_PX[0] + (HIP_Y - p.y) * PPM + dxp, 1), round(GROUND - p.z * PPM, 1))

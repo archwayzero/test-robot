@@ -1019,7 +1019,21 @@
   "mid": 0.035,
   "bottom": 0.035
  },
- "tine_width_front_m (legs_000, approx)": 0.014,
+ "tine_width_front_m (legs_000 rows 380-420)": 0.024,
+ "tine_rear_arch_width_045_px": {
+  "front ribbon": [
+   9,
+   11
+  ],
+  "rear ribbon": [
+   11,
+   15
+  ],
+  "all": [
+   9,
+   15
+  ]
+ },
  "not_measurable": {
   "middle.arch_top": "hidden behind the outer tine in both feet (single line in the image)",
   "middle.thickness_mid": "the middle tine's mid sample lies in the stretch hidden behind the outer tine's arch (both dark lines merge)"

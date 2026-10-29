@@ -1,4 +1,4 @@
-"""T011 hero conform (pass 5): Tripo upper body (provided) + continuous digitigrade legs -> hero_model.blend.
+"""T011 hero conform (pass 6): Tripo upper body (provided) + continuous digitigrade legs -> hero_model.blend.
 
 Build (re-runnable, deterministic), then export:
   python3 tools/qa/memguard.py --expect-peak-mb 2000 -- blender -b -P blender/models/hero/conform.py
@@ -24,8 +24,11 @@ Steps:
        - knee pod: capsule at the plate's front-bottom (front flush with the plate front, 4 mm proud of its side,
          bottom 2.2 cm below the knee), boolean-unioned; its union boundary is a sharp crease (own outline).
        - three reverse-C tines per foot nested into one blade bundle (lateral offsets +-1 mm): flat blades
-         (rounded-rectangle section, 16 -> 12 mm wide, ~5-6 mm thick, outer rear arch 9 mm), centrelines = the
-         traced reference polylines of the planted foot (in ankle heights H), boolean-unioned (welded).
+         (rounded-rectangle section, 24 -> 20 mm wide (outer widest), ~5-6 mm thick, outer rear arch 9 mm; the last
+         0.4 H a constant flat ribbon with a blunt end), centrelines = the traced reference polylines of the planted
+         foot (in ankle heights H), one ring pinned on each rear arch, boolean-unioned (welded). The outer tine's
+         root grows out of the back of the metatarsal: buried start, narrow / thin where it meets the surface,
+         lying on the surface while the trace runs along it, then widening (no proud squared top).
        - cleanup after the union: merge near-coincident vertices (1e-5), dissolve_degenerate, triangulate the
          boolean n-gons, delete back-to-back duplicate triangles and fix zero-area slivers, so the exported glb is
          manifold after any weld.
@@ -76,10 +79,11 @@ PLATE_BOTTOM_UP = (0.016, 0.035)      # plate bottom above the knee centre along
 # depth/offset from the near reference shin edges, width from the front view (legs_000)
 # pass 5: back-of-shin bulge (+4 mm at t 0.38-0.43) and a sharper hock: the back edge stops converging at the hock and
 # runs parallel down the metatarsal (reference near back edge (182,626) -> (186,633) -> (194,640): -14.6 / -10.9 /
-# -13.9 mm from the knee-ankle line at t 0.43 / 0.50 / 0.59)
+# -13.9 mm from the knee-ankle line at t 0.43 / 0.50 / 0.59); pass 6: hock / upper metatarsal depth 32 -> 29 mm
+# (reference side-view thickness at 50 %: 28.7 mm; the outer tine root now lies on the back there)
 SHIN_ST = [(0.00, 0.090, 0.076, 0.000), (0.13, 0.082, 0.070, -0.0045), (0.25, 0.064, 0.058, -0.0070),
-           (0.38, 0.042, 0.042, -0.0005), (0.43, 0.037, 0.038, 0.0020), (HOCK_T, 0.032, 0.035, 0.0045),
-           (0.58, 0.032, 0.033, 0.0040)]
+           (0.38, 0.042, 0.042, -0.0005), (0.43, 0.037, 0.038, 0.0020), (HOCK_T, 0.029, 0.035, 0.0045),
+           (0.58, 0.029, 0.033, 0.0040)]
 META_ST = [(0.65, 0.028, 0.031, 0.0040), (0.76, 0.024, 0.028, 0.0030), (0.84, 0.022, 0.026, 0.0020)]
 SHIN_SIDES = 18          # upper shin loft (knee bulb .. hock); the metatarsal / spring / ankle stay 12-sided
 SHIN_SUBDIV = 0.07       # extra interpolated rings (Catmull-Rom through the stations) where a span exceeds this t
@@ -96,17 +100,35 @@ TINE_PX = {
               (201, 699), (210, 704), (219, 716), (223, 726), (225, 734), (222, 746), (216, 758), (208, 768), (196, 778),
               (186, 786), (176, 793), (166, 798), (158, 800), (140, 800), (120, 800), (104, 800)],
     "middle": [(132, 683), (140, 684), (150, 685), (160, 689), (170, 692), (181, 694), (191, 697), (200, 702), (208, 708),
-               (215, 718), (219, 728), (219, 740), (213, 756), (205, 768), (195, 778), (186, 786), (180, 790)],
+               (215, 718), (219, 728), (218, 740), (213, 756), (205, 768), (195, 778), (186, 786), (180, 790)],
     "inner": [(143, 697), (150, 696), (160, 696), (170, 698), (180, 703), (190, 710), (197, 720), (200, 730), (201, 742),
               (200, 754), (196, 766), (190, 776), (184, 781)],
 }
 # flat blades nested into one bundle (legs_000/045/225: one ~14 mm blade per foot in the front view):
 # (lateral offset outward m, half width lateral root/tip, half thickness in profile root/tip, samples, part id,
-#  (arch half thickness, arch start, arch end) or None). Rounded-rectangle section (superellipse TINE_N, TINE_SIDES).
-TINE_SPEC = {"outer": (0.001, (0.0080, 0.0060), (0.0028, 0.0028), 26, 10, (0.0045, 0.40, 0.70)),
-             "middle": (-0.001, (0.0080, 0.0060), (0.0025, 0.0022), 17, 11, None),
-             "inner": (-0.001, (0.0080, 0.0060), (0.0027, 0.0033), 14, 12, None)}
-TINE_SIDES, TINE_N = 8, 3.0
+#  (arch half thickness, arch start, arch end) or None). Rounded-rectangle section (superellipse TINE_N[name], TINE_SIDES).
+# pass 6: front width re-measured on legs_000 rows 380-420 (near blade 11-13 px, mean 11.8 px at 496 px/m = 0.024 m):
+# blades 24 -> 20 mm wide (outer widest, so at 225 deg it reads as the broad ribbon with the inner tines inside it)
+TINE_SPEC = {"outer": (0.001, (0.0124, 0.0104), (0.0028, 0.0028), 26, 10, (0.0045, 0.40, 0.70)),
+             "middle": (-0.001, (0.0120, 0.0100), (0.0028, 0.0023), 17, 11, None),
+             "inner": (-0.001, (0.0118, 0.0099), (0.0027, 0.0033), 14, 12, None)}
+TINE_SIDES = 8
+# superellipse exponent per tine: the inner tine (the separate front ribbon at 45 deg) is a squarer flat strip so its
+# 8-vertex section keeps its corners (an n = 3 octagon cuts them: 45 deg projection 7.5 px instead of 9-10 px)
+TINE_N = {"outer": 3.0, "middle": 3.0, "inner": 10.0}
+# rear-arch widening (pass 6): extra half width (m) around each tine's rearmost row, smoothstep over +-ARCH_WIDEN_H
+# of arclength. legs_045 shows the ribbons broader at the rear arches (front ribbon 9-10 px, rear 11-14 px at 496 px/m)
+# than a 20-22 mm blade gives there; profile thickness and the front-view widths elsewhere are unchanged.
+ARCH_WIDEN = {"outer": 0.0010, "middle": 0.0008, "inner": 0.0012}
+ARCH_WIDEN_H = 0.35
+TINE_FLAT_END_H = 0.4    # last 0.4 H of every tine: constant-section flat ribbon, blunt end (no needle taper)
+# outer tine root (pass 6): blended into the back of the metatarsal instead of entering through the shin axis.
+# The centre line starts buried ROOT_SINK below the back surface ROOT_RUN (t along knee->ankle) above the root,
+# reaches the surface at the back-surface point nearest the reference root, then lies on the surface (glued) while
+# the traced line stays within ROOT_GLUE of it; width / thickness ramp up from ROOT_W0 / ROOT_T0 over ROOT_RAMP_H.
+ROOT_RUN, ROOT_SINK, ROOT_GLUE, ROOT_LIFT = 0.09, 0.0065, 0.012, 0.0015
+ROOT_W0, ROOT_T0, ROOT_RAMP_H = 0.0040, 0.0010, 0.40
+MID_ROOT_W0, MID_ROOT_RAMP_H = 0.012, 0.35   # middle / inner: 12 mm wide where they leave the spring core
 # rust coverage (fraction of the surface classified as rust, same classifier as the Tripo sampling)
 RUST_FRAC_PLATE = 0.37                # measured on the near reference plate (qa/ref_rust.py)
 RUST_THR_SHIN = 0.66
@@ -246,8 +268,10 @@ def catmull(pts, n):
     return out
 
 
-def resample_by_curvature(pts, n, k_turn=0.05):
-    """Resample a dense polyline to n points, denser where it turns (weight = length + k_turn * angle)."""
+def resample_by_curvature(pts, n, k_turn=0.05, anchor=None):
+    """Resample a dense polyline to n points, denser where it turns (weight = length + k_turn * angle).
+    anchor (index into pts): the pair of consecutive samples whose midpoint is nearest to it is shifted (both by the
+    same weight) so that the midpoint lies exactly on it (end samples never move)."""
     w = [0.0]
     for i in range(1, len(pts)):
         seg = (pts[i] - pts[i - 1]).length
@@ -257,10 +281,16 @@ def resample_by_curvature(pts, n, k_turn=0.05):
             if a.length > 1e-9 and b.length > 1e-9:
                 ang = a.angle(b)
         w.append(w[-1] + seg + k_turn * ang)
+    targets = [w[-1] * s / (n - 1) for s in range(n)]
+    if anchor is not None:
+        wa = w[anchor]
+        k = min(range(1, n - 2), key=lambda i: (abs((targets[i] + targets[i + 1]) / 2 - wa), i))
+        dlt = wa - (targets[k] + targets[k + 1]) / 2
+        targets[k] += dlt
+        targets[k + 1] += dlt
     out = []
     j = 0
-    for s in range(n):
-        target = w[-1] * s / (n - 1)
+    for target in targets:
         while j < len(w) - 2 and w[j + 1] < target:
             j += 1
         span = w[j + 1] - w[j]
@@ -491,17 +521,19 @@ def build_leg(B, loop_co, side, tang):
     zg1, zg2 = PLATE_GROOVE_Z
     zb = K.z - dt.z * (PLATE_BOTTOM_UP[0] + PLATE_BOTTOM_UP[1]) / 2
     slant_b = (PLATE_BOTTOM_UP[1] - PLATE_BOTTOM_UP[0]) / 2   # front lower (moves along the downward axis)
+    # pass 6: plate half depth hb reduced to the reference side depths 139 / 150 / 155 mm at z 0.66 / 0.55 / bottom
+    # (the first eased ring is kept for the flush join; the taper runs between the seam and segment line 1)
     spec = [
         (lambda: flush_ring(0.004), 1),                       # the Tripo surface continued (flush, no lip/groove)
         (lambda: plate_ring(z0 - 0.012, 0.081, 0.070, 3.0, blend=0.55), 1),   # eases into the plate section
-        (lambda: plate_ring(zg1 + 0.004, 0.076, 0.066, 3.2), 1),
-        (lambda: plate_ring(zg1, 0.072, 0.062, 3.2), 2),                                 # segment line 1
-        (lambda: plate_ring(zg1 - 0.004, 0.078, 0.067, 3.3), 1),
-        (lambda: plate_ring(zg2 + 0.004, 0.0775, 0.062, 3.4), 1),
-        (lambda: plate_ring(zg2, 0.0745, 0.059, 3.4), 2),                                # segment line 2
-        (lambda: plate_ring(zg2 - 0.004, 0.0800, 0.064, 3.5), 1),
-        (lambda: plate_ring(zb, 0.0790, 0.054, 3.6, slant=slant_b), 1),                 # bottom edge (slanted)
-        (lambda: plate_ring(zb + 0.006, 0.0745, 0.050, 3.4, slant=slant_b), 3),         # inner lip
+        (lambda: plate_ring(zg1 + 0.004, 0.0735, 0.066, 3.2), 1),
+        (lambda: plate_ring(zg1, 0.0685, 0.062, 3.2), 2),                                 # segment line 1
+        (lambda: plate_ring(zg1 - 0.004, 0.0705, 0.067, 3.3), 1),
+        (lambda: plate_ring(zg2 + 0.004, 0.0705, 0.062, 3.4), 1),
+        (lambda: plate_ring(zg2, 0.0675, 0.059, 3.4), 2),                                # segment line 2
+        (lambda: plate_ring(zg2 - 0.004, 0.0730, 0.064, 3.5), 1),
+        (lambda: plate_ring(zb, 0.0775, 0.054, 3.6, slant=slant_b), 1),                 # bottom edge (slanted)
+        (lambda: plate_ring(zb + 0.006, 0.0730, 0.050, 3.4, slant=slant_b), 3),         # inner lip
     ]
     kinds = []
     for mk, kind in spec:
@@ -587,7 +619,7 @@ def build_leg(B, loop_co, side, tang):
         B.tag(row, part, t=t, name={4: "knee/shin", 5: "spring", 6: "ankle"}[part])
     capf = B.cap(lower[-1], da, bulge=0.006)
     B.tag(capf, 6, t=1.05, name="ankle")
-    geo["plate_front"] = plate_centre(zb) + Ft * 0.079
+    geo["plate_front"] = plate_centre(zb) + Ft * 0.0775
     return geo
 
 
@@ -616,38 +648,98 @@ def build_parts(B, geo, side):
     Y = Vector((0, 1, 0))
     Z = Vector((0, 0, 1))
     geo["tines"] = {}
+    Fs = geo["Fs"]
+
+    def axis_x(z):        # lateral position of the knee->ankle axis at height z (the shin splays outwards)
+        s = max(0.0, min(KNEE_TO_ANKLE, (z - K.z) / da.z))
+        return (K + da * s).x
+
+    def back_surface(t):  # back surface of the shin / metatarsal loft at t (stations interpolated as lofted)
+        st = SHIN_ST + META_ST
+        dep, off = st[-1][1], st[-1][3]
+        for (t0, d0, _, o0), (t1, d1, _, o1) in zip(st, st[1:]):
+            if t0 <= t <= t1:
+                u = (t - t0) / (t1 - t0)
+                dep, off = d0 + (d1 - d0) * u, o0 + (o1 - o0) * u
+                break
+        return shin_point(K, da, Fs, t, off) - Fs * (dep / 2)
+
+    def t_of(p):
+        return (p - K).dot(da) / KNEE_TO_ANKLE
+
     for name, px in TINE_PX.items():
         lat, hw, ht, nsamp, pid, arch = TINE_SPEC[name]
         pts = [A + Y * ((REF_ANKLE_PX[0] - x) / REF_H_PX * H) + Z * ((REF_ANKLE_PX[1] - y + 1.0) / REF_H_PX * H)
-               + Vector((side * lat, 0, 0)) for x, y in px]   # +1 px: the traced line centre is 1 px above the ground
-        # embed the root inside the shin / spring core so the union welds it cleanly
-        if name == "outer":   # runs down the back of the shin: seat the first points 3 mm deeper, start on the axis
-            for i in range(3):
-                r = pts[i]
-                ax = K + da * (KNEE_TO_ANKLE * max(0.0, min(1.03, (r - K).dot(da) / KNEE_TO_ANKLE)))
-                pts[i] = r + (ax - r).normalized() * 0.003 * (3 - i) / 3
-            r = pts[0]
-            inner = K + da * (KNEE_TO_ANKLE * max(0.0, min(1.03, (r - K).dot(da) / KNEE_TO_ANKLE)))
+               for x, y in px]   # +1 px: the traced line centre is 1 px above the ground
+        pts = [Vector((axis_x(p.z) + side * lat, p.y, p.z)) for p in pts]
+        c_root = 0.0
+        if name == "outer":
+            # blended root: buried start up the back of the metatarsal -> surface at the reference root -> glued
+            def yzd(p, q):
+                return math.hypot(p.y - q.y, p.z - q.z)
+            t_r = min((0.30 + 0.001 * i for i in range(600)), key=lambda t: (yzd(back_surface(t), pts[0]), t))
+            lead = []
+            for k_ in range(3, 0, -1):
+                tt = t_r - ROOT_RUN * k_ / 3
+                b = back_surface(tt)
+                lead.append(Vector((axis_x(b.z) + side * lat, b.y, b.z)) + Fs * (ROOT_SINK * k_ / 3))
+            b = back_surface(t_r)
+            Rp = Vector((axis_x(b.z) + side * lat, b.y, b.z))
+            glued, gluing = [], True
+            for p in pts[1:]:
+                b = back_surface(t_of(p))
+                gap = (b - p).dot(Fs)              # > 0: the traced point is behind (outside) the back surface
+                if gluing and gap < ROOT_GLUE and t_of(p) < 1.0:
+                    glued.append(Vector((axis_x(b.z) + side * lat, b.y, b.z)) - Fs * ROOT_LIFT)
+                else:
+                    gluing = False
+                    glued.append(p)
+            log("outer tine root", side, "t_r", round(t_r, 4), "root (f, dz H)",
+                (round((Rp.y - A.y) / H, 3), round((Rp.z - A.z) / H, 3)), "glued points", sum(
+                    1 for p, q in zip(glued, pts[1:]) if (p - q).length > 1e-9))
+            ctrl = lead + [Rp] + glued
+            dense = catmull(ctrl, 600)
+            c_root = None
         else:                 # leave the spring core: extend 1.6 cm back along the tine's own start direction
             inner = pts[0] + (pts[0] - pts[1]).normalized() * 0.016
-        dense = catmull([inner] + pts, 400)
-        path = resample_by_curvature(dense, nsamp, k_turn=0.025)
+            dense = catmull([inner] + pts, 400)
+        # resample (denser at turns); the two rings around the rear arch are placed symmetrically about its rearmost
+        # point, so the row between them (its centre) sits on the rearmost point instead of half a spacing off
+        path = resample_by_curvature(dense, nsamp, k_turn=0.025, anchor=min(range(1, len(dense) - 1),
+                                                                           key=lambda i: (dense[i].y, i)))
         cum = [0.0]
         for i in range(1, len(path)):
             cum.append(cum[-1] + (path[i] - path[i - 1]).length)
         Lp = cum[-1]
+        if c_root is None:    # arclength where the outer centre line reaches the surface (nearest sample to Rp)
+            c_root = cum[min(range(len(path)), key=lambda i: (path[i] - Rp).length)]
+        L_taper = Lp - TINE_FLAT_END_H * H     # root -> start of the constant flat end
+        c_rear = cum[min(range(len(path)), key=lambda i: (path[i].y, i))]
         rad = []
         for i, c in enumerate(cum):
             t = c / Lp
-            k = 0.45 if i == len(cum) - 1 else (0.75 if i == len(cum) - 2 else 1.0)
-            th = ht[0] + (ht[1] - ht[0]) * t
+            tw = min(1.0, c / L_taper)
+            k = 0.85 if i == len(cum) - 1 else 1.0          # blunt end: full width, thickness eased 15 %, flat cap
+            th = ht[0] + (ht[1] - ht[0]) * tw
             if arch:          # thicker rear arch (outer tine): smooth ramps 0.1 on either side of [start, end]
                 a_th, a0, a1 = arch
                 w = min(1.0, max(0.0, min((t - (a0 - 0.1)) / 0.1, ((a1 + 0.1) - t) / 0.1)))
                 w = w * w * (3 - 2 * w)
                 th += (a_th - th) * w
-            rad.append(((hw[0] + (hw[1] - hw[0]) * t) * k, th * k))
-        trings = B.tube(path, X, rad, TINE_SIDES, 0.0, n=TINE_N)
+            wd = hw[0] + (hw[1] - hw[0]) * tw
+            aw = max(0.0, 1.0 - abs(c - c_rear) / (ARCH_WIDEN_H * H))
+            wd += ARCH_WIDEN[name] * aw * aw * (3 - 2 * aw)
+            if name == "outer":   # root ramp: narrow and thin where it grows out of the metatarsal
+                r = min(1.0, max(0.0, (c - c_root) / (ROOT_RAMP_H * H)))
+                r = r * r * (3 - 2 * r)
+                wd = ROOT_W0 / 2 + (wd - ROOT_W0 / 2) * r
+                th = ROOT_T0 + (th - ROOT_T0) * r
+            else:                 # grows out of the spring / ankle core narrower than the core, then widens
+                r = min(1.0, c / (0.016 + MID_ROOT_RAMP_H * H))
+                r = r * r * (3 - 2 * r)
+                wd = MID_ROOT_W0 / 2 + (wd - MID_ROOT_W0 / 2) * r
+            rad.append((wd, th * k))
+        trings = B.tube(path, X, rad, TINE_SIDES, 0.0, n=TINE_N[name])
         faces = []
         for i, row in enumerate(B.ring_strip(trings)):
             B.tag(row, pid, t=cum[i] / Lp, name="tines")
@@ -748,8 +840,8 @@ n_f0 = len(lbm.faces)
 # near-coincident boolean vertices (not sharing an edge) would be merged by any weld downstream (glTF round trip,
 # engine import): merge them here, away from the cut loop (welded to the body later)
 n_v0 = len(lbm.verts)
-bmesh.ops.remove_doubles(lbm, verts=[v for v in lbm.verts if abs(v.co.z - CUT_Z) > 1e-4], dist=1e-5)
-log("leg remove_doubles 1e-5: verts", n_v0, "->", len(lbm.verts))
+bmesh.ops.remove_doubles(lbm, verts=[v for v in lbm.verts if abs(v.co.z - CUT_Z) > 1e-4], dist=1e-4)
+log("leg remove_doubles 1e-4: verts", n_v0, "->", len(lbm.verts))
 bmesh.ops.dissolve_degenerate(lbm, dist=1e-5, edges=list(lbm.edges))
 for v in [v for v in lbm.verts if not v.link_faces]:
     lbm.verts.remove(v)

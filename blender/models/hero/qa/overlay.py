@@ -10,7 +10,7 @@ ref = load(R + "reference/hero/full_body.png")
 b = oiio.ImageBuf(sys.argv[1]); rgba = b.get_pixels(oiio.FLOAT)
 mod, alpha = rgba[..., :3], rgba[..., 3]
 out = sys.argv[2]
-rm = np.load(R + ".captures/T011/v5/ref_mask.npy").copy()
+rm = np.load(R + ".captures/T011/v6/ref_mask.npy").copy()
 # close small holes in the reference mask row/col-wise (gaps <= 3 px between foreground pixels)
 for axis in (0, 1):
     m = rm if axis == 1 else rm.T
@@ -31,7 +31,7 @@ for dx in range(-40, 41):
 DX = int(sys.argv[3]) if len(sys.argv) > 3 else best[0]
 gm = np.roll(gm0, DX, axis=1); alpha = np.roll(alpha, DX, axis=1); mod = np.roll(mod, DX, axis=1)
 import json
-json.dump({"dx_px": DX, "upper_iou": round(float(best[1]), 4)}, open(R + ".captures/T011/v5/align.json", "w"))
+json.dump({"dx_px": DX, "upper_iou": round(float(best[1]), 4)}, open(R + ".captures/T011/v6/align.json", "w"))
 print(f"upper-body alignment shift {DX} px (upper IoU {best[1]:.4f})")
 reg = np.zeros_like(rm); reg[ROW0:792] = True
 inter = (rm & gm & reg).sum(); union = ((rm | gm) & reg).sum()

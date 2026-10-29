@@ -7,7 +7,7 @@ import numpy as np
 sys.path.insert(0, "/home/archwayzero/game/blender/models/hero/qa")
 from imgtool import load, save
 R = "/home/archwayzero/game/"
-OUT = R + ".captures/T011/v5/"
+OUT = R + ".captures/T011/v6/"
 TOP, GROUND = 8.0, 801.0
 PPM = (GROUND - TOP) / 1.75
 
@@ -176,7 +176,12 @@ out["plate"] = {"depth_side_m": {"z0.66 (y 500)": (168 - 105) / PPM, "z0.55 (y 5
                 "bottom_z_m": {"back": z_m(576), "front (behind pod)": z_m(585)},
                 "near_thigh_angle_from_vertical_deg (front/back edges)": [ang_v(pf[0], pf[-1]), ang_v(pb[0], pb[-1])]}
 out["shin_width_front_m (legs_000, approx)"] = {"knee bulb": 0.08, "mid": 0.035, "bottom": 0.035}
-out["tine_width_front_m (legs_000, approx)"] = 0.014
+# blade front width (pass 6, re-measured): legs_000.png rows 380-420, dark runs (< 0.7 x row median) of the near
+# blade 11 / 12 / 13 / 12 / 11 px (far blade 10-11 px), 496 px/m -> 11.8 px = 0.024 m (the old 0.014 was a guess)
+out["tine_width_front_m (legs_000 rows 380-420)"] = 0.024
+# projected ribbon widths at the rear arches in the 45 deg view (legs_045.png, horizontal dark runs < 0.7 x row
+# median): near foot rows 365-395 front ribbon 9-10 px, rear ribbon 11-15 px; far foot rows 340-360 9-11 / 12-13 px
+out["tine_rear_arch_width_045_px"] = {"front ribbon": [9, 11], "rear ribbon": [11, 15], "all": [9, 15]}
 
 # landmarks that cannot be measured: the middle tine's upper part runs hidden behind the outer tine (one line),
 # so its arch top is not visible (its traced upper points are an estimate); check_legs.py reports it as N/A
