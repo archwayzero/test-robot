@@ -1,0 +1,5 @@
+outs:
+- md5: 129e943f4c376a945fac5eeb5ec2ef45
+  size: 5739439
+  hash: md5
+  path: hero_model.blend

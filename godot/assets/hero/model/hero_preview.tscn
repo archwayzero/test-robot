@@ -1,0 +1,26 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="PackedScene" path="res://assets/hero/model/hero.glb" id="1_hero"]
+[ext_resource type="Script" path="res://assets/hero/model/hero_preview_turntable.gd" id="2_turn"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
+size = Vector2(6, 6)
+
+[node name="HeroPreview" type="Node3D"]
+
+[node name="Floor" type="MeshInstance3D" parent="."]
+mesh = SubResource("PlaneMesh_floor")
+
+[node name="Turntable" type="Node3D" parent="."]
+script = ExtResource("2_turn")
+
+[node name="hero" parent="Turntable" instance=ExtResource("1_hero")]
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 4, 0)
+shadow_enabled = true
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.928477, 0.371391, 0, -0.371391, 0.928477, 0, 2.0, 2.5)
+current = true
+fov = 55.0
