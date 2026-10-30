@@ -18,8 +18,13 @@ vault webs, worn flagstone floor. Do NOT model the statue in the photo (copyrigh
 | Pier shaft | 0.0 - 1.9 |
 | Capital (block, slightly wider: 0.75 x 0.75) | 1.9 - 2.2 |
 | Springing line (arches and vault start) | 2.2 |
-| Transverse arch / vault crown (semicircle, radius 1.7) | 3.9 |
-| Wall top (meets vault) | 3.9 |
+| Transverse arch soffit crown (true semicircle, radius 1.7) | 3.9 |
+| Vault web crown (semi-elliptical section allowed; spring 2.2) | 4.15 |
+| Wall top, arch block top, ceiling insert top (meet vault) | 4.15 |
+
+The 0.25 m between arch soffit crown and vault crown is deliberate: arch rings must stand proud of the webs along
+their whole length, as in the reference. Changed from a shared 3.9 crown in T015, where a flush arch showed no ring.
+Player clearances are unchanged. The `maze` greybox keeps its 3.9 `WALL_HEIGHT` until T018 swaps in the kit.
 
 ## Clearances (player collision, must match `player` module)
 | Clearance | Free height | Who fits | Kit piece |
@@ -33,12 +38,12 @@ Stand-up checks in `player` rely on these: a CROUCH cell must block a standing c
 | Node name | Origin | Description |
 |---|---|---|
 | `floor` | cell centre, y=0 | 4 x 4 m flagstones, top at y=0, 0.2 m thick |
-| `wall` | edge centre, y=0 | 4.0 m long (between pier faces 3.4 m + overlap), 0.6 thick, 0-3.9 m, ashlar |
+| `wall` | edge centre, y=0 | 4.0 m long (between pier faces 3.4 m + overlap), 0.6 thick, 0-4.15 m, ashlar |
 | `pier` | corner, y=0 | 0.6 x 0.6 shaft + capital, 0-2.2 m |
-| `arch` | edge centre, y=0 | transverse semicircular arch spanning an OPEN edge between two piers, 2.2-3.9 m, 0.6 deep |
-| `vault_bay` | cell centre, y=0 | groin vault covering one cell (two intersecting barrel vaults, springing 2.2, crown 3.9) |
-| `ceiling_crouch` | cell centre, y=0 | low collapsed/rubble ceiling insert, underside at 1.3 m, fills to 3.9 m |
-| `ceiling_crawl` | cell centre, y=0 | lower insert, underside at 0.75 m, fills to 3.9 m |
+| `arch` | edge centre, y=0 | transverse semicircular arch spanning an OPEN edge between two piers, soffit 2.2-3.9 m, block top 4.15 m, 0.6 deep |
+| `vault_bay` | cell centre, y=0 | groin vault covering one cell (two intersecting vaults, springing 2.2, crown 4.15) |
+| `ceiling_crouch` | cell centre, y=0 | low collapsed/rubble ceiling insert, underside at 1.3 m, fills to 4.15 m |
+| `ceiling_crawl` | cell centre, y=0 | lower insert, underside at 0.75 m, fills to 4.15 m |
 Each piece has a `-colonly` child (boxes / simple trimesh) for collision. Vault and arch collision may be coarse;
 floor and walls must be exact planes at y=0 and at the wall faces.
 
