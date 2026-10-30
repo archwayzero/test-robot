@@ -108,6 +108,8 @@ func test_clip_heights_floor_and_seams() -> void:
 		_check_clip(clip, r)
 		if r.loop != Animation.LOOP_NONE:
 			assert_true(ts.other == 0, "%s has %d track(s) of a type the seam check does not cover" % [clip, ts.other])
+			# Interpolating at `length` wraps to frame 0 on LOOP_LINEAR clips, so an unkeyed end would hide a seam.
+			assert_true(ts.unkeyed_end == 0, "%s has %d multi-key track(s) without a key at length; their seam is not measured" % [clip, ts.unkeyed_end])
 			for msg in _seam_failures(clip, r, ts):
 				fail(msg)
 
@@ -159,8 +161,17 @@ func test_seam_check_detects_broken_loop() -> void:
 	print("HERO_QA seam self-test: %d hips keys altered; key seam %.2f deg (%s), wrap step %.1f mm vs median %.1f mm; failures: %s" % [
 		altered, ts.rot_deg, ts.worst, r.wrap_step * 1000.0, r.step_median * 1000.0, fails])
 	assert_true(altered >= 1, "altered at least the last hips key")
-	assert_true(ts.rot_deg > SEAM_ROT_DEG, "key-level seam check detects the altered last key")
-	assert_true(r.wrap_step > WRAP_FACTOR * r.step_median, "wrap-step check detects the broken loop")
+	# Exercise the same helper the real clips use: exactly one rotation key-seam failure and one wrap-step failure.
+	var rot_fails := 0
+	var wrap_fails := 0
+	for msg in fails:
+		if msg.begins_with("broken_walk key seam: rotation"):
+			rot_fails += 1
+		elif msg.begins_with("broken_walk wrap step"):
+			wrap_fails += 1
+	assert_eq(rot_fails, 1, "_seam_failures() reports the altered hips rotation key seam once")
+	assert_eq(wrap_fails, 1, "_seam_failures() reports the broken wrap step once")
+	assert_eq(fails.size(), 2, "_seam_failures() reports only the rotation seam and the wrap step: %s" % [fails])
 
 
 ## Planted blades of in-place locomotion clips should slide backward (+Z) at the game speed.
