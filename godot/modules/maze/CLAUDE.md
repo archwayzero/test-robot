@@ -43,3 +43,7 @@ Maze layout grid (seeded, closed) and building the 3D maze from kit pieces, ligh
 - Tests: `tests/*_test.gd`, run with `python3 tools/qa/memguard.py -- godot --headless --fixed-fps 30 --path godot -s res://addons/test_runner/run.gd -- --automation --filter <module>`
   (format: docs/qa/TEST_PLAN.md "Test runner"). All tests must pass headless before you commit.
 - Approved deviations from the human specs for this game: docs/architecture/DECISIONS.md.
+
+## Kit assembly (T018)
+Follow "Rules for the assembler" in docs/contracts/crypt-kit.md: arch on every open edge, pier on every interior
+corner (do not carry over the collinear-wall pier skip), wall rotation and tint, vertex colour flag on kit materials.

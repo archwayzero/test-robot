@@ -30,6 +30,9 @@ Bar (human): reviewer scores against the reference; loop until met, then report.
 photo, so an orbit would only add AI invention. Bar set: structure 10/10, look >= 8.5/10.
 Pass 1 result (last commit 7590125): all measured targets pass, modeler look 8.2, orchestrator look ~7.5. Arch relief
 impossible under the shared 3.9 crown, so this branch raises vault/wall top to 4.15. Pass 2 builds to that contract.
+Pass 2 review (HEAD a6d7e65): FAIL, look 7.4, structure 9.5; modeler self-score was 8.2. Seam metric p90 confirmed
+justified. COLOR_0 is dropped in Godot without the material flag. Pass 3 applies the reviewer's targets; the review
+scene applies the T018 assembler rules and neutral light. Reviewer estimate: about 8.3 from the kit alone.
 Brief: contract exact (7 pieces, one GLB, -colonly, UV2, <= 2 materials, baked tileable, 64 MB, 21,000 tris, 14 draw
 calls), tri guides floor 200, wall 400, pier 300, arch 800, vault_bay 1500, ceilings 1200; check_kit.py must be shown
 able to fail; arcade render at the crypt.jpg camera, side by side. Scope: blender/models/crypt_kit/**,
