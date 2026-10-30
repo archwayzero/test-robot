@@ -238,12 +238,12 @@ def plaster_maps(h, w, ppm, seed):
     centre_u = np.abs((xx + 0.5) / w - 0.5) * 2              # 0 crown, 1 springing
     low = sstep(0.55, 1.0, centre_u)
     grime = np.clip(0.55 * low + 0.45 * edge_v * low + 0.25 * edge_v, 0, 1)
-    blotch = sstep(0.1, 1.6, n_lo + 0.5 * n_mid)
+    blotch = sstep(-0.4, 2.2, n_lo + 0.25 * n_mid)
     crack = 1 - sstep(0.0, 0.035, np.abs(noise(h, w, 3.0, seed + 3)))
     crack = crack * sstep(0.7, 1.6, noise(h, w, 3.2, seed + 4))
     height = 0.0045 * n_lo + 0.0010 * n_mid + 0.00012 * n_hi - 0.0010 * crack
     pal = np.array([0.905, 0.855, 0.735])
-    v = 1.0 + 0.030 * n_lo + 0.022 * n_mid + 0.012 * n_hi
+    v = 1.0 + 0.030 * n_lo + 0.012 * n_mid + 0.008 * n_hi
     alb = pal * v[..., None]
     alb *= 1 - 0.14 * blotch[..., None] * np.array([0.9, 1.0, 1.15])
     alb *= 1 - 0.20 * grime[..., None] * np.array([0.8, 1.0, 1.3])
@@ -335,7 +335,7 @@ def build_textures():
                  stain=0.38, rough=0.66, polish=0.22)
     fppm = 256
     courses = [0.66, 0.84, 0.54, 0.72, 0.60, 0.64]
-    f_alb, f_h, f_r = stone_maps(1024, 1024, fppm, courses, 1801, (0.48, 1.15), pal_f, joint=0.004, wear=0.05,
+    f_alb, f_h, f_r = stone_maps(1024, 1024, fppm, courses, 1801, (0.48, 1.15), pal_f, joint=0.004, wear=0.03,
                                  relief=0.007, warp=0.012)
     f_ao = ao_from_height(f_h, fppm, 0.010)
     f_alb = f_alb * (0.84 + 0.16 * f_ao)[..., None]
@@ -433,7 +433,7 @@ class Builder:
         return ob
 
 
-def add_box(b, lo, hi, u_scale=None):
+def add_box(b, lo, hi):
     """Closed box, outward normals, no UV (collision)."""
     x0, y0, z0 = lo
     x1, y1, z1 = hi
@@ -488,7 +488,7 @@ def build_wall(mat):
     for tag, place, off in (("f", front, 0.5), ("b", back, 0.5)):
         wall_face(b, tag + "0", -h, h, 0, 2.0, place, off)
         wall_face(b, tag + "1", -h, h, 2.0, CROWN, place, off + 0.37)
-    wall_face(b, "e0", -t, t, 0, CROWN if False else 2.0, end_r, 0.0)
+    wall_face(b, "e0", -t, t, 0, 2.0, end_r, 0.0)
     wall_face(b, "e1", -t, t, 2.0, CROWN, end_r, 0.37)
     wall_face(b, "e2", -t, t, 0, 2.0, end_l, 0.0)
     wall_face(b, "e3", -t, t, 2.0, CROWN, end_l, 0.37)
@@ -520,7 +520,6 @@ def build_pier(mat):
             b.face("f%d" % k, [P(s0l, z0), P(s0r, z0), P(s1r, z1), P(s1l, z1)],
                    [band_a(s0l / 4, z0), band_a(s0r / 4, z0), band_a(s1r / 4, z1), band_a(s1l / 4, z1)], False)
             # chamfer towards the next side
-            Q0 = lambda c, z: (*rot(half, -c), z)
             Q = (P(s0r, z0), (*rot(half, -half + c0r), z0), (*rot(half, -half + c1r), z1), P(s1r, z1))
             b.face("c%d" % k, list(Q), [band_a(s0r / 4, z0), band_a((s0r + c0r * 1.4) / 4, z0),
                                         band_a((s1r + c1r * 1.4) / 4, z1), band_a(s1r / 4, z1)], True)
@@ -629,7 +628,6 @@ def web_h(a):
 
 
 def web_arc_table(steps=400):
-    xs = [R_ARCH * i / steps for i in range(steps + 1)]
     # sample densely near the springing, where the profile is steep
     xs = [R_ARCH * (1 - (1 - i / steps) ** 3) for i in range(steps + 1)]
     s = [0.0]
@@ -738,11 +736,10 @@ def build_ceiling(name, underside, seed, mat):
     b = Builder()
     h = CELL / 2
     n = 12
-    grid = [[-h + CELL * i / n for i in range(n + 1)] for _ in range(1)][0]
+    grid = [-h + CELL * i / n for i in range(n + 1)]
     lows = [[rubble_field(x, y, seed) for x in grid] for y in grid]
     lo = min(min(r) for r in lows)
     d = [[v - lo for v in r] for r in lows]
-    rng = np.random.RandomState(seed)
     # underside, split at y=0 because band A is 2 m tall
     for part, (j0, j1) in enumerate(((0, n // 2), (n // 2, n))):
         rows, uvs = [], []

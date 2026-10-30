@@ -334,7 +334,7 @@ def check_materials(g, b):
         rec(G, "%s O and RM share one image" % m.get("name"), orm_a == orm_b)
         rec(G, "%s opaque, single sided" % m.get("name"), m.get("alphaMode", "OPAQUE") == "OPAQUE"
             and not m.get("doubleSided", False))
-    tmp = tempfile.mkdtemp(dir=os.path.dirname(os.path.abspath(GLB)) if False else None)
+    tmp = tempfile.mkdtemp()
     total = 0
     sizes = {}
     imgs = {}
