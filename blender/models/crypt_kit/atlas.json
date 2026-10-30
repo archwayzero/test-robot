@@ -1,0 +1,16 @@
+{
+ "note": "written by build.py; rows count from the top of the image",
+ "atlas_size": 2048,
+ "band_a_rows": [
+  12,
+  1036
+ ],
+ "band_b_rows": [
+  1048,
+  1428
+ ],
+ "band_c_rows": [
+  1428,
+  2048
+ ]
+}

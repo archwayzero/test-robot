@@ -1,0 +1,5 @@
+outs:
+- md5: 2aff75ce1ed21adf57e1ac067bffc213
+  size: 27095556
+  hash: md5
+  path: crypt_kit.glb
