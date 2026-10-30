@@ -441,9 +441,8 @@ def check_materials(g, b):
         rec(G, "texture %s side 1024 or 2048" % im.get("name"), w == h and w in (1024, 2048), "%dx%d" % (w, h))
     mb = total / 2 ** 20
     rec(G, "texture memory <= 64 MB (uncompressed + mips)", mb <= MAX_MEM_MB, "%.2f MB" % mb)
-    rec(G, "draw calls (primitives) <= 14", sum(len(m["primitives"]) for m in g["meshes"]) - sum(
-        len(g["meshes"][n["mesh"]]["primitives"]) for n in g["nodes"] if n.get("name", "").endswith("-colonly") and "mesh" in n) <= 14
-        or sum(len(m["primitives"]) for m in g["meshes"]) <= 14, sum(len(m["primitives"]) for m in g["meshes"]))
+    calls = sum(len(m["primitives"]) for m in g["meshes"])
+    rec(G, "draw calls (all primitives) <= 14", calls <= 14, calls)
     print("texture memory margin %.3f MB of %.1f" % (MAX_MEM_MB - mb, MAX_MEM_MB))
     rec(G, "6 images (3 maps x 2 materials)", len(imgs) == 6, list(imgs))
 

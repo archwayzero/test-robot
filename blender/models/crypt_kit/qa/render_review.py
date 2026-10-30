@@ -133,7 +133,7 @@ def setup(w=1500, h=1000):
             break
         except TypeError:
             pass
-    sc.view_settings.exposure = 0.72
+    sc.view_settings.exposure = 0.42
     if sc.world is None:
         sc.world = bpy.data.worlds.new("w")
     sc.world.use_nodes = True
@@ -166,7 +166,10 @@ def arcade():
     cy = float(arg("--cam-y", "1.75"))
     lens = float(arg("--lens", "60"))
     cam = camera((x0, cy, eye), (x0 + 10, cy, eye), lens=lens, shift=(-0.145, 0.04))
-    shot("arcade_crypt_camera")
+    if not NAMES or "crypt" in NAMES:
+        shot("arcade_crypt_camera")
+    if NAMES and "along" not in NAMES:
+        return
     camera((10.0, 2.2, 1.7), (30.0, 2.2, 1.9), lens=24)
     shot("arcade_along_aisle")
 

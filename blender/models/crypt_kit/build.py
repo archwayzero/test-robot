@@ -251,8 +251,8 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
     tool_on = sstep(-0.3, 0.8, rng.uniform(-1, 1, n)[ids] + 0.5 * n_lo)
 
     pits = sstep(1.6, 2.8, noise(h, w, 1.4, seed + 8, low=30) + 0.5 * n_mid)
-    height = profile * (relief + 0.005 * inset) + 0.006 * sstep(0.0, 0.09, d) + 0.0014 * n_lo * profile + 0.0013 * n_mid * profile + 0.00011 * n_hi * profile \
-        + 0.00022 * tool * tool_on * profile - 0.0009 * pits * profile + 0.0002 * n_hi * (1 - profile)
+    height = profile * (relief + 0.005 * inset) + 0.006 * sstep(0.0, 0.09, d) + 0.0014 * n_lo * profile + 0.0008 * n_mid * profile + 0.00011 * n_hi * profile \
+        + 0.00010 * tool * tool_on * profile - 0.0009 * pits * profile + 0.0002 * n_hi * (1 - profile)
 
     base = np.array(palette["stone"])
     alb = np.ones((h, w, 3)) * base
@@ -350,7 +350,7 @@ def half(a):
 def build_textures():
     os.makedirs(TEX_DIR, exist_ok=True)
     pal_a = dict(stone=[0.750, 0.670, 0.515], mortar=[0.70, 0.61, 0.46], pale=[0.88, 0.83, 0.72], tone=0.10, warm=0.03,
-                 stain=0.40, rough=0.86, polish=0.04, runs=0.22, tone_hp=0.32)
+                 stain=0.56, rough=0.86, polish=0.04, runs=0.30, tone_hp=0.32)
     # band A
     ppm = 512
     a_alb, a_h, a_r = stone_maps(1024, 2048, ppm, ASHLAR_COURSES, 1501, (0.30, 0.78), pal_a, warp=0.007, relief=0.009, joint=0.004,
@@ -360,7 +360,7 @@ def build_textures():
     # band B: voussoirs. One course across, irregular joints along the arc. Generated on a square-ish torus in metres.
     bh, bw = B_ROWS[1] - B_ROWS[0], ATLAS
     bppm = ATLAS / B_LEN
-    pal_b = dict(pal_a, tone=0.10, warm=0.03, stain=0.36, stone=[0.755, 0.675, 0.495], mortar=[0.72, 0.63, 0.47])
+    pal_b = dict(pal_a, tone=0.10, warm=0.03, stain=0.52, stone=[0.755, 0.675, 0.495], mortar=[0.72, 0.63, 0.47])
     b_alb, b_h, b_r = stone_maps(bh, bw, bppm, [bh / bppm], 1604, (0.17, 0.27), pal_b, joint=0.004, wear=0.018,
                                  relief=0.008, warp=0.005)
     # the soffit carries the limewash of the crypt.jpg arches: paler and lower contrast than the ring on the arch face
