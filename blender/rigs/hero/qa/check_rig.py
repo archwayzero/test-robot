@@ -13,7 +13,8 @@ Metrics (evaluated deformed mesh, every frame):
 - joints: bones in the armature (all exported as skin joints).
 - max edge stretch: largest length ratio (stretch or compression) of any edge >= 5 mm vs. rest, and the bone that
   dominates it. Informational (weight-painting weak spots), not a pass/fail criterion.
-- leg min z / knee-down / knee slip: lowest thigh/knee-pod/shin vertex over the clip; crawl: share of frames each
+- leg min z / knee-down / knee slip: lowest thigh/knee-pod/shin vertex over the clip (non-crawl clips FAIL below
+  KNEE_CLEAR = 0.08 m: knee-walking / dragging); crawl: share of frames each
   knee rests (lowest vertex <= 5 mm; the idle needs 100%) and knee slip (same rule as blades) while it rests.
 - arm-torso / leg-leg / thigh-torso: penetration = depth of the 3rd-deepest vertex of one part found inside the other
   part (ray-parity test, majority of 7 directions, candidates up to 20 cm from the surface, so deep intersections
@@ -32,6 +33,7 @@ OUT = argv[argv.index("--out") + 1] if "--out" in argv else ".captures/T013/chec
 ONLY = argv[argv.index("--clips") + 1].split(",") if "--clips" in argv else None
 SPEED = {"walk_loop": 1.6, "jog_loop": 4.0, "crouch_walk_loop": 1.0, "crawl_loop": 0.5}
 LIMITS = {"crouch": 1.25, "crawl": 0.70}
+KNEE_CLEAR = 0.08   # non-crawl clips: lowest thigh/knee/shin vertex (m), FAIL below
 FPS = 30
 
 sc = bpy.context.scene
@@ -259,10 +261,14 @@ for act in bpy.data.actions:
         kcol = f"{leg_min:+.3f} / {kfrac * 100:.0f}% / {kslip:.2f}"
     else:
         kfrac = 1.0
-        kcol = f"{leg_min:+.3f} / - / -"
+        kcol = f"{leg_min:+.3f}{'' if leg_min >= KNEE_CLEAR else ' (< %.2f)' % KNEE_CLEAR} / - / -"
+    # knee clearance (every clip that is not a crawl): the lowest thigh/knee-pod/shin vertex stays >= KNEE_CLEAR, so a
+    # standing or crouching gait never reads as kneeling or knee-dragging
+    knee_clear_ok = name.startswith("crawl") or leg_min >= KNEE_CLEAR
     ok = (top <= lim and low >= -0.01 and (not loop or seam < 0.001) and slip <= 2.0
           and (np.isnan(hslip) or hslip <= 2.0) and (np.isnan(kslip) or kslip <= 2.0) and contact_bad == 0
-          and pen["arm"][0] <= 0.02 and (name != "crawl_idle_loop" or kfrac == 1.0))
+          and pen["arm"][0] <= 0.02 and (name != "crawl_idle_loop" or kfrac == 1.0)
+          and knee_clear_ok)
     rows.append((name, f"{f0}-{f1}", f"{(f1 - f0) / FPS:.2f}", "-" if not loop else f"{seam * 100:.2f}",
                  f"{top:.3f} (<= {lim})", f"{low:+.4f}", f"{v:.1f}", f"{slip:.2f}",
                  "-" if np.isnan(hslip) else f"{hslip:.2f}", kcol, str(contact_bad), str(len(arm.data.bones)),

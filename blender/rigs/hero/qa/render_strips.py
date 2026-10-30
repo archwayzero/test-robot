@@ -25,8 +25,9 @@ PAIRS = {
     "walk_loop": [(30, 23), (34, 2), (38, 4), (44, 7), (52, 11), (66, 19)],
     # contact A 2 -> our 0; stride 16 src = our 18
     "jog_loop": [(2, 0), (4, 2), (6, 4), (10, 9), (12, 11), (14, 13)],
-    # contact A 14 -> our 0 (left strike); stride 46 src = our 30
-    "crouch_walk_loop": [(14, 0), (18, 3), (24, 7), (38, 16), (42, 18), (48, 22)],
+    # contact A 14 -> our 0 (left strike, wide stance); step 23 src = our 12 (0.8 s cycle): rear lift 18 -> 2,
+    # passing 24 -> 6, contact B 38 -> 12, rear lift 42 -> 14, passing 48 -> 18
+    "crouch_walk_loop": [(14, 0), (18, 2), (24, 6), (38, 12), (42, 14), (48, 18)],
     # leg extended back (src 0) -> our 19 (left knee at the back end of stance); 104 src = our 36
     "crawl_loop": [(0, 19), (10, 22), (20, 26), (36, 31), (52, 1), (70, 7)],
     # game-timed jump (clip starts at launch): push-off extension 26 -> 0, blades off 28 -> 1, apex 34 -> 11,

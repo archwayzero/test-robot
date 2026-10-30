@@ -557,7 +557,8 @@ class Solver:
             if d < abs(a - bL) * 1.02:
                 self.warn.append(f"{sd} fold {d:.3f}")
             u = (T - Hw).normalized()
-            pole = P.hips_rot @ Vector((0.12 * s, 1.0, 0.0))
+            lp = getattr(P, "leg_pole", None)   # optional world pole (crouch walk: forward + up)
+            pole = Vector((lp[2] * s, lp[0], lp[1])) if lp else P.hips_rot @ Vector((0.12 * s, 1.0, 0.0))
             w = pole - u * pole.dot(u)
             w.normalize()
             ca = max(-1, min(1, (a * a + d * d - bL * bL) / (2 * a * d)))
@@ -976,20 +977,136 @@ def clip_crouch_idle(S):
     return poses, N, True, {}
 
 
-CW_KNEE_MIN, CW_PITCH, CW_YOFF, CW_BUMP, CW_LEAN = 0.08, (-60.0, -50.0), -0.36, 0.0, 38.0
-CW_LIFT, CW_SWP = 0.10, -40.0
-CW_BASE, CW_HS, CW_HEAD = 0.45, 0.85, 40.0
-CW_FRAMES = 30
+# Crouch walk (pass 4). Digitigrade leg: thigh 0.424 m, shin 0.127 m (so the knee always sits within ~16 deg of the
+# hip->hock line), rigid foot unit hock->blade tip 0.337 m. The top limit (1.25 m incl. backpack, 1 cm margin) at
+# ~29 deg lean puts the hip joints at ~0.44 m. Planted tips move back at exactly v; the blade pitch (tip pivot) is
+# chosen per frame by a continuous min-cost path so the thigh follows a target angle, with the shin kept between
+# straight down and flat back (never reversed, hock never above the knee) and the knee pole forward-up (the default
+# pole follows the pitched pelvis and bent the knees downward). Sweep (.captures/T013/p4): with stance knee >= 0.20 m
+# and swing knee clearance >= 0.10 m the longest stride with double support is ~0.8 m, so the cycle is 0.8 s.
+CW_FRAMES, CW_DUTY = 24, 0.54          # 0.8 s cycle -> 0.8 m stride at 1.0 m/s, stance travel 0.432 m
+CW_BASE, CW_BOB = 0.472, -0.010        # hips head z; bob < 0: highest at passing, lowest at double support
+CW_LEAN, CW_HS, CW_HEAD = 37.5, 0.5, 22.0   # lean mostly in the spine: pelvis pitch 19 deg keeps the groin open
+CW_YOFF = 0.14                         # mid-stance blade tip y relative to the hips head y
+CW_PHI = (5.0, 34.0, 8.0)              # thigh angle below horizontal: strike, toe-off, mid-swing
+CW_PHI_MIN = (8.0, 5.0)                # thigh floor (deg below horizontal) and cost per deg above it (groin fold)
+CW_LIFT, CW_TK = 0.07, 0.5             # swing tip lift (m), swing y tangent factor
+CW_TH_RANGE = (-86.0, -15.0)           # blade pitch search range (tip pivot, + = toe up)
+CW_SHIN = (-95.0, 15.0)                # allowed shin direction (deg from straight down, + = hock forward)
+CW_SHIN_W = 5.0                        # cost per degree of shin-direction violation
+CW_POLE = (1.0, 1.0, 0.6)              # knee pole (world y, z, outward x): knees forward-up and a little out, never down
+CW_LAM = 0.4                           # pitch continuity weight (thigh-error deg per pitch deg)
+CW_HY = 0.0
+CW_WIDTH = 0.05                        # extra outward blade offset (m): knees and blades slightly apart
+
+
+def leg_eval(S, P, sd, F, want_shin=False):
+    """(thigh angle below horizontal, knee joint z, infeasible) for foot unit F with P's hips. Infeasible also when the
+    shin does not slant back-down from the knee (angle from straight down outside CW_SHIN, + = hock in front)."""
+    Wm = {"hips": TR(P.hips_pos, P.hips_rot @ S.rest_rot("hips"))}
+    Q = Pose()
+    Q.hips_pos, Q.hips_rot, Q.feet = P.hips_pos, P.hips_rot, {sd: ("foot", F)}
+    Q.leg_pole = getattr(P, "leg_pole", None)
+    nw = len(S.warn)
+    S.solve_leg(sd, Q, Wm)
+    bad = len(S.warn) > nw
+    del S.warn[nw:]
+    Hw, K, Tk = Q._dbg[sd][0], Q._dbg[sd][1], Q._dbg[sd][2]
+    sh = Tk - K
+    sa = math.degrees(math.atan2(sh.y, -sh.z))
+    t = K - Hw
+    phi = math.degrees(math.atan2(-t.z, math.hypot(t.x, t.y)))
+    if want_shin:
+        return phi, K.z, bad, max(0.0, CW_SHIN[0] - sa, sa - CW_SHIN[1])
+    return phi, K.z, bad
+
+
+def pitch_candidates(S, P, sd, tip, phi_t, ground, planted):
+    """[(pitch, cost)] over CW_TH_RANGE (1 deg steps) for a tip-pivot foot unit; IK-infeasible pitches (leg folded
+    past the short shin's limit or over-reached) and, if planted, pitches that would lift the tip are left out."""
+    out = []
+    for th in np.arange(CW_TH_RANGE[0], CW_TH_RANGE[1] + 1e-6, 1.0):
+        F = S.foot_matrix(sd, BLADE_TIP, tip, float(th), ground=ground)
+        if planted and abs((F @ mir(BLADE_TIP, SIDES[sd])).z - tip.z) > 1e-4:
+            continue
+        phi, kz, bad, shin_v = leg_eval(S, P, sd, F, True)
+        if not bad:
+            out.append((float(th), abs(phi - phi_t) + CW_SHIN_W * shin_v + CW_PHI_MIN[1] * max(0.0, CW_PHI_MIN[0] - phi)))
+    return out
+
+
+def pitch_path(cands, lam):
+    """Cyclic min-cost path through per-frame pitch candidates: sum |thigh error| + lam * |pitch change|."""
+    n = len(cands)
+    best = (1e18, None)
+    starts = sorted(cands[0], key=lambda c: c[1])[:12]
+    for th0, c0 in starts:
+        cost = {th0: (c0, [th0])}
+        for i in range(1, n + 1):
+            nxt = {}
+            for th, c in (cands[i % n] if i < n else [(th0, 0.0)]):
+                bp = min(cost.items(), key=lambda kv: kv[1][0] + lam * abs(kv[0] - th))
+                nxt[th] = (bp[1][0] + lam * abs(bp[0] - th) + c, bp[1][1] + [th])
+            cost = nxt
+        tot, path = cost[th0]
+        if tot < best[0]:
+            best = (tot, path[:n])
+    return best[1]
 
 
 def clip_crouch_walk(S):
-    poses, N, loop, info = locomotion(
-        S, "crouch_walk_loop", v=1.0, T_frames=CW_FRAMES, duty=0.66, base_z=CW_BASE, bob=0.008,
-        lean=CW_LEAN, arm_amp=14.0, elbow=40.0, arm_fwd=46.0, head_pitch=CW_HEAD, twist=6.0,
-        roll=1.5, sway=0.010, hips_y=CROUCH_HIPS[0] - SPINE_Y[0], dmin=0.31, dmax=0.535, arm_abd=9.0,
-        knee_min=CW_KNEE_MIN, hips_share=CW_HS, swing_free=True,
-        gait_kw=dict(stance_pitch=CW_PITCH, lift=CW_LIFT, swing_pitch=CW_SWP, y_off=CW_YOFF, stance_bump=CW_BUMP, pitch_ease_in=True))
-    return poses, N, loop, info
+    N, v = CW_FRAMES, 1.0
+    T = N / FPS
+    Tst = T * CW_DUTY
+    Lst = v * Tst
+    hy = CROUCH_HIPS[0] + CW_HY
+    phases = (("l", 0.0), ("r", 0.5))
+    poses = []
+    for f in range(N):
+        ph = 2 * math.pi * f / N
+        P = Pose()
+        P.hips_pos = Vector((0.010 * math.sin(ph), hy, CW_BASE + CW_BOB * math.cos(2 * ph)))
+        P.leg_pole = CW_POLE
+        torso(P, lean=CW_LEAN, twist=6.0 * math.sin(ph), roll=1.5 * math.sin(ph), head_pitch=CW_HEAD,
+              hips_share=CW_HS)
+        for sd, off in (("l", 0.0), ("r", math.pi)):
+            c = math.cos(ph + off - 0.35)
+            arm_fk(P, sd, swing=46.0 - 14.0 * c, abd=9.0, bend=40.0, clav=0.0)
+        P.stance, P._tip, P._phi, P._gr = {}, {}, {}, {}
+        for sd, p0 in phases:
+            s = SIDES[sd]
+            p = (f / N + p0) % 1.0
+            tau = p * T
+            x = mir(BLADE_TIP, s).x + s * CW_WIDTH
+            y_f, y_b = hy + CW_YOFF + Lst / 2, hy + CW_YOFF - Lst / 2
+            if tau < Tst - 1e-9:
+                u = tau / Tst
+                tip = Vector((x, y_f - v * tau, 0.0))
+                phi_t = CW_PHI[0] + (CW_PHI[1] - CW_PHI[0]) * u
+                gr, st = 0.0, True
+            else:
+                u = (tau - Tst) / (T - Tst)
+                m = -v * (T - Tst) * CW_TK
+                tip = Vector((x, hermite(y_b, y_f, m, m, u), CW_LIFT * bump(u)))
+                phi_t = (CW_PHI[1] + (CW_PHI[2] - CW_PHI[1]) * ease(u / 0.5) if u < 0.5
+                         else CW_PHI[2] + (CW_PHI[0] - CW_PHI[2]) * ease((u - 0.5) / 0.5))
+                gr, st = min(0.03, 0.6 * u, 0.6 * (1 - u)), False
+            P.stance[sd], P._tip[sd], P._phi[sd], P._gr[sd] = st, tip, phi_t, gr
+            P.__dict__.setdefault("stance_u", {})[sd] = u
+        poses.append(P)
+    # blade pitch per frame (tip pivot, so planted tips never move): continuous min-cost path to the thigh targets
+    for sd, _ in phases:
+        cands = [pitch_candidates(S, P, sd, P._tip[sd], P._phi[sd], P._gr[sd], P.stance[sd]) for P in poses]
+        th = pitch_path(cands, CW_LAM)
+        for P, t_ in zip(poses, th):
+            P.feet[sd] = ("foot", S.foot_matrix(sd, BLADE_TIP, P._tip[sd], float(t_), ground=P._gr[sd]))
+            P.__dict__.setdefault("_th", {})[sd] = float(t_)
+    poses.append(poses[0])
+    phis = [leg_eval(S, P, sd, P.feet[sd][1])[0] for P in poses[:N] for sd in SIDES]
+    print("crouch_walk_loop: pitch", [round(P._th["l"]) for P in poses[:N]])
+    print("crouch_walk_loop: thigh", [round(leg_eval(S, P, "l", P.feet["l"][1])[0]) for P in poses[:N]])
+    return poses, N, True, {"cycle_s": T, "stride_m": v * T, "stance_travel_m": Lst, "duty": CW_DUTY, "speed": v,
+                            "thigh_deg": (round(min(phis), 1), round(max(phis), 1))}
 
 
 # ---- crawl -----------------------------------------------------------------------------------------------
@@ -1357,12 +1474,14 @@ def clip_jump(S):
     In place: the game moves the body, so the airborne feet are lifted relative to the hips (tuck), not the hips."""
     N = 38
     K = {
-        "hz": [(0, 0.0), (2, 0.03), (6, 0.02), (13, 0.01), (22, 0.0), (25, -0.01), (27, -0.12), (29, -0.15),
+        "hz": [(0, 0.015), (2, 0.03), (6, 0.02), (13, 0.01), (22, 0.0), (25, -0.01), (27, -0.12), (29, -0.15),
                (32, -0.07), (36, -0.005), (38, 0.0)],
         "hy": [(0, 0.0), (25, 0.0), (29, -0.05), (34, -0.01), (38, 0.0)],
         "lean": [(0, 4.0), (6, 9.0), (12, 12.0), (20, 6.0), (25, 6.0), (29, 24.0), (33, 9.0), (38, 2.0)],
-        "th": [(0, -14.0), (3, -40.0), (9, -54.0), (15, -42.0), (20, -20.0), (23, -10.0), (25, -6.0), (27, 0.0),
-               (38, 0.0)],
+        # touchdown: tips land at 25, the blades roll down to flat about the planted tips over frames 25 -> 29 (the
+        # contact patch grows ~2-4 cm per frame instead of jumping from the tip to the whole blade)
+        "th": [(0, -14.0), (3, -40.0), (9, -54.0), (15, -42.0), (20, -20.0), (23, -11.0), (25, -8.0), (26, -5.5),
+               (27, -3.0), (28, -1.2), (29, 0.0), (38, 0.0)],
         "lift": [(0, 0.0), (1, 0.02), (3, 0.10), (7, 0.26), (11, 0.32), (15, 0.26), (19, 0.12), (22, 0.04),
                  (24, 0.008), (25, 0.0), (38, 0.0)],
         "back": [(0, 0.0), (5, 0.12), (10, 0.19), (16, 0.10), (21, 0.02), (25, 0.0), (38, 0.0)],
