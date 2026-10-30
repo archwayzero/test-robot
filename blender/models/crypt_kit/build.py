@@ -69,7 +69,7 @@ A_V0, A_V1 = v_of_row(A_ROWS[1]), v_of_row(A_ROWS[0])
 B_V0, B_V1 = v_of_row(B_ROWS[1]), v_of_row(B_ROWS[0])
 C_V0, C_V1 = v_of_row(C_ROWS[1]), v_of_row(C_ROWS[0])
 
-ASHLAR_COURSES = [0.25, 0.20, 0.31, 0.18, 0.26, 0.22, 0.24, 0.34]  # bottom to top, sum 2.0 (last one: capital course)
+ASHLAR_COURSES = [0.22, 0.17, 0.28, 0.15, 0.25, 0.19, 0.21, 0.19, 0.34]  # bottom to top, sum 2.0 (last one: capital course)
 CAP_COURSE = (1.66, 2.0)
 
 
@@ -90,6 +90,17 @@ def noise(h, w, beta, seed, low=0.0):
         amp *= 1.0 - np.exp(-(f / low) ** 2)
     n = np.fft.irfft2(np.fft.rfft2(rng.standard_normal((h, w))) * amp, s=(h, w))
     return (n - n.mean()) / (n.std() + 1e-9)
+
+
+def streaks(h, w, seed):
+    """Periodic vertical weathering runs: noise that is long in V, short in U."""
+    rng = np.random.RandomState(seed)
+    fy = np.fft.fftfreq(h)[:, None] * h
+    fx = np.fft.rfftfreq(w)[None, :] * w
+    f = np.sqrt((fx * 0.25) ** 2 + (fy * 2.5) ** 2)
+    amp = np.where(f > 0, np.maximum(f, 1e-6) ** -1.35, 0.0)
+    n = np.fft.irfft2(np.fft.rfft2(rng.standard_normal((h, w))) * amp, s=(h, w))
+    return (n - n.mean()) / n.std()
 
 
 def blur(a, sigma):
@@ -121,8 +132,8 @@ def block_field(h, w, ppm, courses, seed, len_range, warp=0.012):
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float64)
     yy = (h - 1 - yy + 0.5) / ppm     # metres up from the bottom of the region
     xx = (xx + 0.5) / ppm
-    wx = noise(h, w, 2.6, seed + 1) * warp
-    wy = noise(h, w, 2.6, seed + 2) * warp
+    wx = noise(h, w, 3.0, seed + 1) * warp
+    wy = noise(h, w, 3.0, seed + 2) * warp
     x = np.mod(xx + wx, pu)
     y = np.mod(yy + wy, pv)
     edges = np.concatenate([[0.0], np.cumsum(courses)])
@@ -150,7 +161,7 @@ def block_field(h, w, ppm, courses, seed, len_range, warp=0.012):
     return ids, dist, next_id
 
 
-def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.005, wear=0.02, relief=0.012, warp=0.012):
+def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=0.022, relief=0.016, warp=0.012):
     """Shared block material. Returns albedo (sRGB 0..1), height (m), roughness, all periodic."""
     ids, d, n = block_field(h, w, ppm, courses, seed, len_range, warp)
     rng = np.random.RandomState(seed + 7)
@@ -161,7 +172,7 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.005, wear=0
     n_hi = noise(h, w, 1.2, seed + 5, low=40)
     n_edge = noise(h, w, 2.0, seed + 6, low=10)
 
-    jw = joint * (1.0 + 0.5 * n_edge).clip(0.4, 2.2)
+    jw = joint * (1.0 + 0.8 * n_edge).clip(0.25, 2.8)
     ww = wear * (1.0 + 0.8 * n_mid).clip(0.25, 2.6)
     profile = sstep(0, 1, (d - jw) / ww)
     profile = np.where(d < jw, 0.0, profile)
@@ -178,9 +189,9 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.005, wear=0
     tool = np.sin(2 * np.pi * (nx * xx / w + ny * (yy / h) * max(1, round(pv / pu * 2))) + 2.0 * n_mid)
     tool_on = sstep(-0.3, 0.8, rng.uniform(-1, 1, n)[ids] + 0.5 * n_lo)
 
-    pits = sstep(1.5, 2.6, noise(h, w, 0.8, seed + 8, low=60) + 0.5 * n_mid)
-    height = profile * (relief + 0.004 * inset) + 0.0030 * n_mid * profile + 0.0010 * n_hi * profile \
-        + 0.0005 * tool * tool_on * profile - 0.003 * pits * profile + 0.0012 * n_hi * (1 - profile)
+    pits = sstep(1.6, 2.8, noise(h, w, 1.4, seed + 8, low=30) + 0.5 * n_mid)
+    height = profile * (relief + 0.005 * inset) + 0.006 * sstep(0.0, 0.09, d) + 0.0014 * n_lo * profile + 0.0013 * n_mid * profile + 0.00030 * n_hi * profile \
+        + 0.00022 * tool * tool_on * profile - 0.0018 * pits * profile + 0.0005 * n_hi * (1 - profile)
 
     base = np.array(palette["stone"])
     alb = np.ones((h, w, 3)) * base
@@ -188,14 +199,21 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.005, wear=0
     alb = alb * v[..., None]
     alb[..., 0] *= 1.0 + palette["warm"] * warm
     alb[..., 2] *= 1.0 - palette["warm"] * 1.8 * warm
-    stain = sstep(0.5, 1.9, n_lo * 0.8 + n_mid * 0.6)
+    stain = sstep(0.0, 2.6, n_lo * 0.8 + n_mid * 0.35)
     alb *= (1.0 - palette["stain"] * stain[..., None] * np.array([0.85, 0.95, 1.1]))
-    pale = sstep(0.8, 2.2, -n_lo * 0.6 + n_mid * 0.7)
+    pale = sstep(0.3, 2.6, -n_lo * 0.7 + n_mid * 0.35)
     alb = alb * (1 - 0.35 * pale[..., None]) + np.array(palette["pale"]) * 0.35 * pale[..., None]
     arris = sstep(0.0, 0.6, profile) * (1 - sstep(0.6, 1.0, profile))
     alb *= 1.0 + 0.08 * arris[..., None]
     alb *= 1.0 - 0.28 * pits[..., None]
     alb *= (1.0 + 0.035 * tool * tool_on)[..., None]
+    run = streaks(h, w, seed + 9)
+    dark_run = sstep(0.7, 2.4, run) * palette.get("runs", 0.0)
+    pale_run = sstep(0.7, 2.4, -run) * palette.get("runs", 0.0)
+    alb *= 1.0 - 0.34 * dark_run[..., None] * np.array([0.85, 1.0, 1.2])
+    alb = alb * (1 - 0.40 * pale_run[..., None]) + np.array(palette["pale"]) * 0.40 * pale_run[..., None]
+    fleck = sstep(0.9, 2.2, noise(h, w, 1.7, seed + 10, low=24))
+    alb *= 1.0 - 0.15 * fleck[..., None] * np.array([0.8, 1.0, 1.25])
     mort = np.array(palette["mortar"])[None, None, :] * (1.0 + 0.06 * n_mid + 0.05 * n_hi)[..., None]
     mix = sstep(0.0, 0.35, profile)[..., None]
     alb = mort * (1 - mix) + alb * mix
@@ -223,7 +241,7 @@ def plaster_maps(h, w, ppm, seed):
     blotch = sstep(0.1, 1.6, n_lo + 0.5 * n_mid)
     crack = 1 - sstep(0.0, 0.035, np.abs(noise(h, w, 3.0, seed + 3)))
     crack = crack * sstep(0.7, 1.6, noise(h, w, 3.2, seed + 4))
-    height = 0.0045 * n_lo + 0.0022 * n_mid + 0.0004 * n_hi - 0.0012 * crack
+    height = 0.0045 * n_lo + 0.0010 * n_mid + 0.00012 * n_hi - 0.0010 * crack
     pal = np.array([0.905, 0.855, 0.735])
     v = 1.0 + 0.030 * n_lo + 0.022 * n_mid + 0.012 * n_hi
     alb = pal * v[..., None]
@@ -259,19 +277,19 @@ def half(a):
 
 def build_textures():
     os.makedirs(TEX_DIR, exist_ok=True)
-    pal_a = dict(stone=[0.745, 0.610, 0.415], mortar=[0.70, 0.635, 0.52], pale=[0.86, 0.80, 0.68], tone=0.11, warm=0.05,
-                 stain=0.42, rough=0.86, polish=0.04)
+    pal_a = dict(stone=[0.770, 0.665, 0.495], mortar=[0.72, 0.66, 0.54], pale=[0.88, 0.83, 0.72], tone=0.085, warm=0.03,
+                 stain=0.46, rough=0.86, polish=0.04, runs=1.0)
     # band A
     ppm = 512
-    a_alb, a_h, a_r = stone_maps(1024, 2048, ppm, ASHLAR_COURSES, 1501, (0.38, 0.95), pal_a)
+    a_alb, a_h, a_r = stone_maps(1024, 2048, ppm, ASHLAR_COURSES, 1501, (0.30, 0.78), pal_a, warp=0.007)
     a_n = normal_from_height(a_h, ppm)
     a_ao = ao_from_height(a_h, ppm, 0.012)
     # band B: voussoirs. One course across, irregular joints along the arc. Generated on a square-ish torus in metres.
     bh, bw = B_ROWS[1] - B_ROWS[0], ATLAS
     bppm = ATLAS / B_LEN
-    pal_b = dict(pal_a, tone=0.15, warm=0.07, stain=0.34, stone=[0.775, 0.640, 0.43])
+    pal_b = dict(pal_a, tone=0.085, warm=0.03, stain=0.30, stone=[0.785, 0.675, 0.495])
     b_alb, b_h, b_r = stone_maps(bh, bw, bppm, [bh / bppm], 1601, (0.17, 0.27), pal_b, joint=0.006, wear=0.018,
-                                 relief=0.014, warp=0.008)
+                                 relief=0.014, warp=0.005)
     b_n = normal_from_height(b_h, bppm)
     b_ao = ao_from_height(b_h, bppm, 0.012)
     # band C: plaster
@@ -297,7 +315,7 @@ def build_textures():
         rgh[rr[0]:rr[1]] = ro
         aoc[rr[0]:rr[1]] = ao
     # cavity also goes into the base colour a little: Cycles and glTF viewers ignore the occlusion input differently
-    alb = alb * (0.72 + 0.28 * aoc)[..., None]
+    alb = alb * (0.84 + 0.16 * aoc)[..., None]
     imgs = {}
     imgs["ashlar_color"] = to_image("stone_ashlar_color", alb, True)
     imgs["ashlar_normal"] = to_image("stone_ashlar_normal", nrm, False)
@@ -305,16 +323,16 @@ def build_textures():
     imgs["ashlar_orm"] = to_image("stone_ashlar_orm", orm, False)
 
     # stone_floor: 4 x 4 m full tile at 256 px/m (texture memory budget: see report)
-    pal_f = dict(stone=[0.60, 0.525, 0.415], mortar=[0.33, 0.29, 0.235], pale=[0.72, 0.67, 0.58], tone=0.13, warm=0.05,
-                 stain=0.45, rough=0.74, polish=0.20)
+    pal_f = dict(stone=[0.66, 0.60, 0.50], mortar=[0.50, 0.45, 0.37], pale=[0.76, 0.72, 0.64], tone=0.09, warm=0.02,
+                 stain=0.38, rough=0.66, polish=0.22)
     fppm = 256
-    courses = [0.74, 0.92, 0.62, 0.84, 0.88]
-    f_alb, f_h, f_r = stone_maps(1024, 1024, fppm, courses, 1801, (0.62, 1.35), pal_f, joint=0.009, wear=0.05,
-                                 relief=0.010, warp=0.02)
+    courses = [0.66, 0.84, 0.54, 0.72, 0.60, 0.64]
+    f_alb, f_h, f_r = stone_maps(1024, 1024, fppm, courses, 1801, (0.48, 1.15), pal_f, joint=0.005, wear=0.05,
+                                 relief=0.007, warp=0.012)
     f_ao = ao_from_height(f_h, fppm, 0.010)
-    f_alb = f_alb * (0.72 + 0.28 * f_ao)[..., None]
+    f_alb = f_alb * (0.84 + 0.16 * f_ao)[..., None]
     imgs["floor_color"] = to_image("stone_floor_color", f_alb, True)
-    imgs["floor_normal"] = to_image("stone_floor_normal", normal_from_height(f_h, fppm), False)
+    imgs["floor_normal"] = to_image("stone_floor_normal", normal_from_height(f_h, fppm, 0.6), False)
     imgs["floor_orm"] = to_image("stone_floor_orm", np.dstack([f_ao, f_r, np.zeros_like(f_r)]), False)
     return imgs
 
@@ -556,9 +574,11 @@ def build_arch(mat):
                 urow.append(uv(th, fold))
             else:
                 y, dr = item[1]
-                r = ARCH_R + dr
+                # the worn arris dies out at the crown, staying under the 3.9 top of the piece
+                fade = s ** 6
+                r = ARCH_R + dr * (1 - fade) + 0.0018 * (dr / 0.038) * fade
                 x = r * c
-                z = min(SPRING + r * s, CROWN)
+                z = SPRING + r * s
                 fold = (y + (dr if abs(y) >= 0.29 else 0.0) * (1 if y > 0 else -1))
                 row.append((x, y, z))
                 urow.append(uv(th, fold))
@@ -700,7 +720,7 @@ def rubble_field(x, y, seed):
     v = 0.0
     for f in ((1, 2), (2, 1), (3, 2), (2, 3), (4, 3), (5, 2), (3, 5), (6, 5)):
         ph = r.uniform(0, 6.28, 2)
-        amp = 0.34 / (f[0] + f[1]) ** 0.9
+        amp = 0.11 / (f[0] + f[1]) ** 0.7
         v += amp * math.sin(tau * f[0] * x + ph[0]) * math.sin(tau * f[1] * y + ph[1])
     return v
 
@@ -708,7 +728,7 @@ def rubble_field(x, y, seed):
 def build_ceiling(name, underside, seed, mat):
     b = Builder()
     h = CELL / 2
-    n = 16
+    n = 12
     grid = [[-h + CELL * i / n for i in range(n + 1)] for _ in range(1)][0]
     lows = [[rubble_field(x, y, seed) for x in grid] for y in grid]
     lo = min(min(r) for r in lows)
@@ -724,10 +744,10 @@ def build_ceiling(name, underside, seed, mat):
                 urow.append(band_a(grid[i] / 4 + 0.5 + 0.13 * part, grid[j] + h if part == 0 else grid[j]))
             rows.append(row)
             uvs.append(urow)
-        b.grid("under%d" % part, rows, uvs, flip=False, smooth=False)
+        b.grid("under%d" % part, rows, uvs, flip=True, smooth=False)
     # four sides: rough tumbled face, set back from the edge line, up to 3.9
-    cols = 8
-    nz = 6
+    cols = n
+    nz = 5
     for k in range(4):
         ca, sa = [(1, 0), (0, 1), (-1, 0), (0, -1)][k]
         rot = lambda x, y: (ca * x - sa * y, sa * x + ca * y)
@@ -751,7 +771,8 @@ def build_ceiling(name, underside, seed, mat):
                         e = {0: d[0][ii], 1: d[ii][n], 2: d[n][n - ii], 3: d[n - ii][0]}[k]
                         bottom = e
                     else:
-                        in_set = 0.06 + 0.11 * abs(math.sin(2.1 * s + 1.3 * z + k)) + 0.05 * math.sin(4.3 * z + 3 * s)
+                        in_set = 0.05 + 0.07 * abs(math.sin(2.1 * s + 1.3 * z + k)) + 0.03 * math.sin(4.3 * z + 3 * s)
+                        in_set *= 1.0 - (abs(s) / h) ** 6     # corners close: neighbouring sides meet at the cell corner
                     px, py = rot(s, -h + in_set)
                     zz = z + bottom if j == 0 else z
                     row.append((px, py, zz))

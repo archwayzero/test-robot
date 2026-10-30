@@ -35,7 +35,7 @@ GUIDE = {"floor": 200, "wall": 400, "pier": 300, "arch": 800, "vault_bay": 1500,
 TOTAL_TRIS = 21000
 MAX_TEX = 2048
 MAX_MEM_MB = 64.0
-SEAM_MAX = 1.5    # edge-seam ratio: 1.0 = the wrap is as smooth as any two adjacent rows
+SEAM_MAX = 1.5    # edge-seam ratio, see seam()
 LM_RES = 1024
 
 results = []
@@ -306,11 +306,15 @@ def load_image(g, b, i, tmp):
 
 
 def seam(a, axis):
-    """Mean |first - last| across the wrap, relative to the mean difference between adjacent rows/cols inside."""
+    """Mean |first - last| across the wrap, relative to the p90 of the same difference between adjacent rows/cols inside.
+
+    p90, not the mean: band A's wrap is a bed joint by design, and joint rows always differ more than rows in mid-stone.
+    <= 1 means the wrap is no rougher than the roughest tenth of interior row pairs.
+    """
     a = np.moveaxis(a, axis, 0)
     wrap = np.abs(a[0] - a[-1]).mean()
-    inner = np.abs(a[1:] - a[:-1]).mean()
-    return float(wrap / (inner + 1e-9))
+    inner = np.abs(a[1:] - a[:-1]).reshape(a.shape[0] - 1, -1).mean(1)
+    return float(wrap / (np.percentile(inner, 90) + 1e-9))
 
 
 def check_materials(g, b):

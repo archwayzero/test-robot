@@ -83,23 +83,33 @@ def assemble(s, low=None):
 
 
 def lights(strength=1.0):
-    col = (1.0, 0.70, 0.36)
-    def pt(x, y, z, e, r=0.12, c=col):
-        l = bpy.data.lights.new("l", "POINT")
-        l.energy, l.color, l.shadow_soft_size = e * strength, c, r
+    col = (1.0, 0.72, 0.40)
+
+    def up(x, y, z, e, r=0.12, angle=3.14, tilt=(0.0, 0.0)):
+        l = bpy.data.lights.new("l", "SPOT")
+        l.energy, l.color, l.shadow_soft_size = e * strength, col, r
+        l.spot_size, l.spot_blend = angle, 0.03
         ob = bpy.data.objects.new("l", l)
         ob.location = (x, y, z)
+        ob.rotation_euler = (math.pi + tilt[0], tilt[1], 0)
         bpy.context.scene.collection.objects.link(ob)
-    # the photo is lit by low floods washing up the piers and vaults, one pool per bay
-    for i in range(LEN + 1):
-        pt(i * S + 0.0, 0.62, 0.35, 16)                  # wall side, wash up the wall and into the webs
-        pt(i * S + 0.0, S - 0.62, 0.35, 14)              # arcade piers, aisle side
-        pt(i * S + 0.0, S + 0.62, 0.35, 10)              # arcade piers, far side
-        pt(i * S + 2.0, 2 * S - 0.6, 0.45, 8)
+
+    def fill(x, y, z, e):
+        l = bpy.data.lights.new("f", "POINT")
+        l.energy, l.color, l.shadow_soft_size = e * strength, col, 0.8
+        ob = bpy.data.objects.new("f", l)
+        ob.location = (x, y, z)
+        bpy.context.scene.collection.objects.link(ob)
+
+    # The photo is lit by small floods on the floor, aimed up: bright webs and walls, a dim floor, and hard pointed
+    # shadows thrown up the walls by the piers. Same thing here, one per bay and aisle, slightly off centre.
     for i in range(LEN):
-        pt((i + 0.5) * S, 2.0, 0.4, 14, 0.4)            # aisle centre, soft fill towards the vault
-    pt(LEN * S - 0.6, 2.0, 1.2, 26)                     # end wall glow
-    pt(LEN * S - 0.6, 6.0, 1.2, 18)
+        up((i + 0.5) * S, 2.3, 0.15, 95)
+        up((i + 0.5) * S, 5.7, 0.15, 75)
+        fill((i + 0.5) * S, 2.0, 1.2, 4.0)        # stands in for the bounce off the photo's water
+        fill((i + 0.5) * S, 6.0, 1.2, 3.0)
+    up(LEN * S - 1.0, 2.0, 0.15, 35, tilt=(0.0, 0.9))
+    up(1.1, 2.0, 0.15, 60, tilt=(0.0, -0.9))       # far end wall glow
 
 
 def setup(w=1500, h=1000):
@@ -112,8 +122,13 @@ def setup(w=1500, h=1000):
     sc.render.resolution_x, sc.render.resolution_y = int(w * SCALE), int(h * SCALE)
     sc.render.image_settings.file_format = "PNG"
     sc.view_settings.view_transform = "Filmic"
-    sc.view_settings.look = "None"
-    sc.view_settings.exposure = 0.0
+    for look in ("Filmic - High Contrast", "High Contrast"):
+        try:
+            sc.view_settings.look = look
+            break
+        except TypeError:
+            pass
+    sc.view_settings.exposure = 0.35
     if sc.world is None:
         sc.world = bpy.data.worlds.new("w")
     sc.world.use_nodes = True
@@ -143,10 +158,10 @@ def shot(name):
 def arcade():
     # Camera approximates crypt.jpg: low, in the aisle, near the walled side, looking down the aisle and slightly
     # towards the open arcade so the vanishing point sits right of centre.
-    camera((0.75, 1.15, 1.25), (12.0, 2.5, 1.95), lens=15.5)
+    camera((18.7, 2.1, 1.25), (8.7, 0.4, 2.15), lens=16.5)
     shot("arcade_crypt_camera")
-    camera((0.8, 3.1, 1.5), (14.0, 1.5, 2.4), lens=17)
-    shot("arcade_towards_wall")
+    camera((19.2, 3.0, 1.5), (5.0, 2.6, 2.3), lens=17)
+    shot("arcade_along_aisle")
 
 
 JOINS = {
@@ -170,7 +185,7 @@ def joins():
 
 
 def piece_lights(ob_center, r=6.0):
-    for (dx, dy, dz, e) in ((-3, -4, 3, 120), (4, -2, 1, 60), (0, 4, 5, 60), (0, 0, -3, 40)):
+    for (dx, dy, dz, e) in ((-3, -4, 3, 500), (4, -2, 1, 260), (0, 4, 5, 250), (0, 0, -3, 200)):
         l = bpy.data.lights.new("p", "POINT")
         l.energy, l.color, l.shadow_soft_size = e, (1.0, 0.85, 0.66), 0.6
         o = bpy.data.objects.new("p", l)
@@ -184,7 +199,7 @@ PIECE_VIEWS = {
     "pier": ((1.6, -2.6, 1.6), (0, 0, 1.15)),
     "arch": ((2.2, -5.5, 2.0), (0, 0, 3.0)),
     "vault_bay": ((1.2, -1.3, 0.6), (0, 0.2, 3.3)),
-    "ceiling_crouch": ((3, -6.0, 0.4), (0, 0, 2.2)),
+    "ceiling_crouch": ((3, -6.0, 0.2), (0, 0, 2.2)),
     "ceiling_crawl": ((3, -6.0, 0.4), (0, 0, 2.0)),
 }
 
