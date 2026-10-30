@@ -94,6 +94,10 @@ Exit code 0 = all passed, 1 = failures, 2 = nothing found / not a test run.
   `_check_xxx(values...)` which holds the `if`s/loops and asserts. Where that is impractical, guard the block with
   `expect_checkpoint(name, count)` / `checkpoint(name)` (e2e: `godot/tests/e2e/e2e_base.gd`). Reviewers reject
   conditional or loop assertions written inline after an `await`. Repro: docs/retrospective/upstream/godot-4.7.2-await-if-skip.md.
+- **Every new measuring check proves it can fail** (T014 finding: a loop-seam check compared frame 0 with itself
+  because Godot wraps `seek(length)` to 0 on looping clips). Add a self-test that feeds the check a deliberately
+  broken input (e.g. a duplicated Animation with an altered key) and asserts the same helper the real test uses
+  reports the failure.
 - Tests must never start processes (`OS.execute`, `OS.create_process`, `OS.create_instance`): run 1's first core
   attempt re-launched Godot recursively and crashed the machine (out of memory). Runner self-test:
 `--dir res://addons/test_runner/selftest` must report 5 passed, 3 failed (intentional), exit 1.
