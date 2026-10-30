@@ -30,8 +30,11 @@ Agents must verify items marked (verify) against the installed Godot and Blender
 - Max 4 bone influences per vertex; weights normalized.
 
 ## Animation
-- Clip names: snake_case `<action>`; looping clips end with `_loop` (e.g. `walk_loop`). Verified: Godot 4.7 imports
-  clips that start or end with the token `loop`/`cycle` as looping, no hyphen required (*Node type customization*).
+- Clip names: snake_case `<action>`; looping clips end with `_loop` (e.g. `walk_loop`). Godot 4.7 treats names
+  that start or end with `loop`/`cycle` as looping, BUT by default it also strips that suffix (`walk_loop` arrives
+  as `walk`; found in T013). Each rig's `.glb.import` therefore sets `use_name_suffixes=false` and an explicit
+  `settings/loop_mode` per animation (linear for `_loop` clips, none otherwise), so Godot keeps the exact names.
+  Consumers reference the full names.
 - 30 fps unless the spec says otherwise; frame ranges documented in docs/specs/RIGGING_ANIMATION.md.
 - Root motion only if the spec says so.
 
@@ -67,10 +70,21 @@ Then run `python3 tools/qa/check_budgets.py` and include the asset's row; an ass
     `KHR_materials_volume`, `FB_ngon_encoding`). Total <= the hero triangle budget (docs/qa/budgets.json); reduce
     the upper body only if the legs do not fit.
   - Export `godot/assets/hero/model/hero.glb`.
+- **Final model (T011, PR #37):** 19,949 tris, 2 materials, 60/64 MB textures. Each leg is ONE continuous mesh from
+  under the hip armour to the blade tips (the earlier "separate rigid piece per bone" idea is revoked; it produced
+  disjointed legs). Measured joints (Blender coords, front = +Y, left side; mirror x for right): hip
+  (-0.11, 0.0686, 0.8708), knee (-0.1303, 0.0834, 0.4471), hock (-0.1413, 0.0238, 0.336), ankle/tine root
+  (-0.1531, -0.048, 0.2233); shin 30 deg back from the thigh. Reviewer-scored 10/10 on structure vs full_body.png.
 - Rig notes for the rigger-animator (human decision, T011): rig in the delivered I-pose (no A-pose source will be
   provided). Isolate arm and torso weights at the armpits (no torso deformation when the upper arm moves).
   Optionally re-rest to A/T via the armature. Legs are digitigrade: thigh, shin, an extra metatarsal/hock bone and a
-  foot/toe bone per leg so foot contact and stride work; locomotion clips keep the blades planted without sliding.
+  foot/toe bone per leg so foot contact and stride work; blended weights across knee and hock on the continuous
+  leg, blades rigid on the foot; locomotion clips keep the blades planted without sliding.
+- **Final rig (T013, PR #41):** 23 joints, I-pose rest (not re-rested), `godot/assets/hero/rig/hero.glb`, built by
+  `blender/rigs/hero/rig.py`, checked by `blender/rigs/hero/qa/check_rig.py`. Clip lengths: idle 4.0 s, walk 0.8,
+  jog 0.6, crouch_idle 4.0, crouch_walk 0.8 (0.8 m stride; 1.0 m did not fit the 1.25 m top with knees clear),
+  crawl_idle 3.0, crawl 1.2, jump 1.267 (takeoff frame 1, touchdown frame 25 = 0.80 s vs 0.816 s physics; start it
+  at frame 0 when `jumped()` fires). Tops: stand <= 1.751, crouch <= 1.234, crawl <= 0.695 m. QA in Godot: T014.
 - Clips (rigger-animator), 30 fps, in-place (no root motion):
   `idle_loop`, `walk_loop`, `jog_loop`, `crouch_idle_loop`, `crouch_walk_loop`, `crawl_idle_loop`, `crawl_loop`, `jump`.
   Walk cycle stride should match `PlayerController.WALK_SPEED` 1.6 m/s, jog 4.0, crouch walk 1.0, crawl 0.5.

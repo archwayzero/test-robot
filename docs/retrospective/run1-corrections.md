@@ -269,6 +269,36 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
 - **Agent definitions cannot be updated through git inside the sandbox:** `.claude/agents/` is read-only to shell
   commands, so `git switch`/`git pull` fail when a commit changes those files; the human ran the pull. Next game
   (kit): make `.claude/agents/` writable for git in the sandbox, or keep agent rules that change during a run in docs/.
+- **"Separate rigid pieces per bone" was an orchestrator mistake (T011 pass 3):** I added it to the brief to make
+  rigging easy; it produced disjointed legs, and I reported pass 3 as "a clear improvement" although the reviewer had
+  flagged the shin as vertical (a regression). The human caught both. Fixes that worked: one continuous leg mesh,
+  landmarks measured on the reference, a 61-row check script run on every rebuild, and the reviewer scoring
+  structure out of 10 with the human's rule "not 10/10 -> another pass, don't come back". Passes 4-7: 7.25 -> 8.5 ->
+  9.5 -> 10. Next game: never summarise around a failing number; quote it.
+- **Usage limits interrupt agents:** the pass-6 modeler stopped mid-work at the API usage limit; it was relaunched
+  with a resume brief from the uncommitted state. Fixed in CLAUDE.md "Session continuity" (commit per pass,
+  STATUS.md, resume procedure).
+- **The modeler's Write hook blocks `.captures/`:** its QA scripts live in `blender/models/hero/qa/` and write
+  output into `.captures` from there. Next game (kit): allow scratch writes to `.captures/` for every agent.
+- **Reference clips (T012):** a side-view snapshot made the generator keep the camera and the digitigrade legs in
+  all 8 clips (front view reads the legs as stilts). Treadmill framing gives no ground reference and left/right legs
+  can't be told apart; the jump clip drifted in material. Reviewer-found cycle-length error in crawl notes would have
+  halved the crawl speed. Next game: ask for a visible floor line in every locomotion prompt.
+- **Rig quality loop (T013):** pass 1 passed every hard limit but scored 5.5-8/10 on fidelity (jump timing not
+  matched to the controller's airtime, hovering crawl knees, kneeling-lunge crouch walk). Four passes to >= 8.5 on
+  every clip. The check script missed the crouch-walk defect until a knee-clearance rule was added. Next game:
+  derive clip timing from the controller constants (jump airtime = 2 v / g) and put contact/clearance rules for
+  every clip in the brief from the start.
+- **Godot strips `_loop` from clip names on import** (T013): `walk_loop` arrived as `walk`. Fixed per rig with
+  `use_name_suffixes=false` + explicit loop modes; the contract had claimed the names were kept.
+- **Speed vs reference cadence:** at the game speeds (crouch walk 1.0, crawl 0.5 m/s) the generated references'
+  slow cadence would need ~2 m strides; clips step faster than the references. Next game: choose speeds and
+  reference cadence together (or generate references with the intended speed in the prompt).
+- **Vacuous QA test (T014):** the first loop-seam assertion compared frame 0 with itself (Godot wraps `seek(length)`
+  to 0 on looping clips), so it could never fail; the reviewer caught it. Next game: every new QA check ships with a
+  self-test that proves it can fail (now in the T014 tests; add to TEST_PLAN.md).
+- **Subagents and background shells don't survive a session exit:** only the main conversation can be resumed.
+  Everything durable must be in git/DVC/files: CLAUDE.md "Session continuity" + docs/plan/STATUS.md.
 
 ### M3 iOS device build
 (to be filled in)

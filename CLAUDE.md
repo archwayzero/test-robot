@@ -45,6 +45,16 @@ sandbox FPS or GPU cost as device performance. Push with `git push origin <branc
    (pre-push runs `dvc push` first) -> human merges PR. Never push to main. Never `--no-verify`.
 5. Never change git remotes, DVC remotes/config, or files listed as `locked` in the module map.
 
+## Session continuity (subagents and shells do not survive a session restart)
+- Every agent: commit at the end of each pass (new commit, never amend) with a message that says what is done, what
+  still fails (with numbers) and the next step, so a relaunched agent can resume from `git log` + the diff. Before
+  a long job (render sweep, bake, full test run), commit work in progress first. Leave nothing running in the
+  background when you report.
+- Orchestrator: keep `docs/plan/STATUS.md` current (active task, agent, branch, last commit, open PRs, last review
+  verdict and what it asked for, the brief that was sent, next action). On session start: `git status`,
+  `python3 tools/task.py list`, `gh pr list`, read STATUS.md; a task in `doing` is resumed by relaunching its agent
+  with the saved brief plus "resume from the last commit; read its message and the uncommitted diff".
+
 ## Where to look
 - `docs/architecture/ARCHITECTURE.md` module model and dependency rules
 - `docs/architecture/WORKFLOW.md` task lifecycle, version-control order, what the hooks enforce

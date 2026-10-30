@@ -42,7 +42,13 @@ Character controller: stances, walk/run/jump, collision, third-person camera, he
   `PLAYER_STANCE` on stance change and at most every 0.5 s while moving.
 - Visual: capsule placeholder (T004) -> hero rig `res://assets/hero/rig/hero.glb` with an AnimationTree driving
   idle_loop/walk_loop/jog_loop/crouch_idle_loop/crouch_walk_loop/crawl_idle_loop/crawl_loop/jump (T019), as listed in
-  docs/contracts/blender-godot-assets.md "Asset: hero".
+  docs/contracts/blender-godot-assets.md "Asset: hero". Hookup rules from QA T014
+  (docs/qa/reports/hero-2026-10-29-T014.md): start `jump` at frame 0 when `jumped()` fires, crossfade in ~0.1 s
+  (its first pose differs from idle by up to 23 cm at the arms); scale locomotion playback by actual speed / clip
+  speed (walk 1.6, jog 4.0, crouch walk 1.0, crawl 0.5 m/s) so the blades stay planted at in-between speeds; no
+  blend may overshoot the clip heights (crawl top 0.695 under a 0.75 ceiling, crouch walk 1.234 under 1.3); the
+  mesh reaches past the 0.3 m capsule (crawl ~0.85 m forward) - acceptable, do not enlarge the capsule; the
+  close-camera fade (T030) must judge distance to the body, not the blade tips (crawl puts them near the lens).
 - `restore_stance(stance)` (T027): override the public default; tallest fitting stance via the same ShapeCast check
   as the stance cycle; no stance_changed when unchanged; out-of-range ints -> STAND. Tests for each case.
 - Tests: speeds per stance (+-5%), heights per stance, stand-up refused under a low ceiling, no jump while crawling,
