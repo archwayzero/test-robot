@@ -27,8 +27,13 @@ const TOP_LIMIT := {
 	"crawl_idle_loop": 0.70, "crawl_loop": 0.70,
 }
 const MIN_Y := -0.01
-## Loop seam: pose at `length` must equal the pose at 0 within 5 mm (max vertex distance).
-const SEAM_TOL := 0.005
+## Key-level loop seam (Animation track values at `length` vs at 0, read without seek): rotation <= 0.25 deg,
+## position <= 1 mm, scale <= 0.001 per track.
+const SEAM_ROT_DEG := 0.25
+const SEAM_POS := 0.001
+const SEAM_SCALE := 0.001
+## Wrap step: max vertex step from the last sampled frame before `length` to frame 0 <= 2x the median frame step.
+const WRAP_FACTOR := 2.0
 ## Physics airtime of a jump: 2 * JUMP_VELOCITY / gravity = 2 * 4.0 / 9.8.
 const AIRTIME := 2.0 * 4.0 / 9.8
 
@@ -74,29 +79,88 @@ func test_import_structure() -> void:
 			rest.size, m.verts.size(), m.stride, m.bind_bone.size(), m.foot_verts.l.size(), m.foot_verts.r.size()])
 	assert_almost_eq(rest.end.y, 1.75, 0.02, "rest mesh head top at 1.75 m")
 	assert_almost_eq(rest.position.y, 0.0, 0.01, "rest mesh feet at y = 0")
+	# CPU skinning sanity: with the skeleton at rest, the skinned mesh must reproduce the rest AABB within 1 mm.
+	m.player.stop()
+	m.skeleton.reset_bone_poses()
+	m.skeleton.force_update_all_bone_transforms()
+	var sk := Measure.aabb_of(m.skinned())
+	var d_lo := (sk.position - rest.position).abs()
+	var d_hi := (sk.end - rest.end).abs()
+	var d := maxf(maxf(maxf(d_lo.x, d_lo.y), d_lo.z), maxf(maxf(d_hi.x, d_hi.y), d_hi.z))
+	print("HERO_QA rest skinned aabb pos=%s end=%s, max corner difference vs rest_aabb %.4f mm" % [sk.position, sk.end, d * 1000.0])
+	assert_true(d <= 0.001, "CPU-skinned rest AABB differs from rest_aabb() by %.4f mm (> 1 mm)" % (d * 1000.0))
 
 
 func test_clip_heights_floor_and_seams() -> void:
 	if m.player == null:
 		fail("no rig")
 		return
-	print("HERO_QA | clip | len s | frames | loop | top m (frame) | limit | min y (frame) | seam mm | wrap step mm | median step mm | max step mm | reach fwd/back/side m |")
+	print("HERO_QA | clip | len s | frames | loop | top m (frame) | limit | min y (frame) | key seam rot deg / pos mm / scale (tracks, multi-key tracks unkeyed at end) | wrap step mm | median step mm | max step mm | reach fwd/back/side m |")
 	for clip: String in CLIPS:
 		if not m.player.has_animation(clip):
 			continue
 		var r := m.measure_clip(clip)
-		print("HERO_QA | %s | %.3f | %d | %s | %.3f (%d) | %.2f | %.4f (%d) | %.1f | %.1f | %.1f | %.1f | %.2f / %.2f / %.2f |" % [
+		var ts := Measure.track_seam(m.player.get_animation(clip))
+		print("HERO_QA | %s | %.3f | %d | %s | %.3f (%d) | %.2f | %.4f (%d) | %.4f / %.4f / %.5f (%d, %d) | %.1f | %.1f | %.1f | %.2f / %.2f / %.2f |" % [
 			clip, r.length, r.frames, ["none", "linear", "pingpong"][r.loop], r.top, r.top_frame, TOP_LIMIT[clip],
-			r.min_y, r.min_frame, r.seam * 1000.0, r.seam_step * 1000.0, r.step_median * 1000.0, r.step_max * 1000.0,
-			r.reach_fwd, r.reach_back, r.reach_side])
+			r.min_y, r.min_frame, ts.rot_deg, ts.pos_m * 1000.0, ts.scale, ts.tracks, ts.unkeyed_end,
+			r.wrap_step * 1000.0, r.step_median * 1000.0, r.step_max * 1000.0, r.reach_fwd, r.reach_back, r.reach_side])
 		_check_clip(clip, r)
+		if r.loop != Animation.LOOP_NONE:
+			assert_true(ts.other == 0, "%s has %d track(s) of a type the seam check does not cover" % [clip, ts.other])
+			for msg in _seam_failures(clip, r, ts):
+				fail(msg)
 
 
 func _check_clip(clip: String, r: Dictionary) -> void:
 	assert_true(r.top <= TOP_LIMIT[clip], "%s top %.3f m > %.2f (frame %d)" % [clip, r.top, TOP_LIMIT[clip], r.top_frame])
 	assert_true(r.min_y >= MIN_Y, "%s lowest point %.4f m < %.2f (frame %d)" % [clip, r.min_y, MIN_Y, r.min_frame])
-	if r.loop != Animation.LOOP_NONE:
-		assert_true(r.seam <= SEAM_TOL, "%s loop seam %.1f mm > %.1f mm" % [clip, r.seam * 1000.0, SEAM_TOL * 1000.0])
+
+
+## Loop seam checks; returns the failure messages (empty = seam OK). Used on the real clips and on a broken copy.
+func _seam_failures(clip: String, r: Dictionary, ts: Dictionary) -> Array[String]:
+	var out: Array[String] = []
+	if ts.rot_deg > SEAM_ROT_DEG:
+		out.append("%s key seam: rotation at length vs 0 differs by %.3f deg > %.2f (%s)" % [clip, ts.rot_deg, SEAM_ROT_DEG, ts.worst])
+	if ts.pos_m > SEAM_POS:
+		out.append("%s key seam: position at length vs 0 differs by %.2f mm > %.1f (%s)" % [clip, ts.pos_m * 1000.0, SEAM_POS * 1000.0, ts.worst])
+	if ts.scale > SEAM_SCALE:
+		out.append("%s key seam: scale at length vs 0 differs by %.4f > %.3f (%s)" % [clip, ts.scale, SEAM_SCALE, ts.worst])
+	if r.wrap_step > WRAP_FACTOR * r.step_median:
+		out.append("%s wrap step %.1f mm > %.0fx median step %.1f mm" % [clip, r.wrap_step * 1000.0, WRAP_FACTOR, r.step_median * 1000.0])
+	return out
+
+
+## The seam checks must be able to fail: a copy of walk_loop whose hips rotation keys in the last 0.07 s (the last key
+## at `length` included) are turned 30 deg about X must fail both the key-level seam and the wrap-step check.
+func test_seam_check_detects_broken_loop() -> void:
+	if m.player == null or not m.player.has_animation("walk_loop"):
+		fail("no walk_loop")
+		return
+	var broken := m.player.get_animation("walk_loop").duplicate(true) as Animation
+	var hips := broken.find_track(NodePath("Armature/Skeleton3D:hips"), Animation.TYPE_ROTATION_3D)
+	assert_true(hips >= 0, "walk_loop has a hips rotation track")
+	if hips < 0:
+		return
+	var turn := Quaternion(Vector3.RIGHT, deg_to_rad(30.0))
+	var altered := 0
+	for k in broken.track_get_key_count(hips):
+		if broken.track_get_key_time(hips, k) >= broken.length - 0.07:
+			broken.track_set_key_value(hips, k, turn * (broken.track_get_key_value(hips, k) as Quaternion))
+			altered += 1
+	var lib := AnimationLibrary.new()
+	lib.add_animation("broken_walk", broken)
+	m.player.add_animation_library("qa_seam", lib)
+	var r := m.measure_clip("qa_seam/broken_walk")
+	var ts := Measure.track_seam(broken)
+	m.player.stop()
+	m.player.remove_animation_library("qa_seam")
+	var fails := _seam_failures("broken_walk", r, ts)
+	print("HERO_QA seam self-test: %d hips keys altered; key seam %.2f deg (%s), wrap step %.1f mm vs median %.1f mm; failures: %s" % [
+		altered, ts.rot_deg, ts.worst, r.wrap_step * 1000.0, r.step_median * 1000.0, fails])
+	assert_true(altered >= 1, "altered at least the last hips key")
+	assert_true(ts.rot_deg > SEAM_ROT_DEG, "key-level seam check detects the altered last key")
+	assert_true(r.wrap_step > WRAP_FACTOR * r.step_median, "wrap-step check detects the broken loop")
 
 
 ## Planted blades of in-place locomotion clips should slide backward (+Z) at the game speed.

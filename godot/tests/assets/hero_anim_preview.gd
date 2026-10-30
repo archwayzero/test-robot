@@ -14,6 +14,12 @@ const SPEED := {"idle_loop": 0.0, "walk_loop": 1.6, "jog_loop": 4.0, "crouch_idl
 ## Clearance lines in the side view (m): [limit used by the QA test, ceiling of the kit].
 const LINES := {"stand": [1.85, 2.2], "crouch": [1.25, 1.3], "crawl": [0.70, 0.75]}
 const TILE := 0.25
+## Side camera pitch (deg, looking down) and the depth of the clearance bars behind the hero midline (m). With the
+## pitch, a bar BAR_X behind the hero would read BAR_X * tan(pitch) (~6 cm) higher than a hero point at the same
+## height, so the bars are lowered by that amount: on screen they line up with the true height at the hero midline
+## (x = 0). Points on the near/far side of the body (|x| <= 0.27 m) still read up to ~3 cm lower/higher.
+const SIDE_PITCH := 6.0
+const BAR_X := 0.6
 
 @export var clip := ""
 @export var cycle_seconds := 3.0
@@ -128,7 +134,7 @@ func _build_world(r: Node3D) -> void:
 		mat.albedo_color = Color(1, 0.85, 0.1) if i == 0 else Color(1, 0.15, 0.1)
 		bm.material = mat
 		bar.mesh = bm
-		bar.position = Vector3(0.6, 0, 0)
+		bar.position = Vector3(BAR_X, 0, 0)
 		bar.layers = 2  # side view only
 		r.add_child(bar)
 		_lines.append(bar)
@@ -139,7 +145,7 @@ func _build_world(r: Node3D) -> void:
 	_side_cam.size = 2.3
 	_side_cam.position = Vector3(-6, 1.0, 0)
 	# slight downward tilt so the floor tiles show as a strip under the blades (planting/sliding)
-	_side_cam.rotation_degrees = Vector3(-6, -90, 0)
+	_side_cam.rotation_degrees = Vector3(-SIDE_PITCH, -90, 0)
 	_game_cam.cull_mask = 1 | 4
 	_side_cam.cull_mask = 1 | 2
 
@@ -164,23 +170,25 @@ func _play(c: String) -> void:
 	_anim.play(c)
 	_anim.seek(0.0, true)
 	var st := _stance(c)
-	_lines[0].position.y = LINES[st][0]
-	_lines[1].position.y = LINES[st][1]
+	var bar_drop := BAR_X * tan(deg_to_rad(SIDE_PITCH))
+	_lines[0].position.y = LINES[st][0] - bar_drop
+	_lines[1].position.y = LINES[st][1] - bar_drop
 	# game-like camera: pivot near head/back height, arm behind and above (player CLAUDE.md arm lengths, ~2.2 stand)
 	var pivot_h: float = {"stand": 1.45, "crouch": 0.95, "crawl": 0.5}[st]
 	var arm: float = {"stand": 2.2, "crouch": 1.8, "crawl": 1.2}[st]
 	var pitch := deg_to_rad(22.0)
 	_game_cam.position = Vector3(0.35, pivot_h + arm * sin(pitch), arm * cos(pitch))
 	_game_cam.look_at(Vector3(0, pivot_h - 0.35, -0.4))
-	_side_cam.position.y = (0.95 if st == "stand" else 0.62) + 6.0 * tan(deg_to_rad(6.0))
-	_side_cam.size = 2.3 if st == "stand" else 1.8
+	# view centre height at the hero midline; stand frames -0.2..2.5 m so the 2.2 m FULL ceiling line is visible
+	_side_cam.position.y = (1.15 if st == "stand" else 0.62) + 6.0 * tan(deg_to_rad(SIDE_PITCH))
+	_side_cam.size = 2.7 if st == "stand" else 1.8
 
 
 func _process(delta: float) -> void:
 	_t += delta
 	_clip_t += delta
 	if clip == "" and _t >= cycle_seconds:
-		_t = 0.0
+		_t -= cycle_seconds
 		_play(ORDER[(ORDER.find(_current) + 1) % ORDER.size()])
 	elif clip != "" and _current == "jump" and _clip_t >= _anim.get_animation("jump").length + 0.5:
 		_play("jump")  # replay the one-shot after a short hold

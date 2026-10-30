@@ -137,9 +137,11 @@ static func aabb_of(p: PackedVector3Array) -> AABB:
 
 ## Samples a clip at 30 fps (frames 0..N where N*1/30 = length) and returns a dictionary of measurements:
 ## length, loop, frames, top (max y over frames), top_frame, min_y, min_frame, reach_fwd/back/side (horizontal
-## extents from the origin), seam (max vertex distance pose(length) vs pose(0)), seam_step (max vertex distance
-## pose(last frame before length) -> pose(0) for a loop, i.e. the wrap-around step), step_median (median per-frame
-## max vertex step), per-foot planted speed along +Z (median, m/s) and lateral drift, and per-frame foot heights.
+## extents from the origin), wrap_step (loops: max vertex distance pose(frame N-1) -> pose(0), i.e. the step the player
+## shows across the loop wrap), step_median (median per-frame max vertex step, wrap step included), per-foot planted
+## speed along +Z (median, m/s) and lateral drift, and per-frame foot heights.
+## For a looping clip, frame N is NOT sampled with seek(length): Godot 4.7 wraps seek(length) to 0.0 on LOOP_LINEAR,
+## so frame N is set to frame 0 explicitly (what playback shows). The key-level seam is checked by track_seam().
 func measure_clip(clip: String) -> Dictionary:
 	var anim := player.get_animation(clip)
 	var length := anim.length
@@ -151,9 +153,14 @@ func measure_clip(clip: String) -> Dictionary:
 	var contact_set := {"l": [], "r": []}  # per frame: {vertex index: position} of contact verts
 	var reach := {"fwd": 0.0, "back": 0.0, "side": 0.0}
 	var frames: Array[PackedVector3Array] = []
+	var looped := anim.loop_mode != Animation.LOOP_NONE
 	for f in n + 1:
-		pose_at(clip, minf(f / FPS, length))
-		var p := skinned()
+		var p: PackedVector3Array
+		if looped and f == n:
+			p = frames[0]
+		else:
+			pose_at(clip, minf(f / FPS, length))
+			p = skinned()
 		frames.append(p)
 		var a := aabb_of(p)
 		tops.append(a.end.y)
@@ -195,8 +202,7 @@ func measure_clip(clip: String) -> Dictionary:
 		"clip": clip, "length": length, "loop": anim.loop_mode, "frames": n,
 		"top": top, "top_frame": top_f, "min_y": lo_all, "min_frame": lo_f,
 		"reach_fwd": reach.fwd, "reach_back": reach.back, "reach_side": reach.side,
-		"seam": _max_dist(frames[0], frames[n]),
-		"seam_step": _max_dist(frames[n - 1], frames[0]) if n > 1 else 0.0,
+		"wrap_step": _max_dist(frames[n - 1], frames[0]) if looped and n > 1 else 0.0,
 		"step_median": steps[steps.size() / 2] if steps.size() > 0 else 0.0,
 		"step_max": steps[steps.size() - 1] if steps.size() > 0 else 0.0,
 		"steps_seq": _step_seq(frames), "foot_min_l": foot_min.l, "foot_min_r": foot_min.r, "tops": tops,
@@ -255,3 +261,53 @@ static func _step_seq(frames: Array[PackedVector3Array]) -> PackedFloat32Array:
 	for f in range(1, frames.size()):
 		out.append(_max_dist(frames[f - 1], frames[f]))
 	return out
+
+
+## Key-level loop seam of `anim`, read from the Animation resource (no seek): for every track, the value at time
+## `length` vs the value at time 0. A track's value at `length` is its last key when that key sits at `length`;
+## otherwise (constant single-key tracks, or a track whose last key ends earlier) it is *_track_interpolate(length).
+## The value at 0 is the first key when it sits at 0, else *_track_interpolate(0).
+## Returns max rotation difference (deg), max position difference (m), max scale difference, worst track path, number
+## of tracks checked, number of multi-key tracks without a key at `length`, and per-type unsupported track count.
+static func track_seam(anim: Animation) -> Dictionary:
+	var res := {"rot_deg": 0.0, "pos_m": 0.0, "scale": 0.0, "worst": "", "worst_score": 0.0, "tracks": 0,
+			"unkeyed_end": 0, "other": 0}
+	var length := anim.length
+	for t in anim.get_track_count():
+		var nk := anim.track_get_key_count(t)
+		if nk == 0:
+			continue
+		var typ := anim.track_get_type(t)
+		var end_keyed := absf(anim.track_get_key_time(t, nk - 1) - length) < 1e-4
+		var start_keyed := anim.track_get_key_time(t, 0) < 1e-4
+		if nk > 1 and not end_keyed:
+			res.unkeyed_end += 1
+		var score := 0.0
+		match typ:
+			Animation.TYPE_ROTATION_3D:
+				var q0: Quaternion = anim.track_get_key_value(t, 0) if start_keyed else anim.rotation_track_interpolate(t, 0.0)
+				var q1: Quaternion = anim.track_get_key_value(t, nk - 1) if end_keyed else anim.rotation_track_interpolate(t, length)
+				var deg := rad_to_deg(q0.normalized().angle_to(q1.normalized()))
+				res.rot_deg = maxf(res.rot_deg, deg)
+				score = deg / 0.25
+			Animation.TYPE_POSITION_3D:
+				var p0: Vector3 = anim.track_get_key_value(t, 0) if start_keyed else anim.position_track_interpolate(t, 0.0)
+				var p1: Vector3 = anim.track_get_key_value(t, nk - 1) if end_keyed else anim.position_track_interpolate(t, length)
+				var d := p0.distance_to(p1)
+				res.pos_m = maxf(res.pos_m, d)
+				score = d / 0.001
+			Animation.TYPE_SCALE_3D:
+				var s0: Vector3 = anim.track_get_key_value(t, 0) if start_keyed else anim.scale_track_interpolate(t, 0.0)
+				var s1: Vector3 = anim.track_get_key_value(t, nk - 1) if end_keyed else anim.scale_track_interpolate(t, length)
+				var ds := (s0 - s1).abs()
+				var dm := maxf(ds.x, maxf(ds.y, ds.z))
+				res.scale = maxf(res.scale, dm)
+				score = dm / 0.001
+			_:
+				res.other += 1
+				continue
+		res.tracks += 1
+		if score > res.worst_score:
+			res.worst_score = score
+			res.worst = str(anim.track_get_path(t))
+	return res
