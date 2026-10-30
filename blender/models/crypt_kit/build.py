@@ -47,7 +47,7 @@ ARCH_R = R_ARCH - 0.002   # arch soffit crown 3.898, web crown 3.902: tangent su
 WEB_CROWN = 1.702
 # Vault web section: superellipse with the same springing (+-1.7 at z=2.2) and crown as the arch but fuller haunches,
 # which is the only way an arch of crown 3.9 can show a face below a vault of crown 3.9. See report (deviation D1).
-WEB_N = 2.6
+WEB_N = 3.2
 WEB_TUCK = 0.02      # web runs this far behind the arch/wall face
 
 # ---------------------------------------------------------------- texture atlas
@@ -161,7 +161,7 @@ def block_field(h, w, ppm, courses, seed, len_range, warp=0.012):
     return ids, dist, next_id
 
 
-def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=0.022, relief=0.016, warp=0.012):
+def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=0.022, relief=0.011, warp=0.012):
     """Shared block material. Returns albedo (sRGB 0..1), height (m), roughness, all periodic."""
     ids, d, n = block_field(h, w, ppm, courses, seed, len_range, warp)
     rng = np.random.RandomState(seed + 7)
@@ -170,10 +170,10 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
     n_lo = noise(h, w, 3.2, seed + 3)
     n_mid = noise(h, w, 2.2, seed + 4, low=6)
     n_hi = noise(h, w, 1.2, seed + 5, low=40)
-    n_edge = noise(h, w, 2.0, seed + 6, low=10)
+    n_edge = noise(h, w, 3.2, seed + 6, low=3)
 
     jw = joint * (1.0 + 0.8 * n_edge).clip(0.25, 2.8)
-    ww = wear * (1.0 + 0.8 * n_mid).clip(0.25, 2.6)
+    ww = wear * (1.0 + 0.7 * n_lo).clip(0.3, 2.4)
     profile = sstep(0, 1, (d - jw) / ww)
     profile = np.where(d < jw, 0.0, profile)
 
@@ -248,6 +248,10 @@ def plaster_maps(h, w, ppm, seed):
     alb *= 1 - 0.14 * blotch[..., None] * np.array([0.9, 1.0, 1.15])
     alb *= 1 - 0.20 * grime[..., None] * np.array([0.8, 1.0, 1.3])
     alb *= 1 - 0.35 * crack[..., None]
+    # contact shade where the web dies into the arch/wall: real AO in the render is weak with both surfaces flush at the
+    # crown, and the lightmap pass may be skipped on mobile
+    contact = 1.0 - sstep(0.0, 0.10, 1.0 - (yy + 0.5) / h)
+    alb *= 1 - 0.30 * contact[..., None] * np.array([0.8, 1.0, 1.25])
     rough = 0.9 + 0.03 * n_mid
     return np.clip(alb, 0, 1), height, np.clip(rough, 0.5, 1)
 
@@ -277,7 +281,7 @@ def half(a):
 
 def build_textures():
     os.makedirs(TEX_DIR, exist_ok=True)
-    pal_a = dict(stone=[0.770, 0.665, 0.495], mortar=[0.72, 0.66, 0.54], pale=[0.88, 0.83, 0.72], tone=0.085, warm=0.03,
+    pal_a = dict(stone=[0.770, 0.665, 0.495], mortar=[0.79, 0.73, 0.61], pale=[0.88, 0.83, 0.72], tone=0.085, warm=0.03,
                  stain=0.46, rough=0.86, polish=0.04, runs=1.0)
     # band A
     ppm = 512
@@ -287,9 +291,13 @@ def build_textures():
     # band B: voussoirs. One course across, irregular joints along the arc. Generated on a square-ish torus in metres.
     bh, bw = B_ROWS[1] - B_ROWS[0], ATLAS
     bppm = ATLAS / B_LEN
-    pal_b = dict(pal_a, tone=0.085, warm=0.03, stain=0.30, stone=[0.785, 0.675, 0.495])
+    pal_b = dict(pal_a, tone=0.10, warm=0.04, stain=0.36, stone=[0.755, 0.640, 0.445], mortar=[0.80, 0.74, 0.62])
     b_alb, b_h, b_r = stone_maps(bh, bw, bppm, [bh / bppm], 1601, (0.17, 0.27), pal_b, joint=0.006, wear=0.018,
                                  relief=0.014, warp=0.005)
+    # the soffit carries the limewash of the crypt.jpg arches: paler and lower contrast than the ring on the arch face
+    fold = np.abs(((np.arange(bh) + 0.5) / bh - 0.5) * B_DEPTH)[:, None, None]
+    wash = 0.46 * (1 - sstep(0.26, 0.31, fold))
+    b_alb = b_alb * (1 - wash) + np.array([0.87, 0.81, 0.69]) * (0.93 + 0.07 * b_alb / b_alb.mean()) * wash
     b_n = normal_from_height(b_h, bppm)
     b_ao = ao_from_height(b_h, bppm, 0.012)
     # band C: plaster
@@ -323,11 +331,11 @@ def build_textures():
     imgs["ashlar_orm"] = to_image("stone_ashlar_orm", orm, False)
 
     # stone_floor: 4 x 4 m full tile at 256 px/m (texture memory budget: see report)
-    pal_f = dict(stone=[0.66, 0.60, 0.50], mortar=[0.50, 0.45, 0.37], pale=[0.76, 0.72, 0.64], tone=0.09, warm=0.02,
+    pal_f = dict(stone=[0.72, 0.665, 0.565], mortar=[0.50, 0.45, 0.37], pale=[0.76, 0.72, 0.64], tone=0.09, warm=0.02,
                  stain=0.38, rough=0.66, polish=0.22)
     fppm = 256
     courses = [0.66, 0.84, 0.54, 0.72, 0.60, 0.64]
-    f_alb, f_h, f_r = stone_maps(1024, 1024, fppm, courses, 1801, (0.48, 1.15), pal_f, joint=0.005, wear=0.05,
+    f_alb, f_h, f_r = stone_maps(1024, 1024, fppm, courses, 1801, (0.48, 1.15), pal_f, joint=0.004, wear=0.05,
                                  relief=0.007, warp=0.012)
     f_ao = ao_from_height(f_h, fppm, 0.010)
     f_alb = f_alb * (0.84 + 0.16 * f_ao)[..., None]
@@ -576,7 +584,8 @@ def build_arch(mat):
                 y, dr = item[1]
                 # the worn arris dies out at the crown, staying under the 3.9 top of the piece
                 fade = s ** 6
-                r = ARCH_R + dr * (1 - fade) + 0.0018 * (dr / 0.038) * fade
+                foot = min(1.0, s / 0.1)        # ... and at the springing, so no hollow shows at the pier corner
+                r = ARCH_R + dr * foot * (1 - fade) + 0.0018 * (dr / 0.038) * fade
                 x = r * c
                 z = SPRING + r * s
                 fold = (y + (dr if abs(y) >= 0.29 else 0.0) * (1 if y > 0 else -1))

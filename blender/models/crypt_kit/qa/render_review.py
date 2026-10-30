@@ -30,6 +30,7 @@ SAMPLES = int(arg("--samples", "96"))
 SCALE = float(arg("--scale", "1.0"))
 S = 4.0
 LEN = 5
+NAMES = [n for n in arg("--names", "").split(",") if n]
 
 
 def load():
@@ -83,7 +84,7 @@ def assemble(s, low=None):
 
 
 def lights(strength=1.0):
-    col = (1.0, 0.72, 0.40)
+    col = (1.0, 0.79, 0.44)
 
     def up(x, y, z, e, r=0.12, angle=3.14, tilt=(0.0, 0.0)):
         l = bpy.data.lights.new("l", "SPOT")
@@ -104,12 +105,12 @@ def lights(strength=1.0):
     # The photo is lit by small floods on the floor, aimed up: bright webs and walls, a dim floor, and hard pointed
     # shadows thrown up the walls by the piers. Same thing here, one per bay and aisle, slightly off centre.
     for i in range(LEN):
-        up((i + 0.5) * S, 2.3, 0.15, 95)
-        up((i + 0.5) * S, 5.7, 0.15, 75)
-        fill((i + 0.5) * S, 2.0, 1.2, 4.0)        # stands in for the bounce off the photo's water
-        fill((i + 0.5) * S, 6.0, 1.2, 3.0)
-    up(LEN * S - 1.0, 2.0, 0.15, 35, tilt=(0.0, 0.9))
-    up(1.1, 2.0, 0.15, 60, tilt=(0.0, -0.9))       # far end wall glow
+        for y, e in ((1.2, 34), (2.8, 34), (5.2, 26), (6.8, 26)):
+            up((i + 0.24) * S, y, 0.06, e)
+        fill((i + 0.5) * S, 2.0, 1.2, 1.2)        # stands in for the bounce off the photo's water
+        fill((i + 0.5) * S, 6.0, 1.2, 0.9)
+    up(LEN * S - 1.0, 2.0, 0.06, 20, tilt=(0.0, 0.9))
+    up(1.1, 2.0, 0.06, 26, tilt=(0.0, -0.9))       # far end wall glow
 
 
 def setup(w=1500, h=1000):
@@ -128,7 +129,7 @@ def setup(w=1500, h=1000):
             break
         except TypeError:
             pass
-    sc.view_settings.exposure = 0.35
+    sc.view_settings.exposure = 0.3
     if sc.world is None:
         sc.world = bpy.data.worlds.new("w")
     sc.world.use_nodes = True
@@ -158,7 +159,7 @@ def shot(name):
 def arcade():
     # Camera approximates crypt.jpg: low, in the aisle, near the walled side, looking down the aisle and slightly
     # towards the open arcade so the vanishing point sits right of centre.
-    camera((18.7, 2.1, 1.25), (8.7, 0.4, 2.15), lens=16.5)
+    camera((18.75, 2.75, 1.05), (8.75, 1.7, 2.3), lens=15)
     shot("arcade_crypt_camera")
     camera((19.2, 3.0, 1.5), (5.0, 2.6, 2.3), lens=17)
     shot("arcade_along_aisle")
@@ -180,6 +181,8 @@ JOINS = {
 
 def joins():
     for name, (loc, tgt, lens) in JOINS.items():
+        if NAMES and name not in NAMES:
+            continue
         camera(loc, tgt, lens)
         shot(name)
 
