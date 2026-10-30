@@ -89,7 +89,7 @@ def assemble(s, low=None):
 
 
 def lights(strength=1.0):
-    col = (1.0, 0.79, 0.44)
+    col = (1.0, 0.86, 0.56)
 
     def up(x, y, z, e, r=0.12, angle=3.14, tilt=(0.0, 0.0)):
         l = bpy.data.lights.new("l", "SPOT")
@@ -110,11 +110,11 @@ def lights(strength=1.0):
     # The photo is lit by small floods on the floor, aimed up: bright webs and walls, a dim floor, and hard pointed
     # shadows thrown up the walls by the piers. Same thing here: one per bay and aisle, tucked against the piers.
     for i in range(LEN):
-        for y, e in ((0.95, 30), (3.05, 22), (4.9, 44), (6.9, 44)):
+        for y, e in ((0.95, 24), (2.7, 40), (5.0, 12), (6.9, 18)):
             up((i + 0.16) * S, y, 0.06, e)
         fill((i + 0.5) * S, 2.0, 0.9, 0.5)        # stands in for the bounce off the photo's water
         fill((i + 0.5) * S, 6.0, 0.9, 0.5)
-    fill(LEN * S - 1.6, 2.0, 2.0, 40)                     # far end wall glow
+    fill(LEN * S - 1.6, 2.0, 2.0, 22)                     # far end wall glow
 
 
 def setup(w=1500, h=1000):
@@ -123,7 +123,7 @@ def setup(w=1500, h=1000):
     sc.cycles.device = "CPU"
     sc.cycles.samples = SAMPLES
     sc.cycles.use_denoising = True
-    sc.cycles.max_bounces = 6
+    sc.cycles.max_bounces = 3
     sc.render.resolution_x, sc.render.resolution_y = int(w * SCALE), int(h * SCALE)
     sc.render.image_settings.file_format = "PNG"
     sc.view_settings.view_transform = "Filmic"
@@ -133,7 +133,7 @@ def setup(w=1500, h=1000):
             break
         except TypeError:
             pass
-    sc.view_settings.exposure = 0.55
+    sc.view_settings.exposure = 0.72
     if sc.world is None:
         sc.world = bpy.data.worlds.new("w")
     sc.world.use_nodes = True

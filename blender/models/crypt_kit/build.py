@@ -161,8 +161,9 @@ def rect_field(h, w, ppm, seed, n_cells, warp):
                 break
     rects = np.array(rects)
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float64)
-    x = np.mod((xx + 0.5) / ppm + noise(h, w, 3.0, seed + 1) * warp, pu)
-    y = np.mod((h - 1 - yy + 0.5) / ppm + noise(h, w, 3.0, seed + 2) * warp, pv)
+    # phase shift: no grid line may lie on the tile edge, or every wrap would be a joint
+    x = np.mod((xx + 0.5) / ppm + 0.17 + noise(h, w, 3.0, seed + 1) * warp, pu)
+    y = np.mod((h - 1 - yy + 0.5) / ppm + 0.23 + noise(h, w, 3.0, seed + 2) * warp, pv)
     ci = np.clip(np.searchsorted(cx, x, side="right") - 1, 0, n_cells - 1)
     cj = np.clip(np.searchsorted(cy, y, side="right") - 1, 0, n_cells - 1)
     ids = grid[cj, ci]
@@ -227,7 +228,7 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
     n_hi = noise(h, w, 1.2, seed + 5, low=40)
     n_edge = noise(h, w, 3.2, seed + 6, low=3)
 
-    jw = joint * (1.0 + 0.8 * n_edge).clip(0.25, 2.8)
+    jw = joint * (1.0 + 0.5 * n_edge).clip(0.4, 1.8)
     ww = wear * (1.0 + 0.7 * n_lo).clip(0.3, 2.4)
     profile = sstep(0, 1, (d - jw) / ww)
     profile = np.where(d < jw, 0.0, profile)
@@ -237,7 +238,7 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
     # High-pass over about a metre: stones differ from their neighbours, but no dark or pale cluster forms, because a cluster
     # is a landmark that repeats every tile.
     tone = tone - blur(tone, palette.get("tone_hp", 0.0) * ppm) if palette.get("tone_hp") else tone
-    tone = tone / max(tone.std() / 0.55, 1e-6)
+    tone = np.clip(tone / max(tone.std() / 0.55, 1e-6), -1.3, 0.8)     # bright outliers are what the eye tracks across tiles
     warm = rng.uniform(-1, 1, n)[ids]
     inset = rng.uniform(-1, 1, n)[ids]
     rough_s = rng.uniform(-1, 1, n)[ids]
@@ -250,8 +251,8 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
     tool_on = sstep(-0.3, 0.8, rng.uniform(-1, 1, n)[ids] + 0.5 * n_lo)
 
     pits = sstep(1.6, 2.8, noise(h, w, 1.4, seed + 8, low=30) + 0.5 * n_mid)
-    height = profile * (relief + 0.005 * inset) + 0.006 * sstep(0.0, 0.09, d) + 0.0014 * n_lo * profile + 0.0013 * n_mid * profile + 0.00030 * n_hi * profile \
-        + 0.00022 * tool * tool_on * profile - 0.0009 * pits * profile + 0.0005 * n_hi * (1 - profile)
+    height = profile * (relief + 0.005 * inset) + 0.006 * sstep(0.0, 0.09, d) + 0.0014 * n_lo * profile + 0.0013 * n_mid * profile + 0.00011 * n_hi * profile \
+        + 0.00022 * tool * tool_on * profile - 0.0009 * pits * profile + 0.0002 * n_hi * (1 - profile)
 
     base = np.array(palette["stone"])
     alb = np.ones((h, w, 3)) * base
@@ -279,7 +280,7 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
     mort = np.array(palette["mortar"])[None, None, :] * (1.0 + 0.06 * n_mid + 0.05 * n_hi)[..., None]
     # mortar follows the local stone value, so a joint reads by its recess and not as a drawn outline
     blur_alb = np.dstack([blur(alb[..., c], 0.05 * ppm) for c in range(3)])
-    mort = mort * 0.5 + blur_alb * mort.mean() / max(blur_alb.mean(), 1e-6) * 0.5
+    mort = blur_alb * palette.get("mortar_value", 0.90) * (1.0 + 0.06 * n_mid + 0.05 * n_hi)[..., None]
     mix = sstep(0.0, 0.35, profile)[..., None]
     alb = mort * (1 - mix) + alb * mix
 
@@ -348,18 +349,18 @@ def half(a):
 
 def build_textures():
     os.makedirs(TEX_DIR, exist_ok=True)
-    pal_a = dict(stone=[0.770, 0.665, 0.495], mortar=[0.70, 0.61, 0.46], pale=[0.88, 0.83, 0.72], tone=0.125, warm=0.035,
+    pal_a = dict(stone=[0.750, 0.670, 0.515], mortar=[0.70, 0.61, 0.46], pale=[0.88, 0.83, 0.72], tone=0.10, warm=0.03,
                  stain=0.40, rough=0.86, polish=0.04, runs=0.22, tone_hp=0.32)
     # band A
     ppm = 512
-    a_alb, a_h, a_r = stone_maps(1024, 2048, ppm, ASHLAR_COURSES, 1501, (0.30, 0.78), pal_a, warp=0.007,
+    a_alb, a_h, a_r = stone_maps(1024, 2048, ppm, ASHLAR_COURSES, 1501, (0.30, 0.78), pal_a, warp=0.007, relief=0.009, joint=0.004,
                                  force={len(ASHLAR_COURSES) - 1: CAP_JOINTS})
     a_n = normal_from_height(a_h, ppm)
     a_ao = ao_from_height(a_h, ppm, 0.012)
     # band B: voussoirs. One course across, irregular joints along the arc. Generated on a square-ish torus in metres.
     bh, bw = B_ROWS[1] - B_ROWS[0], ATLAS
     bppm = ATLAS / B_LEN
-    pal_b = dict(pal_a, tone=0.10, warm=0.03, stain=0.36, stone=[0.755, 0.625, 0.420], mortar=[0.72, 0.63, 0.47])
+    pal_b = dict(pal_a, tone=0.10, warm=0.03, stain=0.36, stone=[0.755, 0.675, 0.495], mortar=[0.72, 0.63, 0.47])
     b_alb, b_h, b_r = stone_maps(bh, bw, bppm, [bh / bppm], 1604, (0.17, 0.27), pal_b, joint=0.004, wear=0.018,
                                  relief=0.008, warp=0.005)
     # the soffit carries the limewash of the crypt.jpg arches: paler and lower contrast than the ring on the arch face
@@ -399,7 +400,7 @@ def build_textures():
     imgs["ashlar_orm"] = to_image("stone_ashlar_orm", orm, False)
 
     # stone_floor: 4 x 4 m full tile at 256 px/m. Random-rectangle flags on a 9 x 9 grid: 0.41-0.96 m, thin quiet joints
-    pal_f = dict(stone=[0.70, 0.635, 0.525], mortar=[0.63, 0.57, 0.47], pale=[0.76, 0.72, 0.64], tone=0.11, warm=0.03,
+    pal_f = dict(stone=[0.70, 0.655, 0.575], mortar=[0.63, 0.57, 0.47], pale=[0.76, 0.72, 0.64], tone=0.11, warm=0.03,
                  stain=0.34, rough=0.70, polish=0.20)
     fppm = 256
     f_alb, f_h, f_r = stone_maps(1024, 1024, fppm, None, 1801, None, pal_f, joint=0.0028, wear=0.024, relief=0.0045,
