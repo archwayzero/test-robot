@@ -38,6 +38,12 @@ MAX_MEM_MB = 64.0
 SEAM_MAX = 1.5    # edge-seam ratio, see seam()
 LM_RES = 1024
 
+TOP = 4.15        # vault crown, wall top, arch block top, ceiling insert tops (contract, PR #44)
+CROWN_ARCH = 3.9  # arch soffit crown
+RELIEF_CROWN = 0.20     # item 1: ring proud of the web at the crown, m
+RELIEF_HAUNCH = 0.12    # ... radially, at 30-60 deg above the springing
+RELIEF_LOW = 0.10       # ... radially, at 25 deg, just above where the web enters the room (23.9 deg)
+
 results = []
 
 
@@ -161,14 +167,14 @@ def check_dims(vis, col):
         near(G, "wall length", hi[0] - lo[0], 4.0)
         near(G, "wall thickness", hi[2] - lo[2], 0.6)
         near(G, "wall bottom", lo[1], 0.0)
-        near(G, "wall top", hi[1], 3.9)
+        near(G, "wall top", hi[1], TOP)
     if "wall" in col:
         lo, hi = bbox(col["wall"]["pos"])
         for s, v in ((-1, lo[2]), (1, hi[2])):
             rec(G, "wall collision face exactly z=%+.1f" % (s * 0.3), abs(v - s * 0.3) <= EXACT, "%.7f" % v)
             a = faces_at(col["wall"], 2, s * 0.3)
-            rec(G, "wall collision plane z=%+.1f area 15.6" % (s * 0.3), abs(a - 15.6) < 1e-3, "%.3f" % a)
-        near(G, "wall collision top", hi[1], 3.9)
+            rec(G, "wall collision plane z=%+.1f area 16.6" % (s * 0.3), abs(a - 4.0 * TOP) < 1e-3, "%.3f" % a)
+        near(G, "wall collision top", hi[1], TOP)
     if "pier" in vis:
         p = vis["pier"]["pos"]
         lo, hi = bbox(p)
@@ -187,25 +193,25 @@ def check_dims(vis, col):
         p = vis["arch"]["pos"]
         lo, hi = bbox(p)
         near(G, "arch bottom (springing)", lo[1], 2.2)
-        near(G, "arch top", hi[1], 3.9)
+        near(G, "arch top (block top)", hi[1], TOP)
         near(G, "arch depth", hi[2] - lo[2], 0.6)
         near(G, "arch length", hi[0] - lo[0], 4.0)
         mid = p[np.abs(p[:, 2]) < 0.27]       # soffit vertices, inside the worn arrises
         r = np.hypot(mid[:, 0], mid[:, 1] - 2.2)
         near(G, "arch intrados radius mean", r.mean(), 1.7)
         rec(G, "arch intrados is a semicircle (radius spread)", np.ptp(r) <= 2 * TOL, "%.4f" % np.ptp(r))
-        near(G, "arch crown (soffit y at x=0)", mid[:, 1].max(), 3.9)
+        near(G, "arch crown (soffit y at x=0)", mid[:, 1].max(), CROWN_ARCH)
         near(G, "arch soffit x at springing", np.abs(mid[:, 0]).max(), 1.7)
         d["arch_soffit_crown"] = float(mid[:, 1].max())
     if "vault_bay" in vis:
         p = vis["vault_bay"]["pos"]
         lo, hi = bbox(p)
         near(G, "vault springing (lowest y)", lo[1], 2.2)
-        near(G, "vault crown (highest y)", hi[1], 3.9)
+        near(G, "vault crown (highest y)", hi[1], TOP)
         c = p[np.hypot(p[:, 0], p[:, 2]) < 1e-3]
         rec(G, "vault has a vertex on the cell axis", len(c) > 0)
         if len(c):
-            near(G, "vault crown at cell centre", c[:, 1].max(), 3.9)
+            near(G, "vault crown at cell centre", c[:, 1].max(), TOP)
         cor = p[(np.abs(p[:, 0]) > 1.69) & (np.abs(p[:, 2]) > 1.69)]
         if len(cor):
             near(G, "groin lands at springing at the corner", cor[:, 1].min(), 2.2)
@@ -215,14 +221,102 @@ def check_dims(vis, col):
         if nm in vis:
             lo, hi = bbox(vis[nm]["pos"])
             near(G, "%s underside" % nm, lo[1], under)
-            near(G, "%s top" % nm, hi[1], 3.9)
+            near(G, "%s top" % nm, hi[1], TOP)
             near(G, "%s size x" % nm, hi[0] - lo[0], 4.0)
             near(G, "%s size z" % nm, hi[2] - lo[2], 4.0)
         if nm in col:
             lo, hi = bbox(col[nm]["pos"])
             rec(G, "%s collision underside exact" % nm, abs(lo[1] - under) <= EXACT, "%.7f" % lo[1])
-            near(G, "%s collision top" % nm, hi[1], 3.9)
+            near(G, "%s collision top" % nm, hi[1], TOP)
     return d
+
+
+def section_at_face(m, face=1.7, step=0.01):
+    """Web section where it enters the room: (x, y) polyline of the highest surface over the plan line z = +-face, averaged
+    over both sides of the cell and both quadrants, from the triangles (not the vertices)."""
+    t = m["pos"][m["tris"]]
+    out = {}
+    for axis, side in ((2, 1), (2, -1), (0, 1), (0, -1)):
+        other = 2 - axis
+        pts = []
+        p, q, e = t[:, :, other], t[:, :, axis] * side, t[:, :, 1]
+        for i, j in ((0, 1), (1, 2), (2, 0)):
+            a, b = q[:, i], q[:, j]
+            hit = (a - face) * (b - face) < 0
+            f = (face - a[hit]) / (b[hit] - a[hit])
+            pts.append(np.stack([p[hit, i] + f * (p[hit, j] - p[hit, i]), e[hit, i] + f * (e[hit, j] - e[hit, i])], 1))
+            on = np.abs(a - face) < 1e-5
+            pts.append(np.stack([p[on, i], e[on, i]], 1))
+        out[(axis, side)] = np.vstack(pts)
+    return out
+
+
+def check_relief(vis):
+    """Item 1, from the GLB. Arch soffit = fit of the soffit vertices; web = the vault mesh cut by the arch face plane."""
+    G = "1b relief"
+    if "arch" not in vis or "vault_bay" not in vis:
+        rec(G, "arch and vault present", False)
+        return {}
+    a = vis["arch"]["pos"]
+    mid = a[np.abs(a[:, 2]) < 0.27]
+    r_arch = np.hypot(mid[:, 0], mid[:, 1] - 2.2)
+    theta_a = np.degrees(np.arctan2(mid[:, 1] - 2.2, mid[:, 0]))
+    sec = section_at_face(vis["vault_bay"])
+    table = {}
+    vertical = None
+    for th in (90, 60, 45, 30, 25):
+        worst, worst_v = 9.0, 9.0
+        for key, pts in sec.items():
+            for sign in (1, -1):
+                ang = np.radians(th)
+                # web radius on this ray, per side of the cell, from the section polyline
+                x, y = pts[:, 0] * sign, pts[:, 1] - 2.2
+                keep = (x >= -1e-6) if th < 90 else (np.abs(x) < 0.5)
+                if keep.sum() < 3:
+                    worst = -9.0
+                    continue
+                t_w = np.degrees(np.arctan2(y[keep], x[keep]))
+                r_w = np.hypot(x[keep], y[keep])
+                o = np.argsort(t_w)
+                rw = float(np.interp(th, t_w[o], r_w[o]))
+                o2 = np.argsort(theta_a)
+                ra = float(np.interp(th, theta_a[o2], r_arch[o2]))
+                worst = min(worst, rw - ra)
+                worst_v = min(worst_v, rw * np.sin(ang) - ra * np.sin(ang))
+        table[th] = worst
+        if th == 90:
+            vertical = worst_v
+    rec(G, "ring proud of web at the crown >= %.2f" % RELIEF_CROWN, table[90] >= RELIEF_CROWN, "%.4f m" % table[90])
+    for th in (60, 45, 30):
+        rec(G, "ring proud at %d deg (radial) >= %.2f" % (th, RELIEF_HAUNCH), table[th] >= RELIEF_HAUNCH, "%.4f m" % table[th])
+    rec(G, "ring proud at 25 deg (radial) >= %.2f" % RELIEF_LOW, table[25] >= RELIEF_LOW, "%.4f m" % table[25])
+    # the ring needs a face to stand on: the arch's flat face must reach above the web everywhere, or there is a gap
+    face = a[(np.abs(np.abs(a[:, 2]) - 0.3) < 1e-4) & (np.hypot(a[:, 0], a[:, 1] - 2.2) > 1.9)]
+    o = np.argsort(face[:, 0])
+    gap = 9.0
+    for pts in sec.values():
+        q = pts[np.abs(pts[:, 0]) < 1.7]
+        gap = min(gap, float((np.interp(q[:, 0], face[o, 0], face[o, 1]) - q[:, 1]).min()))
+    rec(G, "arch face reaches above the web (no gap)", gap >= 0, "min %.4f m" % gap)
+    return {str(k): round(v, 4) for k, v in table.items()}
+
+
+def check_soiling(g, b, vis):
+    G = "4b soiling"
+    for nm in ("wall", "pier"):
+        ok, detail = False, "no COLOR_0"
+        node = next((n for n in g["nodes"] if n.get("name") == nm), None)
+        if node is not None and "mesh" in node:
+            prim = g["meshes"][node["mesh"]]["primitives"][0]
+            if "COLOR_0" in prim["attributes"]:
+                c = accessor(g, b, prim["attributes"]["COLOR_0"]).astype(float)
+                ct = g["accessors"][prim["attributes"]["COLOR_0"]]["componentType"]
+                c = c / {5121: 255.0, 5123: 65535.0, 5126: 1.0}[ct]
+                y = accessor(g, b, prim["attributes"]["POSITION"])[:, 1]
+                lo, up = c[y < 0.05, 0].mean(), c[(y > 1.3) & (y < 1.8), 0].mean()
+                ok = lo < up - 0.2 and c.max() <= 1.0
+                detail = "R at floor %.2f, at 1.5 m %.2f" % (lo, up)
+        rec(G, "%s has height-varying COLOR_0" % nm, ok, detail)
 
 
 def raster_overlap(uv, tris, res=LM_RES):
@@ -307,6 +401,7 @@ def load_image(g, b, i, tmp):
 
 def seam(a, axis):
     """Mean |first - last| across the wrap, relative to the p90 of the same difference between adjacent rows/cols inside.
+    Returns (p90 ratio, the old mean-based ratio). Only the p90 ratio is tested; the other is printed so a reviewer sees both.
 
     p90, not the mean: band A's wrap is a bed joint by design, and joint rows always differ more than rows in mid-stone.
     <= 1 means the wrap is no rougher than the roughest tenth of interior row pairs.
@@ -314,7 +409,7 @@ def seam(a, axis):
     a = np.moveaxis(a, axis, 0)
     wrap = np.abs(a[0] - a[-1]).mean()
     inner = np.abs(a[1:] - a[:-1]).reshape(a.shape[0] - 1, -1).mean(1)
-    return float(wrap / (np.percentile(inner, 90) + 1e-9))
+    return float(wrap / (np.percentile(inner, 90) + 1e-9)), float(wrap / (inner.mean() + 1e-9))
 
 
 def check_materials(g, b):
@@ -346,6 +441,10 @@ def check_materials(g, b):
         rec(G, "texture %s side 1024 or 2048" % im.get("name"), w == h and w in (1024, 2048), "%dx%d" % (w, h))
     mb = total / 2 ** 20
     rec(G, "texture memory <= 64 MB (uncompressed + mips)", mb <= MAX_MEM_MB, "%.2f MB" % mb)
+    rec(G, "draw calls (primitives) <= 14", sum(len(m["primitives"]) for m in g["meshes"]) - sum(
+        len(g["meshes"][n["mesh"]]["primitives"]) for n in g["nodes"] if n.get("name", "").endswith("-colonly") and "mesh" in n) <= 14
+        or sum(len(m["primitives"]) for m in g["meshes"]) <= 14, sum(len(m["primitives"]) for m in g["meshes"]))
+    print("texture memory margin %.3f MB of %.1f" % (MAX_MEM_MB - mb, MAX_MEM_MB))
     rec(G, "6 images (3 maps x 2 materials)", len(imgs) == 6, list(imgs))
 
     # tile seams. Floor: whole image in both axes. Ashlar: band A in U and V (the atlas's other bands do not tile, by design)
@@ -353,8 +452,8 @@ def check_materials(g, b):
     for nm in ("stone_floor_color", "stone_floor_normal", "stone_floor_orm"):
         if nm in imgs:
             for ax, lab in ((0, "V"), (1, "U")):
-                r = seam(imgs[nm], ax)
-                rec(G, "%s edge seam %s" % (nm, lab), r <= SEAM_MAX, "ratio %.3f" % r)
+                r, old = seam(imgs[nm], ax)
+                rec(G, "%s edge seam %s" % (nm, lab), r <= SEAM_MAX, "p90 ratio %.3f, old mean ratio %.3f" % (r, old))
     r0, r1 = ATLAS["band_a_rows"]
     for nm in ("stone_ashlar_color", "stone_ashlar_normal", "stone_ashlar_orm"):
         if nm in imgs:
@@ -362,8 +461,8 @@ def check_materials(g, b):
             f = a.shape[0] / ATLAS["atlas_size"]
             band = a[int(r0 * f):int(r1 * f)]
             for ax, lab in ((0, "V"), (1, "U")):
-                r = seam(band, ax)
-                rec(G, "%s band A edge seam %s" % (nm, lab), r <= SEAM_MAX, "ratio %.3f" % r)
+                r, old = seam(band, ax)
+                rec(G, "%s band A edge seam %s" % (nm, lab), r <= SEAM_MAX, "p90 ratio %.3f, old mean ratio %.3f" % (r, old))
     return sizes, mb
 
 
@@ -374,6 +473,8 @@ def main():
     g, b = read_glb(GLB)
     vis, col = check_nodes(g, b)
     dims = check_dims(vis, col)
+    dims["relief_m_by_angle"] = check_relief(vis)
+    check_soiling(g, b, vis)
     total = 0
     tri_row = {}
     all_meshes = sum(len(accessor(g, b, p["indices"])) // 3 for m in g["meshes"] for p in m["primitives"])

@@ -81,6 +81,24 @@ def main():
     edit_positions(js, b, node(js, "vault_bay")["mesh"], lambda x, y, z: (x, y + 0.008 * (y > 3.5), z))
     write(OUT / "vault_crown_high.glb", js, b)
 
+    js, b = read()   # old 3.9 crown: web squashed, ring flush at the crown (fails relief and crown)
+    edit_positions(js, b, node(js, "vault_bay")["mesh"], lambda x, y, z: (x, 2.2 + (y - 2.2) * 1.702 / 1.948, z))
+    write(OUT / "web_flush_crown.glb", js, b)
+
+    js, b = read()   # crown correct, haunches sunk 13 cm: ring is painted on at the haunch (fails relief only)
+    edit_positions(js, b, node(js, "vault_bay")["mesh"],
+                   lambda x, y, z: (x, y - 0.13 * max(0.0, 1.0 - abs(y - 3.45) / 0.4), z))
+    write(OUT / "web_sunk_haunch.glb", js, b)
+
+    js, b = read()   # wall top back at the old 3.9
+    edit_positions(js, b, node(js, "wall")["mesh"], lambda x, y, z: (x, min(y, 3.9), z))
+    write(OUT / "wall_top_old.glb", js, b)
+
+    js, b = read()   # height soiling lost
+    for n in ("wall", "pier"):
+        js["meshes"][node(js, n)["mesh"]]["primitives"][0]["attributes"].pop("COLOR_0")
+    write(OUT / "no_soiling.glb", js, b)
+
     js, b = read()   # no collision child on floor
     n = node(js, "floor")
     n.pop("children")

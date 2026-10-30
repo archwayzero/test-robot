@@ -11,9 +11,13 @@ piece's origin is the contract's logical pivot.
 Texture layout. stone_ashlar is a 2048 atlas, stone_floor a 1024 full tile:
   band A  ashlar, 4 m x 2 m at 512 px/m, periodic in U and V: walls, piers, capitals and ceilings. Wall/pier share
           world-aligned U (U wraps at every cell corner) so their courses run through the join. Above z=2 the wall
-          restarts at the bottom of the band (bed joint) with a U offset, to hide the 2 m repeat.
+          restarts at the bottom of the band (bed joint) with a U offset, to hide the 2 m repeat. The top course holds two
+          plain 0.85 m stones that the capitals map onto (no joint crosses a capital).
   band B  voussoir strip, not tiled: arch soffit + the arch face ring folded over the arris.
   band C  plaster, not tiled: vault webs.
+
+Height-varying soiling is a COLOR_0 multiplier on stone_ashlar pieces (standard glTF: base colour x vertex colour). It only
+varies with height. A piece is one mesh, so anything that varies along a wall repeats per instance; see the task report.
 """
 import json
 import math
@@ -33,7 +37,8 @@ CELL = 4.0
 WALL_T = 0.6
 SHAFT_TOP = 1.9
 SPRING = 2.2
-CROWN = 3.9
+ARCH_CROWN = 3.9     # soffit crown
+TOP = 4.15           # wall top, arch block top, ceiling insert top, vault crown
 PIER = 0.6
 CAPITAL = 0.75
 FLOOR_T = 0.2
@@ -42,13 +47,12 @@ CROUCH_Y = 1.3
 CRAWL_Y = 0.75
 
 # Tiny offsets inside the +-5 mm tolerance, so that coplanar faces never z-fight.
-PIER_PROUD = 0.002   # pier faces stand 2 mm proud of the wall faces they sit in line with
-ARCH_R = R_ARCH - 0.002   # arch soffit crown 3.898, web crown 3.902: tangent surfaces stay 4 mm apart
-WEB_CROWN = 1.702
-# Vault web section: superellipse with the same springing (+-1.7 at z=2.2) and crown as the arch but fuller haunches,
-# which is the only way an arch of crown 3.9 can show a face below a vault of crown 3.9. See report (deviation D1).
-WEB_N = 3.2
-WEB_TUCK = 0.02      # web runs this far behind the arch/wall face
+PIER_INSET = 0.0015   # shaft faces sit 1.5 mm BEHIND the wall faces in their line: the wall runs across the pier unbroken
+WEB_RISE = TOP - 0.002 - SPRING    # web crown 4.148, under the 4.15 tops it dies into, so no pinhole at the crown
+# Vault web section: a true semi-ellipse, half-span WEB_W, rise WEB_RISE. WEB_W is wider than the 1.7 clear span: the web
+# springs at 2.2 behind the arch and wall faces (hidden), and enters the room at z = 2.2 + web_h(1.7). That is what keeps
+# the arch ring proud all the way down instead of tapering to nothing at the springing.
+WEB_W = 1.84
 
 # ---------------------------------------------------------------- texture atlas
 ATLAS = 2048
@@ -69,6 +73,8 @@ A_V0, A_V1 = v_of_row(A_ROWS[1]), v_of_row(A_ROWS[0])
 B_V0, B_V1 = v_of_row(B_ROWS[1]), v_of_row(B_ROWS[0])
 C_V0, C_V1 = v_of_row(C_ROWS[1]), v_of_row(C_ROWS[0])
 
+CAP_JOINTS = [0.35, 1.20, 1.55, 2.40, 2.90, 3.35]   # top course: 0.35-1.20 and 1.55-2.40 are the capital stones
+CAP_U = (0.775 / 4, 1.975 / 4)
 ASHLAR_COURSES = [0.22, 0.17, 0.28, 0.15, 0.25, 0.19, 0.21, 0.19, 0.34]  # bottom to top, sum 2.0 (last one: capital course)
 CAP_COURSE = (1.66, 2.0)
 
@@ -125,7 +131,50 @@ def normal_from_height(h, ppm, strength=1.0):
     return np.dstack([(-dx / ln + 1) * 0.5, (-dy / ln + 1) * 0.5, (nz / ln + 1) * 0.5])
 
 
-def block_field(h, w, ppm, courses, seed, len_range, warp=0.012):
+def rect_field(h, w, ppm, seed, n_cells, warp):
+    """Random-rectangle flagging on a torus: an irregular grid of n_cells x n_cells, merged 1-2 cells each way."""
+    rng = np.random.RandomState(seed)
+    pu, pv = w / ppm, h / ppm
+
+    def lines(period):
+        d = rng.uniform(0.92, 1.08, n_cells)
+        return np.concatenate([[0.0], np.cumsum(d / d.sum() * period)])
+
+    cx, cy = lines(pu), lines(pv)
+    grid = -np.ones((n_cells, n_cells), dtype=np.int32)
+    rects = []
+    order = rng.permutation(n_cells * n_cells)
+    for o in order:
+        j, i = int(o) // n_cells, int(o) % n_cells
+        if grid[j, i] >= 0:
+            continue
+        sizes = [(2, 2), (2, 1), (1, 2), (1, 1)]
+        pick = rng.choice(4, p=[0.16, 0.30, 0.30, 0.24])
+        for sw, sh in sizes[pick:] + sizes[:pick]:
+            cells = [((j + b) % n_cells, (i + a) % n_cells) for a in range(sw) for b in range(sh)]
+            if len(set(cells)) == sw * sh and all(grid[c] < 0 for c in cells):
+                for c in cells:
+                    grid[c] = len(rects)
+                x1 = cx[i + 1] if sw == 1 else cx[(i + 1) % n_cells + 1] + (pu if i + 1 >= n_cells else 0)
+                y1 = cy[j + 1] if sh == 1 else cy[(j + 1) % n_cells + 1] + (pv if j + 1 >= n_cells else 0)
+                rects.append((cx[i], cy[j], x1 - cx[i], y1 - cy[j]))
+                break
+    rects = np.array(rects)
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float64)
+    x = np.mod((xx + 0.5) / ppm + noise(h, w, 3.0, seed + 1) * warp, pu)
+    y = np.mod((h - 1 - yy + 0.5) / ppm + noise(h, w, 3.0, seed + 2) * warp, pv)
+    ci = np.clip(np.searchsorted(cx, x, side="right") - 1, 0, n_cells - 1)
+    cj = np.clip(np.searchsorted(cy, y, side="right") - 1, 0, n_cells - 1)
+    ids = grid[cj, ci]
+    dx = np.mod(x - rects[ids, 0], pu)
+    dy = np.mod(y - rects[ids, 1], pv)
+    k = 0.012
+    dist = -k * np.log(np.exp(-dx / k) + np.exp(-(rects[ids, 2] - dx) / k) + np.exp(-dy / k)
+                       + np.exp(-(rects[ids, 3] - dy) / k))
+    return ids, np.maximum(dist, 0.0), len(rects)
+
+
+def block_field(h, w, ppm, courses, seed, len_range, warp=0.012, force=None):
     """Irregular coursed blocks on a torus. Returns stone id, distance to the nearest joint (m), stone count."""
     rng = np.random.RandomState(seed)
     pu, pv = w / ppm, h / ppm
@@ -149,6 +198,8 @@ def block_field(h, w, ppm, courses, seed, len_range, warp=0.012):
             if joints[-1] + step > pu + joints[0] - len_range[0] * 0.7:
                 break
             joints.append(joints[-1] + step)
+        if force and c in force:
+            joints = force[c]
         joints = np.array(joints)
         ext = np.concatenate([joints - pu, joints, joints + pu])
         i = np.searchsorted(ext, x[m]) - 1
@@ -161,9 +212,13 @@ def block_field(h, w, ppm, courses, seed, len_range, warp=0.012):
     return ids, dist, next_id
 
 
-def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=0.022, relief=0.011, warp=0.012):
+def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=0.022, relief=0.011, warp=0.012, force=None,
+               rect_cells=0):
     """Shared block material. Returns albedo (sRGB 0..1), height (m), roughness, all periodic."""
-    ids, d, n = block_field(h, w, ppm, courses, seed, len_range, warp)
+    if rect_cells:
+        ids, d, n = rect_field(h, w, ppm, seed, rect_cells, warp)
+    else:
+        ids, d, n = block_field(h, w, ppm, courses, seed, len_range, warp, force)
     rng = np.random.RandomState(seed + 7)
     pu, pv = w / ppm, h / ppm
 
@@ -177,7 +232,12 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
     profile = sstep(0, 1, (d - jw) / ww)
     profile = np.where(d < jw, 0.0, profile)
 
-    tone = rng.uniform(-1, 1, n)[ids]
+    tone = rng.uniform(-1, 1, n)
+    tone = (np.sign(tone) * np.abs(tone) ** 0.8)[ids]    # more stones far from the mean
+    # High-pass over about a metre: stones differ from their neighbours, but no dark or pale cluster forms, because a cluster
+    # is a landmark that repeats every tile.
+    tone = tone - blur(tone, palette.get("tone_hp", 0.0) * ppm) if palette.get("tone_hp") else tone
+    tone = tone / max(tone.std() / 0.55, 1e-6)
     warm = rng.uniform(-1, 1, n)[ids]
     inset = rng.uniform(-1, 1, n)[ids]
     rough_s = rng.uniform(-1, 1, n)[ids]
@@ -191,21 +251,23 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
 
     pits = sstep(1.6, 2.8, noise(h, w, 1.4, seed + 8, low=30) + 0.5 * n_mid)
     height = profile * (relief + 0.005 * inset) + 0.006 * sstep(0.0, 0.09, d) + 0.0014 * n_lo * profile + 0.0013 * n_mid * profile + 0.00030 * n_hi * profile \
-        + 0.00022 * tool * tool_on * profile - 0.0018 * pits * profile + 0.0005 * n_hi * (1 - profile)
+        + 0.00022 * tool * tool_on * profile - 0.0009 * pits * profile + 0.0005 * n_hi * (1 - profile)
 
     base = np.array(palette["stone"])
     alb = np.ones((h, w, 3)) * base
-    v = 1.0 + palette["tone"] * tone + 0.07 * n_lo + 0.035 * n_mid + 0.02 * n_hi
+    v = 1.0 + palette["tone"] * tone + 0.015 * n_lo + 0.05 * n_mid + 0.02 * n_hi
     alb = alb * v[..., None]
     alb[..., 0] *= 1.0 + palette["warm"] * warm
     alb[..., 2] *= 1.0 - palette["warm"] * 1.8 * warm
-    stain = sstep(0.0, 2.6, n_lo * 0.8 + n_mid * 0.35)
+    # soiling lives at stone scale (n_mid), with several features per tile: a metre-scale blotch would be a landmark that
+    # repeats every 4 m
+    stain = sstep(0.0, 2.6, n_lo * 0.12 + n_mid * 0.95)
     alb *= (1.0 - palette["stain"] * stain[..., None] * np.array([0.85, 0.95, 1.1]))
-    pale = sstep(0.3, 2.6, -n_lo * 0.7 + n_mid * 0.35)
+    pale = sstep(0.3, 2.6, -n_lo * 0.12 + n_mid * 0.9)
     alb = alb * (1 - 0.35 * pale[..., None]) + np.array(palette["pale"]) * 0.35 * pale[..., None]
     arris = sstep(0.0, 0.6, profile) * (1 - sstep(0.6, 1.0, profile))
-    alb *= 1.0 + 0.08 * arris[..., None]
-    alb *= 1.0 - 0.28 * pits[..., None]
+    alb *= 1.0 + 0.02 * arris[..., None]
+    alb *= 1.0 - 0.13 * pits[..., None]
     alb *= (1.0 + 0.035 * tool * tool_on)[..., None]
     run = streaks(h, w, seed + 9)
     dark_run = sstep(0.7, 2.4, run) * palette.get("runs", 0.0)
@@ -213,13 +275,17 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
     alb *= 1.0 - 0.34 * dark_run[..., None] * np.array([0.85, 1.0, 1.2])
     alb = alb * (1 - 0.40 * pale_run[..., None]) + np.array(palette["pale"]) * 0.40 * pale_run[..., None]
     fleck = sstep(0.9, 2.2, noise(h, w, 1.7, seed + 10, low=24))
-    alb *= 1.0 - 0.15 * fleck[..., None] * np.array([0.8, 1.0, 1.25])
+    alb *= 1.0 - 0.06 * fleck[..., None] * np.array([0.8, 1.0, 1.25])
     mort = np.array(palette["mortar"])[None, None, :] * (1.0 + 0.06 * n_mid + 0.05 * n_hi)[..., None]
+    # mortar follows the local stone value, so a joint reads by its recess and not as a drawn outline
+    blur_alb = np.dstack([blur(alb[..., c], 0.05 * ppm) for c in range(3)])
+    mort = mort * 0.5 + blur_alb * mort.mean() / max(blur_alb.mean(), 1e-6) * 0.5
     mix = sstep(0.0, 0.35, profile)[..., None]
     alb = mort * (1 - mix) + alb * mix
 
-    rough = palette["rough"] + 0.05 * rough_s + 0.03 * n_mid - palette["polish"] * profile * sstep(-0.5, 1.5, n_lo)
-    rough = np.where(profile < 0.35, 0.95, rough)
+    worn = profile ** 2 * sstep(-1.0, 1.0, n_lo + 0.5 * n_mid)
+    rough = palette["rough"] + 0.05 * rough_s + 0.03 * n_mid - palette["polish"] * worn
+    rough = np.where(profile < 0.35, 0.92, rough)
     return np.clip(alb, 0, 1), height, np.clip(rough, 0.25, 1)
 
 
@@ -234,7 +300,8 @@ def plaster_maps(h, w, ppm, seed):
     n_mid = noise(h, w, 2.4, seed + 1, low=5)
     n_hi = noise(h, w, 1.3, seed + 2, low=50)
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float64)
-    edge_v = 1.0 - sstep(0.0, 0.32, 1.0 - (yy + 0.5) / h)    # bottom of band: edge of web at the arch/wall
+    vv = 1.0 - (yy + 0.5) / h                                # 0 hidden edge of the web, WEB_FACE_V at the arch/wall face
+    edge_v = 1.0 - sstep(WEB_FACE_V, WEB_FACE_V + 0.28, vv)
     centre_u = np.abs((xx + 0.5) / w - 0.5) * 2              # 0 crown, 1 springing
     low = sstep(0.55, 1.0, centre_u)
     grime = np.clip(0.55 * low + 0.45 * edge_v * low + 0.25 * edge_v, 0, 1)
@@ -245,13 +312,13 @@ def plaster_maps(h, w, ppm, seed):
     pal = np.array([0.905, 0.855, 0.735])
     v = 1.0 + 0.030 * n_lo + 0.012 * n_mid + 0.008 * n_hi
     alb = pal * v[..., None]
-    alb *= 1 - 0.14 * blotch[..., None] * np.array([0.9, 1.0, 1.15])
+    alb *= 1 - 0.22 * blotch[..., None] * np.array([0.9, 1.0, 1.15])
     alb *= 1 - 0.20 * grime[..., None] * np.array([0.8, 1.0, 1.3])
     alb *= 1 - 0.35 * crack[..., None]
-    # contact shade where the web dies into the arch/wall: real AO in the render is weak with both surfaces flush at the
-    # crown, and the lightmap pass may be skipped on mobile
-    contact = 1.0 - sstep(0.0, 0.10, 1.0 - (yy + 0.5) / h)
-    alb *= 1 - 0.30 * contact[..., None] * np.array([0.8, 1.0, 1.25])
+    # contact shade where the web dies into the back of the ring: the shadowed step. The lightmap pass may be skipped on
+    # mobile, so a little of it is painted
+    contact = 1.0 - sstep(WEB_FACE_V, WEB_FACE_V + 0.09, vv)
+    alb *= 1 - 0.42 * contact[..., None] * np.array([0.8, 1.0, 1.25])
     rough = 0.9 + 0.03 * n_mid
     return np.clip(alb, 0, 1), height, np.clip(rough, 0.5, 1)
 
@@ -281,19 +348,20 @@ def half(a):
 
 def build_textures():
     os.makedirs(TEX_DIR, exist_ok=True)
-    pal_a = dict(stone=[0.770, 0.665, 0.495], mortar=[0.79, 0.73, 0.61], pale=[0.88, 0.83, 0.72], tone=0.085, warm=0.03,
-                 stain=0.46, rough=0.86, polish=0.04, runs=1.0)
+    pal_a = dict(stone=[0.770, 0.665, 0.495], mortar=[0.70, 0.61, 0.46], pale=[0.88, 0.83, 0.72], tone=0.125, warm=0.035,
+                 stain=0.40, rough=0.86, polish=0.04, runs=0.22, tone_hp=0.32)
     # band A
     ppm = 512
-    a_alb, a_h, a_r = stone_maps(1024, 2048, ppm, ASHLAR_COURSES, 1501, (0.30, 0.78), pal_a, warp=0.007)
+    a_alb, a_h, a_r = stone_maps(1024, 2048, ppm, ASHLAR_COURSES, 1501, (0.30, 0.78), pal_a, warp=0.007,
+                                 force={len(ASHLAR_COURSES) - 1: CAP_JOINTS})
     a_n = normal_from_height(a_h, ppm)
     a_ao = ao_from_height(a_h, ppm, 0.012)
     # band B: voussoirs. One course across, irregular joints along the arc. Generated on a square-ish torus in metres.
     bh, bw = B_ROWS[1] - B_ROWS[0], ATLAS
     bppm = ATLAS / B_LEN
-    pal_b = dict(pal_a, tone=0.10, warm=0.04, stain=0.36, stone=[0.755, 0.640, 0.445], mortar=[0.80, 0.74, 0.62])
-    b_alb, b_h, b_r = stone_maps(bh, bw, bppm, [bh / bppm], 1601, (0.17, 0.27), pal_b, joint=0.006, wear=0.018,
-                                 relief=0.014, warp=0.005)
+    pal_b = dict(pal_a, tone=0.10, warm=0.03, stain=0.36, stone=[0.755, 0.625, 0.420], mortar=[0.72, 0.63, 0.47])
+    b_alb, b_h, b_r = stone_maps(bh, bw, bppm, [bh / bppm], 1604, (0.17, 0.27), pal_b, joint=0.004, wear=0.018,
+                                 relief=0.008, warp=0.005)
     # the soffit carries the limewash of the crypt.jpg arches: paler and lower contrast than the ring on the arch face
     fold = np.abs(((np.arange(bh) + 0.5) / bh - 0.5) * B_DEPTH)[:, None, None]
     wash = 0.46 * (1 - sstep(0.26, 0.31, fold))
@@ -302,7 +370,7 @@ def build_textures():
     b_ao = ao_from_height(b_h, bppm, 0.012)
     # band C: plaster
     ch, cw = C_ROWS[1] - C_ROWS[0], ATLAS
-    cppm = ATLAS / 5.6
+    cppm = ATLAS / (2 * WEB_L)
     c_alb, c_h, c_r = plaster_maps(ch, cw, cppm, 1701)
     c_n = normal_from_height(c_h, cppm)
     c_ao = np.ones((ch, cw))
@@ -323,24 +391,23 @@ def build_textures():
         rgh[rr[0]:rr[1]] = ro
         aoc[rr[0]:rr[1]] = ao
     # cavity also goes into the base colour a little: Cycles and glTF viewers ignore the occlusion input differently
-    alb = alb * (0.84 + 0.16 * aoc)[..., None]
+    alb = alb * (0.90 + 0.10 * aoc)[..., None]
     imgs = {}
     imgs["ashlar_color"] = to_image("stone_ashlar_color", alb, True)
     imgs["ashlar_normal"] = to_image("stone_ashlar_normal", nrm, False)
     orm = np.dstack([half(aoc), half(rgh), np.zeros((ATLAS // 2, ATLAS // 2))])
     imgs["ashlar_orm"] = to_image("stone_ashlar_orm", orm, False)
 
-    # stone_floor: 4 x 4 m full tile at 256 px/m (texture memory budget: see report)
-    pal_f = dict(stone=[0.72, 0.665, 0.565], mortar=[0.50, 0.45, 0.37], pale=[0.76, 0.72, 0.64], tone=0.09, warm=0.02,
-                 stain=0.38, rough=0.66, polish=0.22)
+    # stone_floor: 4 x 4 m full tile at 256 px/m. Random-rectangle flags on a 9 x 9 grid: 0.41-0.96 m, thin quiet joints
+    pal_f = dict(stone=[0.70, 0.635, 0.525], mortar=[0.63, 0.57, 0.47], pale=[0.76, 0.72, 0.64], tone=0.11, warm=0.03,
+                 stain=0.34, rough=0.70, polish=0.20)
     fppm = 256
-    courses = [0.66, 0.84, 0.54, 0.72, 0.60, 0.64]
-    f_alb, f_h, f_r = stone_maps(1024, 1024, fppm, courses, 1801, (0.48, 1.15), pal_f, joint=0.004, wear=0.03,
-                                 relief=0.007, warp=0.012)
+    f_alb, f_h, f_r = stone_maps(1024, 1024, fppm, None, 1801, None, pal_f, joint=0.0028, wear=0.024, relief=0.0045,
+                                 warp=0.014, rect_cells=9)
     f_ao = ao_from_height(f_h, fppm, 0.010)
-    f_alb = f_alb * (0.84 + 0.16 * f_ao)[..., None]
+    f_alb = f_alb * (0.93 + 0.07 * f_ao)[..., None]
     imgs["floor_color"] = to_image("stone_floor_color", f_alb, True)
-    imgs["floor_normal"] = to_image("stone_floor_normal", normal_from_height(f_h, fppm, 0.6), False)
+    imgs["floor_normal"] = to_image("stone_floor_normal", normal_from_height(f_h, fppm, 0.45), False)
     imgs["floor_orm"] = to_image("stone_floor_orm", np.dstack([f_ao, f_r, np.zeros_like(f_r)]), False)
     return imgs
 
@@ -354,7 +421,7 @@ def occlusion_group():
     return g
 
 
-def make_material(name, color, normal, orm):
+def make_material(name, color, normal, orm, vcol=False):
     m = bpy.data.materials.new(name)
     m.use_nodes = True
     m.use_backface_culling = True
@@ -370,7 +437,18 @@ def make_material(name, color, normal, orm):
     sep = nt.nodes.new("ShaderNodeSeparateColor")
     grp = nt.nodes.new("ShaderNodeGroup")
     grp.node_tree = occlusion_group()
-    nt.links.new(tc.outputs["Color"], bsdf.inputs["Base Color"])
+    if vcol:
+        ca = nt.nodes.new("ShaderNodeVertexColor")
+        ca.layer_name = "Col"
+        mx = nt.nodes.new("ShaderNodeMix")
+        mx.data_type = "RGBA"
+        mx.blend_type = "MULTIPLY"
+        mx.inputs["Factor"].default_value = 1.0
+        nt.links.new(tc.outputs["Color"], mx.inputs["A"])
+        nt.links.new(ca.outputs["Color"], mx.inputs["B"])
+        nt.links.new(mx.outputs["Result"], bsdf.inputs["Base Color"])
+    else:
+        nt.links.new(tc.outputs["Color"], bsdf.inputs["Base Color"])
     nt.links.new(tn.outputs["Color"], nm.inputs["Color"])
     nt.links.new(nm.outputs["Normal"], bsdf.inputs["Normal"])
     nt.links.new(to.outputs["Color"], sep.inputs["Color"])
@@ -478,6 +556,30 @@ def build_floor(mat):
     return ob
 
 
+WALL_ROWS = [0.0, 0.35, 0.8, 1.4, 2.0, 2.7, 3.4, 4.0, TOP]     # vertex rows, for the height soiling
+
+
+def grime(z):
+    """stone_ashlar vertex colour: rising damp near the floor, soot under the springing and above. Linear RGB multiplier."""
+    t = np.clip(z / 1.1, 0.0, 1.0)
+    damp = 1.0 - t * t * (3 - 2 * t)
+    u = np.clip((z - 2.2) / 1.6, 0.0, 1.0)
+    soot = u * u * (3 - 2 * u)
+    return (1.0 - 0.34 * damp - 0.14 * soot, 1.0 - 0.38 * damp - 0.16 * soot, 1.0 - 0.46 * damp - 0.20 * soot)
+
+
+def add_grime(ob, height=True):
+    me = ob.data
+    att = me.color_attributes.new("Col", "FLOAT_COLOR", "POINT")
+    data = []
+    for v in me.vertices:
+        c = grime(v.co.z) if height else (1.0, 1.0, 1.0)
+        data.extend((c[0], c[1], c[2], 1.0))
+    att.data.foreach_set("color", data)
+    me.color_attributes.active_color = att
+    me.color_attributes.render_color_index = 0
+
+
 def build_wall(mat):
     b = Builder()
     h, t = CELL / 2, WALL_T / 2
@@ -485,26 +587,34 @@ def build_wall(mat):
     back = lambda s, z: (-s, t, z)      # faces +Y: s runs -X
     end_r = lambda s, z: (h, s, z)
     end_l = lambda s, z: (-h, -s, z)
-    for tag, place, off in (("f", front, 0.5), ("b", back, 0.5)):
-        wall_face(b, tag + "0", -h, h, 0, 2.0, place, off)
-        wall_face(b, tag + "1", -h, h, 2.0, CROWN, place, off + 0.37)
-    wall_face(b, "e0", -t, t, 0, 2.0, end_r, 0.0)
-    wall_face(b, "e1", -t, t, 2.0, CROWN, end_r, 0.37)
-    wall_face(b, "e2", -t, t, 0, 2.0, end_l, 0.0)
-    wall_face(b, "e3", -t, t, 2.0, CROWN, end_l, 0.37)
-    b.face("top", [(-h, -t, CROWN), (h, -t, CROWN), (h, t, CROWN), (-h, t, CROWN)],
+    spans = [(0.0, 2.0, 0.0), (2.0, 4.0, 0.37), (4.0, TOP, 0.71)]
+
+    def tiled(tag, s0, s1, place, off):
+        for k, (z0, z1, o) in enumerate(spans):
+            rows = [z for z in WALL_ROWS if z0 <= z <= z1]
+            for z_a, z_b in zip(rows[:-1], rows[1:]):
+                pts = [place(s0, z_a), place(s1, z_a), place(s1, z_b), place(s0, z_b)]
+                za, zb = z_a - z0, z_b - z0
+                u0, u1 = s0 / 4 + off + o, s1 / 4 + off + o
+                b.face("%s%d" % (tag, k), pts, [band_a(u0, za), band_a(u1, za), band_a(u1, zb), band_a(u0, zb)], False)
+
+    tiled("f", -h, h, front, 0.5)
+    tiled("b", -h, h, back, 0.0)        # the two sides of a wall differ, so a corridor does not mirror itself
+    tiled("e", -t, t, end_r, 0.0)
+    tiled("g", -t, t, end_l, 0.0)
+    b.face("top", [(-h, -t, TOP), (h, -t, TOP), (h, t, TOP), (-h, t, TOP)],
            [band_a(0, 0), band_a(1, 0), band_a(1, 0.6), band_a(0, 0.6)], False)
     ob = b.to_object("wall", mat)
-    collision(ob, [((-h, -t, 0), (h, t, CROWN))])
+    collision(ob, [((-h, -t, 0), (h, t, TOP))])
     return ob
 
 
 def build_pier(mat):
     b = Builder()
     rng = np.random.RandomState(31)
-    half = PIER / 2 + PIER_PROUD
+    half = PIER / 2 - PIER_INSET
     # shaft: square with a worn, slightly irregular chamfer. Rings at these heights:
-    levels = [0.0, 0.55, 1.2, SHAFT_TOP]
+    levels = [0.0, 0.35, 0.8, 1.4, SHAFT_TOP]
     ch = [[0.012 + 0.016 * rng.uniform() for _ in levels] for _ in range(4)]
     for k in range(4):              # k = which side; rotate +90 deg each side
         ca, sa = [(1, 0), (0, 1), (-1, 0), (0, -1)][k]
@@ -523,24 +633,26 @@ def build_pier(mat):
             Q = (P(s0r, z0), (*rot(half, -half + c0r), z0), (*rot(half, -half + c1r), z1), P(s1r, z1))
             b.face("c%d" % k, list(Q), [band_a(s0r / 4, z0), band_a((s0r + c0r * 1.4) / 4, z0),
                                         band_a((s1r + c1r * 1.4) / 4, z1), band_a(s1r / 4, z1)], True)
-    # capital: chamfered bed, then block up to 2.2, slightly rounded lower arris
+    # capital: a square impost in two steps with crisp, flat undersides. Half widths from the axis:
     cap = CAPITAL / 2
-    prof = [(0.0, SHAFT_TOP), (0.012, SHAFT_TOP + 0.006), (cap - PIER / 2 - 0.018, SHAFT_TOP + 0.075),
-            (cap - PIER / 2 - 0.004, SHAFT_TOP + 0.095), (cap - PIER / 2, SHAFT_TOP + 0.115),
-            (cap - PIER / 2, SPRING - 0.012), (cap - PIER / 2 - 0.008, SPRING)]
-    cz0 = CAP_COURSE[0] + 0.015
+    low = 0.345
+    prof = [(half - 0.01, SHAFT_TOP), (low - 0.006, SHAFT_TOP), (low, SHAFT_TOP + 0.006), (low, 2.045),
+            (cap - 0.008, 2.045), (cap, 2.053), (cap, SPRING - 0.006), (cap - 0.006, SPRING)]
+    total = sum(math.hypot(prof[i + 1][0] - prof[i][0], prof[i + 1][1] - prof[i][1]) for i in range(len(prof) - 1))
+    fit = min(1.0, (CAP_COURSE[1] - CAP_COURSE[0] - 0.05) / total)
     for k in range(4):
         ca, sa = [(1, 0), (0, 1), (-1, 0), (0, -1)][k]
         rot = lambda x, y: (ca * x - sa * y, sa * x + ca * y)
         rows, uvs = [], []
         dist = 0.0
-        for j, (o, z) in enumerate(prof):
+        for j, (w, z) in enumerate(prof):
             if j:
-                dist += math.hypot(o - prof[j - 1][0], z - prof[j - 1][1])
-            w = half + o
+                dist += math.hypot(w - prof[j - 1][0], z - prof[j - 1][1])
+            v = CAP_COURSE[0] + 0.025 + dist * fit
+            um = CAP_U[k % 2]
             rows.append([(*rot(-w, -w), z), (*rot(w, -w), z)])
-            uvs.append([band_a(-w / 4 + 0.27 * k, cz0 + dist), band_a(w / 4 + 0.27 * k, cz0 + dist)])
-        b.grid("cap%d" % k, rows, uvs, smooth=True)
+            uvs.append([band_a(um - w / 4, v), band_a(um + w / 4, v)])
+        b.grid("cap%d" % k, rows, uvs, smooth=False)
     ob = b.to_object("pier", mat)
     h = PIER / 2
     collision(ob, [((-h, -h, 0), (h, h, SHAFT_TOP)), ((-cap, -cap, SHAFT_TOP), (cap, cap, SPRING))])
@@ -554,12 +666,11 @@ def build_arch(mat):
     t = WALL_T / 2
     sect = [(0.28, 0.008), (0.262, 0.0), (-0.262, 0.0), (-0.28, 0.008)]
     rim = [(0.30, 0.038), (0.293, 0.022)]  # outer arris, front (+Y); mirrored for the back
-    s_total = math.pi * ARCH_R
     mid = 0.5 * (B_V0 + B_V1)
     dv = 1.0 / B_DEPTH * (B_V1 - B_V0)
 
     def uv(th, d_fold):
-        u = 0.5 + (th - math.pi / 2) * ARCH_R / B_LEN
+        u = 0.5 + (th - math.pi / 2) * R_ARCH / B_LEN
         return (u, mid + d_fold * dv)
 
     rows, uvs = [], []
@@ -573,18 +684,16 @@ def build_arch(mat):
             c, s = math.cos(th), math.sin(th)
             if item[0]:
                 y = t if item[0] == "front_out" else -t
-                # flat-topped outer outline, reaches the piece box: x +-2.0, z 3.9
+                # flat-topped outer outline, reaches the piece box: x +-2.0, z 4.15. Always above the web section.
                 x = 2.0 * c
-                z = min(SPRING + 1.95 * s, CROWN)
+                z = min(SPRING + 2.1 * s, TOP)
                 fold = 0.5 * (1 if y > 0 else -1)
                 row.append((x, y, z))
                 urow.append(uv(th, fold))
             else:
                 y, dr = item[1]
-                # the worn arris dies out at the crown, staying under the 3.9 top of the piece
-                fade = s ** 6
-                foot = min(1.0, s / 0.1)        # ... and at the springing, so no hollow shows at the pier corner
-                r = ARCH_R + dr * foot * (1 - fade) + 0.0018 * (dr / 0.038) * fade
+                foot = min(1.0, s / 0.1)        # the worn arris dies out at the springing: no hollow at the pier corner
+                r = R_ARCH + dr * foot
                 x = r * c
                 z = SPRING + r * s
                 fold = (y + (dr if abs(y) >= 0.29 else 0.0) * (1 if y > 0 else -1))
@@ -607,7 +716,7 @@ def build_arch(mat):
     tris = []
     ring = [(R_ARCH * math.cos(math.pi * i / seg), SPRING + R_ARCH * math.sin(math.pi * i / seg)) for i in range(seg + 1)]
     outer = [(2.0 * math.cos(math.pi * i / seg) if abs(math.cos(math.pi * i / seg)) > 0.71 else
-              R_ARCH * math.cos(math.pi * i / seg), CROWN if i not in (0, seg) else SPRING) for i in range(seg + 1)]
+              R_ARCH * math.cos(math.pi * i / seg), TOP if i not in (0, seg) else SPRING) for i in range(seg + 1)]
     outer[0], outer[seg] = (2.0, SPRING), (-2.0, SPRING)
     # outline (counter-clockwise seen from +Y is not required for a trimesh, but keep normals outward)
     for i in range(seg):
@@ -622,14 +731,14 @@ def build_arch(mat):
 
 
 def web_h(a):
-    """Superellipse web section: rise above springing at plan offset a from the barrel axis."""
-    a = min(abs(a), R_ARCH)
-    return WEB_CROWN * max(0.0, 1.0 - (a / R_ARCH) ** WEB_N) ** (1.0 / WEB_N)
+    """Semi-elliptical web section: rise above springing at plan offset a from the barrel axis."""
+    a = min(abs(a), WEB_W)
+    return WEB_RISE * math.sqrt(max(0.0, 1.0 - (a / WEB_W) ** 2))
 
 
 def web_arc_table(steps=400):
     # sample densely near the springing, where the profile is steep
-    xs = [R_ARCH * (1 - (1 - i / steps) ** 3) for i in range(steps + 1)]
+    xs = [WEB_W * (1 - (1 - i / steps) ** 3) for i in range(steps + 1)]
     s = [0.0]
     for i in range(steps):
         s.append(s[-1] + math.hypot(xs[i + 1] - xs[i], web_h(xs[i + 1]) - web_h(xs[i])))
@@ -638,10 +747,11 @@ def web_arc_table(steps=400):
 
 WEB_XS, WEB_S = web_arc_table()
 WEB_L = WEB_S[-1]
+WEB_FACE_V = 0.012 + 0.976 * (1 - R_ARCH / WEB_W)      # fraction of band C where a web enters the room
 
 
 def web_s(x):
-    x = min(abs(x), R_ARCH)
+    x = min(abs(x), WEB_W)
     i = np.searchsorted(WEB_XS, x)
     if i == 0:
         return 0.0
@@ -658,11 +768,11 @@ def web_x_at_s(s):
     return WEB_XS[i - 1] + t * (WEB_XS[i] - WEB_XS[i - 1])
 
 
-def vault_z(x, y, soft=0.17):
+def vault_z(x, y, soft=0.10):
     """Ceiling of the union of two barrels, with a soft groin that fades to nothing at springing and crown."""
     a, b = web_h(x), web_h(y)
     hi, lo = max(a, b), min(a, b)
-    t = hi / WEB_CROWN
+    t = hi / WEB_RISE
     k = soft * 4 * t * (1 - t)
     g = max(k - (hi - lo), 0.0)
     extra = g * g / (4 * k) if k > 1e-6 else 0.0
@@ -673,15 +783,16 @@ def build_vault(mat):
     b = Builder()
     half_cols = 8
     rows_n = 7
-    cs = [web_x_at_s(WEB_L * i / half_cols) / R_ARCH for i in range(half_cols + 1)]
+    cs = [web_x_at_s(WEB_L * i / half_cols) / WEB_W for i in range(half_cols + 1)]
     cs = [-c for c in cs[::-1]] + cs[1:]        # -1 .. 1, densest towards the groins
-    ys = [R_ARCH + WEB_TUCK] + [R_ARCH * (1 - j / rows_n) for j in range(rows_n + 1)]
-    edge = R_ARCH + WEB_TUCK
+    # first row: hidden flare down to the springing, behind the arch/wall face. Second row: exactly on the face.
+    ys = [WEB_W] + [R_ARCH * (1 - j / rows_n) for j in range(rows_n + 1)]
+    edge = WEB_W
     du = 0.5 / WEB_L * 0.985
 
     def lump(x, y):
         # hand-laid plaster: a few mm of low frequency unevenness, none at the springing or the crown
-        t = (vault_z(x, y) - SPRING) / WEB_CROWN
+        t = (vault_z(x, y) - SPRING) / WEB_RISE
         return 0.009 * 4 * t * (1 - t) * (math.sin(1.7 * x + 0.8 * y + 0.4) * math.cos(2.3 * y - 0.5 * x))
 
     for k in range(4):
@@ -691,7 +802,7 @@ def build_vault(mat):
         for y in ys:
             row, urow = [], []
             for c in cs:
-                xl = c * min(y, R_ARCH)
+                xl = c * y
                 px, py = ca * xl - sa * y, sa * xl + ca * y
                 z = vault_z(xl, y) + lump(px, py)
                 row.append((px, py, z))
@@ -706,7 +817,7 @@ def build_vault(mat):
     # coarse collision: same surface at low resolution
     cb = []
     cc = [-1.0, -0.8, -0.45, 0.0, 0.45, 0.8, 1.0]
-    yy = [R_ARCH, R_ARCH * 0.55, 0.0]
+    yy = [WEB_W, R_ARCH * 0.55, 0.0]
     for k in range(4):
         ca, sa = [(1, 0), (0, 1), (-1, 0), (0, -1)][k]
         for j in range(len(yy) - 1):
@@ -751,13 +862,13 @@ def build_ceiling(name, underside, seed, mat):
             rows.append(row)
             uvs.append(urow)
         b.grid("under%d" % part, rows, uvs, flip=True, smooth=False)
-    # four sides: rough tumbled face, set back from the edge line, up to 3.9
+    # four sides: rough tumbled face, set back from the edge line, up to 4.15
     cols = n
     nz = 5
     for k in range(4):
         ca, sa = [(1, 0), (0, 1), (-1, 0), (0, -1)][k]
         rot = lambda x, y: (ca * x - sa * y, sa * x + ca * y)
-        zs = [underside + (CROWN - underside) * (j / nz) for j in range(nz + 1)]
+        zs = [underside + (TOP - underside) * (j / nz) for j in range(nz + 1)]
         # keep a row boundary at z = 2 (band A restarts there)
         zc = min(range(1, nz), key=lambda j: abs(zs[j] - 2.0))
         zs[zc] = 2.0
@@ -782,13 +893,13 @@ def build_ceiling(name, underside, seed, mat):
                     px, py = rot(s, -h + in_set)
                     zz = z + bottom if j == 0 else z
                     row.append((px, py, zz))
-                    zv = z - 2.0 if part == 1 else z
+                    zv = (z - 2.0) * 2.0 / (TOP - 2.0) if part == 1 else zz
                     urow.append(band_a(s / 4 + 0.5 + 0.21 * k, zv % 2.0 if part == 0 else zv))
                 rows.append(row)
                 uvs.append(urow)
             b.grid("side%d_%d" % (k, part), rows, uvs, smooth=False)
     ob = b.to_object(name, mat)
-    collision(ob, [((-h, -h, underside), (h, h, CROWN))])
+    collision(ob, [((-h, -h, underside), (h, h, TOP))])
     return ob
 
 
@@ -814,12 +925,14 @@ def add_uv2(ob):
 def main():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     imgs = build_textures()
-    ashlar = make_material("stone_ashlar", imgs["ashlar_color"], imgs["ashlar_normal"], imgs["ashlar_orm"])
+    ashlar = make_material("stone_ashlar", imgs["ashlar_color"], imgs["ashlar_normal"], imgs["ashlar_orm"], vcol=True)
     flr = make_material("stone_floor", imgs["floor_color"], imgs["floor_normal"], imgs["floor_orm"])
     pieces = [build_floor(flr), build_wall(ashlar), build_pier(ashlar), build_arch(ashlar), build_vault(ashlar),
               build_ceiling("ceiling_crouch", CROUCH_Y, 77, ashlar), build_ceiling("ceiling_crawl", CRAWL_Y, 91, ashlar)]
     for ob in pieces:
         add_uv2(ob)
+        if ob.name != "floor":
+            add_grime(ob, height=ob.name in ("wall", "pier"))
     json.dump({
         "note": "written by build.py; rows count from the top of the image",
         "atlas_size": ATLAS, "band_a_rows": list(A_ROWS), "band_b_rows": list(B_ROWS), "band_c_rows": list(C_ROWS),
