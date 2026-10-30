@@ -1,0 +1,11 @@
+{
+  "scene": "res://tests/assets/hero_anim_preview.tscn",
+  "video": "docs/qa/videos/M2/hero_animations.mp4",
+  "seconds": 24.0,
+  "fps": 30,
+  "resolution": "1280x590",
+  "mode": "accurate",
+  "device": "Vulkan 1.4.318 - Forward Mobile - Using Device #0: Unknown - llvmpipe (LLVM 20.1.2, 256 bits)",
+  "accurate_fell_back_to_opengl": false,
+  "errors": []
+}
