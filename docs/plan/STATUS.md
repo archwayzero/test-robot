@@ -10,20 +10,23 @@ Last updated: 2026-10-31, session 4.
 ## Open PRs (human to review/merge)
 | PR | Branch | Task | State after merge |
 |---|---|---|---|
-| #53 | task/qa/T017-crypt-kit-wall-lamp-budgets-an | T017 | `task.py done T017` |
-| (this) | arch/t018-ready | contract figures for T018, status | none |
+| #55 | task/module-dev/maze/T018-maze-crypt-kit-lamps-lighting- | T018 | `task.py done T018` |
+| (this) | arch/after-t018 | maze docs, retrospective, status | none |
 
 ## Next actions, in order
-1. After both merge: T018 module-dev (maze), rules in docs/contracts/crypt-kit.md and docs/qa/reports/T017-crypt-kit-wall-lamp.md.
-2. T019 module-dev (player): hookup rules in godot/modules/player/CLAUDE.md.
-3. T020 M2 milestone QA with videos.
-4. N1 follow-ups: T033 (qa), T034-T036 (module-dev audits) - small, slot between asset tasks.
-5. M3: T021 export preset (exclude `res://tests/*`, T014 preview scenes, automation, and
-   `res://assets/*/model/*_preview*`), T022, T023 (Mac).
+1. After #55: T040 module-dev (game): tune `ambient_light_color` away from the cool cast and match background OUTPUT to fog
+   output by measuring pixels ([8,8,8]; copying 0.03 left [0,0,0]). Removes the slit on run (0,6)/(0,7) south. Update
+   the Environment copy in maze_preview.gd only through a maze task, or report it. Human judges lighting from captures.
+2. Orchestrator: set the occlusion project setting in project.godot, then remove the setter at maze_world_impl.gd:58.
+3. T019 module-dev (player): hookup rules in godot/modules/player/CLAUDE.md.
+4. T020 M2 milestone QA with videos (motion, shimmer, occlusion pop, TEST_PLAN P1-P4, the 28 unmeasured views).
+5. N1 follow-ups: T033 (qa), T034-T036 (module-dev audits).
+6. M3: T021 export preset (exclude `res://tests/*`, T014 preview scenes, automation, `res://assets/*/model/*_preview*`),
+   T022, T023 (Mac). Verify occlusion on iOS and the load stall on device.
 
 ## Active task
-None running. T039 done (#51). T017 PASS, HEAD 319567a, PR #53: 59/59 tests, budgets 100.0. Lighting (human): keep wall
-lamps. Human accepted the kit look; no further texture or colour work.
+None running. T018 review finished at 756a78e, PR #55: 308/308, budgets 100, assembly 8.5/10, lighting 6.5/10. Known limits
+in the PR. Lighting (human): keep wall lamps. Kit look accepted.
 
 ## Process notes that worked in session 3
 - Quality loops: reviewer measures independently and scores out of 10 against the reference; send back with numbered,
