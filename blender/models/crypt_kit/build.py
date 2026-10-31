@@ -52,6 +52,8 @@ def cli(name):
 
 
 OUT_DIR = cli("--out-dir") or HERE
+# every material setting lives in this versioned file; --params points a trial at another copy
+PARAMS = json.load(open(cli("--params") or os.path.join(HERE, "material_params.json")))
 MAPS_DIR = cli("--maps")
 TEX_DIR = os.path.join(OUT_DIR, "textures")
 BLEND = os.path.join(OUT_DIR, "crypt_kit_model.blend")
@@ -438,8 +440,13 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
     n_soft = blur(n_mid, 0.055 * ppm)
     n_soft = n_soft / (n_soft.std() + 1e-9)
     stain = sstep(-1.0, 2.6, n_lo * 0.25 + n_soft * 0.9)
+    if palette.get("stain_sharp"):      # a6d7e65: no blur, so stains keep the broken edge of n_mid: the crisp speckle
+        stain = sstep(0.0, 2.6, n_lo * 0.12 + n_mid * 0.95)
     alb *= (1.0 - palette["stain"] * stain[..., None] * np.array([0.85, 0.95, 1.1]))
-    pale = sstep(-0.4, 2.8, -n_lo * 0.25 - n_soft * 0.9) * palette.get("pale_amt", 0.14)
+    if palette.get("stain_sharp"):
+        pale = sstep(0.3, 2.6, -n_lo * 0.12 + n_mid * 0.9) * palette.get("pale_amt", 0.35)
+    else:
+        pale = sstep(-0.4, 2.8, -n_lo * 0.25 - n_soft * 0.9) * palette.get("pale_amt", 0.14)
     alb = alb * (1 - pale[..., None]) + np.array(palette["pale"]) * pale[..., None]
     arris = sstep(0.0, 0.6, profile) * (1 - sstep(0.6, 1.0, profile))
     alb *= 1.0 + 0.02 * arris[..., None]
@@ -480,9 +487,9 @@ def ao_from_height(h, ppm, scale):
     return np.clip(1.0 - 0.75 * np.clip(small, 0, 1) - 0.35 * np.clip(large, 0, 1), 0.25, 1.0)
 
 
-PLASTER = (0.925, 0.885, 0.800)
-PLASTER_MID = 0.074
-PLASTER_FINE = 0.016
+PLASTER = PARAMS["plaster"]["colour"]
+PLASTER_MID = PARAMS["plaster"]["mid"]
+PLASTER_FINE = PARAMS["plaster"]["fine"]
 
 
 def plaster_maps(h, w, ppm, seed):
@@ -621,12 +628,11 @@ def half(a):
 def build_textures():
     os.makedirs(TEX_DIR, exist_ok=True)
     STONES.clear()
-    pal_a = dict(stone=[0.760, 0.640, 0.430], pale=[0.86, 0.79, 0.64], tone=0.24, warm=0.022, patch=0.055, rim=0.18,
-                 stain=0.22, rough=0.86, polish=0.04, runs=0.26, tone_hp=0.32)
+    pal_a = PARAMS["ashlar"]
     # band A
     ppm = 512
-    a_alb, a_h, a_r = stone_maps(1024, 2048, ppm, ASHLAR_COURSES, 1501, STONE_LEN, pal_a, warp=0.005, relief=0.009, joint=0.003,
-                                 wear=0.008, force={len(ASHLAR_COURSES) - 1: CAP_JOINTS})
+    a_alb, a_h, a_r = stone_maps(1024, 2048, ppm, ASHLAR_COURSES, 1501, STONE_LEN, pal_a, force={len(ASHLAR_COURSES) - 1: CAP_JOINTS},
+                                 **PARAMS["ashlar_maps"])
     a_n = normal_from_height(a_h, ppm)
     a_ao = ao_from_height(a_h, ppm, 0.012)
     new = read_map("ashlar_band_a_color.png")
@@ -641,9 +647,8 @@ def build_textures():
     # band B: voussoirs. One course across, irregular joints along the arc. Generated on a square-ish torus in metres.
     bh, bw = B_ROWS[1] - B_ROWS[0], ATLAS
     bppm = ATLAS / B_LEN
-    pal_b = dict(pal_a, tone=0.11, warm=0.02, stain=0.14, rim=0.09, stone=[0.965, 0.858, 0.682], tone_hp=0, patch=0.04)
-    b_alb, b_h, b_r = stone_maps(bh, bw, bppm, [bh / bppm], 1604, (0.17, 0.27), pal_b, joint=0.003, wear=0.008,
-                                 relief=0.008, warp=0.005)
+    pal_b = dict(pal_a, **PARAMS["voussoir"])
+    b_alb, b_h, b_r = stone_maps(bh, bw, bppm, [bh / bppm], 1604, (0.17, 0.27), pal_b, **PARAMS["voussoir_maps"])
     # one strip serves every arch: a metre-scale gradient along it would show at the same spot of every arch, so take it out
     lum_b = b_alb.mean(2)
     b_alb = b_alb * (lum_b.mean() / blur(lum_b, 0.7 * bppm))[..., None]
@@ -693,11 +698,9 @@ def build_textures():
 
     # stone_floor: 4 x 4 m full tile at 256 px/m. Flags on a 20 x 20 grid, no straight joint over FLOOR_MAX_RUN.
     # `tone` stays low and high-passed: the eye reads strong per-flag tone on a regular floor as a checkerboard
-    pal_f = dict(stone=[0.615, 0.565, 0.485], pale=[0.67, 0.625, 0.545], tone=0.045, warm=0.02,
-                 stain=0.24, rough=0.70, polish=0.20, tone_hp=0.6)
+    pal_f = PARAMS["floor"]
     fppm = 256
-    f_alb, f_h, f_r = stone_maps(1024, 1024, fppm, None, 1801, None, pal_f, joint=0.0028, wear=0.024, relief=0.0045,
-                                 warp=0.008, rect_cells=20)
+    f_alb, f_h, f_r = stone_maps(1024, 1024, fppm, None, 1801, None, pal_f, rect_cells=20, **PARAMS["floor_maps"])
     f_ao = ao_from_height(f_h, fppm, 0.010)
     f_alb = f_alb * (0.93 + 0.07 * f_ao)[..., None]
     imgs["floor_color"] = to_image("stone_floor_color", f_alb, True)
