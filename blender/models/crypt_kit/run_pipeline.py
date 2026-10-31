@@ -20,11 +20,11 @@ STEPS = [
     BL + [f"{KIT}/crypt_kit_model.blend", "-P", "tools/blender/export_gltf.py", "--", "--out", GLB, "--no-anim"],
     BL + ["--factory-startup", "-P", f"{KIT}/qa/check_kit.py"],
 ]
-IMPORT = [
-    ["godot", "--headless", "--path", "godot", "--import"],
-    ["python3", f"{KIT}/import_settings.py"],
-    ["godot", "--headless", "--path", "godot", "--import"],
-]
+# Three imports: a texture the GLB re-extracts can come back from the second one still lossless (seen on stone_ashlar_color),
+# hence the last one and the --verify.
+GODOT = ["godot", "--headless", "--path", "godot", "--import"]
+SET = ["python3", f"{KIT}/import_settings.py"]
+IMPORT = [GODOT, SET, GODOT, SET, GODOT, SET + ["--verify"]]
 
 
 def main():

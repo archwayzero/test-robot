@@ -79,7 +79,7 @@ for path in [PNG] + ([os.path.join(DIR, arg("--flat"))] if arg("--flat") else []
         print("TARGET1 back wall mid %.4f (>=0.06), span %.3f (>=0.40)" % (res["back wall"]["mid"], res["back wall"]["span"]))
         # soffit*: the review's box. Projected through the camera it lies on the plaster web of the bay between the arches at
         # x=20 and 24. "true sof" is the soffit crown of the arch at x=20, whose face the ring box measures.
-        print("TARGET3 ring/soffit luminance: review box (web) %.3f, true soffit %.3f (>=0.85)" % (
+        print("TARGET3 ring/soffit luminance: review box (web) %.4f, true soffit %.4f (>=0.85)" % (
             res["ring"]["p50"] / res["soffit*"]["p50"], res["ring"]["p50"] / res["true sof"]["p50"]))
 
 for name in ("wall_3_tiles.png", "wall_3_tiles_unalternated.png"):

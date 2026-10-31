@@ -314,12 +314,13 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
     if force:                                            # the capital stones are plain: neither pale nor dark, nor orange
         tone[n - len(force[max(force)]):] = 0.2
         warm_s[n - len(force[max(force)]):] = 0.0
+        tone[[n - len(force[max(force)]), n - len(force[max(force)]) + 2]] = 0.62     # the two a capital maps: pale, as under the ring
     tone = (np.sign(tone) * np.abs(tone) ** 0.8)[ids]    # more stones far from the mean
     # High-pass over about a metre: stones differ from their neighbours, but no dark or pale cluster forms, because a cluster
     # is a landmark that repeats every tile.
     tone = tone - blur(tone, palette.get("tone_hp", 0.0) * ppm) if palette.get("tone_hp") else tone
     # no bright outliers: a lone pale stone is what the eye tracks from tile to tile (the chevron along a wall)
-    tone = np.clip(tone / max(tone.std() / 0.60, 1e-6), -1.5, palette.get("tone_top", 0.62))
+    tone = np.clip(tone / max(tone.std() / 0.60, 1e-6), palette.get("tone_low", -1.15), palette.get("tone_top", 0.62))
     warm = warm_s[ids]
     inset = rng.uniform(-1, 1, n)[ids]
     rough_s = rng.uniform(-1, 1, n)[ids]
@@ -408,7 +409,7 @@ def plaster_maps(h, w, ppm, seed):
     crack = 1 - sstep(0.0, 0.035, np.abs(noise(h, w, 3.0, seed + 3)))
     crack = crack * sstep(0.7, 1.6, noise(h, w, 3.2, seed + 4))
     height = 0.0045 * n_lo + 0.0010 * n_mid + 0.00012 * n_hi - 0.0010 * crack
-    pal = np.array([0.822, 0.788, 0.712])
+    pal = np.array([0.810, 0.776, 0.702])
     # the blotch is mapped to all four webs of every bay, so at low frequency it is what shows bays repeating: keep it faint
     v = 1.0 + 0.012 * n_lo + 0.024 * n_mid + 0.010 * n_hi
     alb = pal * v[..., None]
@@ -469,7 +470,7 @@ def half(a):
 def build_textures():
     os.makedirs(TEX_DIR, exist_ok=True)
     STONES.clear()
-    pal_a = dict(stone=[0.760, 0.640, 0.430], pale=[0.86, 0.79, 0.64], tone=0.24, warm=0.022, patch=0.055, rim=0.13,
+    pal_a = dict(stone=[0.760, 0.640, 0.430], pale=[0.86, 0.79, 0.64], tone=0.24, warm=0.022, patch=0.055, rim=0.18,
                  stain=0.22, rough=0.86, polish=0.04, runs=0.26, tone_hp=0.32)
     # band A
     ppm = 512
@@ -480,7 +481,7 @@ def build_textures():
     # band B: voussoirs. One course across, irregular joints along the arc. Generated on a square-ish torus in metres.
     bh, bw = B_ROWS[1] - B_ROWS[0], ATLAS
     bppm = ATLAS / B_LEN
-    pal_b = dict(pal_a, tone=0.11, warm=0.02, stain=0.14, rim=0.09, stone=[0.965, 0.885, 0.695], tone_hp=0, patch=0.04)
+    pal_b = dict(pal_a, tone=0.11, warm=0.02, stain=0.14, rim=0.09, stone=[0.965, 0.858, 0.682], tone_hp=0, patch=0.04)
     b_alb, b_h, b_r = stone_maps(bh, bw, bppm, [bh / bppm], 1604, (0.17, 0.27), pal_b, joint=0.003, wear=0.008,
                                  relief=0.008, warp=0.005)
     # one strip serves every arch: a metre-scale gradient along it would show at the same spot of every arch, so take it out
@@ -528,7 +529,7 @@ def build_textures():
 
     # stone_floor: 4 x 4 m full tile at 256 px/m. Flags on a 20 x 20 grid, no straight joint over FLOOR_MAX_RUN.
     # `tone` stays low and high-passed: the eye reads strong per-flag tone on a regular floor as a checkerboard
-    pal_f = dict(stone=[0.70, 0.655, 0.575], pale=[0.76, 0.72, 0.64], tone=0.045, warm=0.02,
+    pal_f = dict(stone=[0.615, 0.565, 0.485], pale=[0.67, 0.625, 0.545], tone=0.045, warm=0.02,
                  stain=0.24, rough=0.70, polish=0.20, tone_hp=0.6)
     fppm = 256
     f_alb, f_h, f_r = stone_maps(1024, 1024, fppm, None, 1801, None, pal_f, joint=0.0028, wear=0.024, relief=0.0045,
