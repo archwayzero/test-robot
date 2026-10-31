@@ -317,7 +317,8 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
 - **Stone quality bar (T015):** four passes took look from 7.4 to 7.6 (independent scores; passes 1 and 4 were not
   scored independently) against a bar of 8.5, with structure 10/10. The bar could not be met by script. The human
   accepted the look (7.6 at pass 3 in the review render, about 6.9 in a rough Godot Mobile stand-in), then kept pass 4
-  after comparing it with the earlier stone.
+  after comparing it with the earlier stone. After the triage the human restored the stone instead (T039) and accepted
+  its pass 4 at about 6.5 on the second reviewer's scale; scores from different reviewers are not comparable.
   Inputs that would have allowed a higher bar, to supply before the next run:
   1. Photographic PBR sets (colour, normal, roughness/AO), CC0 or licensed, tileable, for ashlar, floor and plaster,
      in `blender/textures/<set>/`. Reviewer estimate with these plus scripted work: about 8.6.
@@ -337,7 +338,8 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
   preferred the stone from the first reviewed build (`a6d7e65`). Every build was restorable from git and DVC, but
   reverting would also have lost the import setup, the wall repetition fix, the rubble rebuild and stronger checks.
   Texture, geometry, pipeline and QA changes shared passes and commits, and `build.py` generates them together. The
-  human kept pass 4 rather than repeat that work. Next game: separate work into different commits, or into different
+  human first kept pass 4 rather than repeat that work, then chose to restore the stone after the triage (T039, one more
+modeler task with two reviews). Next game: separate work into different commits, or into different
   standalone agents with different scope (for example materials, geometry, import pipeline, QA tooling), so any one
   version of a texture can return without repeating other work. Keep material parameters in their own versioned file,
   and name a commit for each look candidate.
