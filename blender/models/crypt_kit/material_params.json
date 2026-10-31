@@ -24,7 +24,12 @@
   "capital_tone": 0.2,
   "grain": 0.03,
   "pit_dark": 0.3,
-  "arris": 0.06
+  "arris": 0.06,
+  "joint_dark": 0.55,
+  "pocket_w": 0.012,
+  "pocket_lo": -0.4,
+  "pocket_hi": 1.2,
+  "pocket_low": 6
  },
  "ashlar_maps": {
   "warp": 0.005,
@@ -43,7 +48,9 @@
    0.682
   ],
   "tone_hp": 0,
-  "patch": 0.04
+  "patch": 0.04,
+  "joint_dark": 0.25,
+  "pocket_w": 0.008
  },
  "voussoir_maps": {
   "joint": 0.003,
