@@ -1,4 +1,4 @@
-# Static budget report (2026-10-31T05:42:18+00:00)
+# Static budget report (2026-10-31T08:04:31+00:00)
 
 Platform: ios (min device: iPhone 12)
 Budget status: APPROVED FOR RUN 1 ONLY (human, 2026-10-25: 'create the game to the best of your ability'). Values marked estimate in notes have no authoritative source and must be validated on the device (M3). QA agents may not edit this file.
