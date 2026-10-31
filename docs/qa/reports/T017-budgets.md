@@ -21,5 +21,5 @@ Scene totals if every asset were on screen at once (worst case):
 ## QA notes (T017 rerun on the T039 kit, supersedes the 2026-10-31T08:04 report at 1ee652c)
 Verdict: PASS, score 100.0, check exits 0. Change since 1ee652c: crypt_kit 4550 -> 4552 tris (pier cap top); scene total 25379 -> 25381.
 - crypt_kit draw calls 14/14: the tool counts collision primitives too. 7 are rendered (measured in `test_kit_counted_vs_rendered_primitives`).
-- crypt_kit 64.0/64 MB: exactly at the limit, but an uncompressed RGBA + mips upper bound. ASTC_4x4 products on disk: 16.0 MiB (lamp 1.05 MB).
+- crypt_kit 64.0/64 MB: exactly at the limit, but an uncompressed RGBA + mips upper bound. ASTC_4x4 products on disk: 16.0 MiB (lamp 1.01 MiB, 1,054,384 bytes).
 - The limits are approved for run 1 only, and these are static figures, not device measurements.

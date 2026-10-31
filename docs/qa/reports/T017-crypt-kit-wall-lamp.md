@@ -117,7 +117,7 @@ Where a block crosses the pier/wall line, one half can be noticeably paler than 
 Still visible. Not flips: the back-face diff in those views is 0 and 1 pixels. They are facets catching lamp light, and with no lamp shadows, light through rock remains a likely cause (not proved). Check in T018's real lighting.
 
 ### E. Top course brighter: resolved
-Mean grey by height on the unlit frontal wall, same view and `srgb` false:
+Mean grey by height on the unlit frontal wall, same view and `srgb` false. Crop: `crop=500:590:400:0`, columns 400-899, all 590 rows, through `.captures/t017/rows.py`. Frames: 1ee652c `srgb_false_c/f0002.png`, T039 `run2_b/f0009.png`:
 | Height m | 1.30-1.66 | 1.66-2.00 | 2.00-2.40 |
 |---|---|---|---|
 | 1ee652c | 34.6 | **45.5** | 35.5 |
@@ -158,7 +158,7 @@ vault_bay 378,240, arch 351,200, pier 53,802, wall 37,694, ceilings 7,022, floor
 
 `check_budgets` counts 14 primitives because it includes the 7 colonly meshes. The imported scene renders 7 (measured by test). So 14/14 is at the limit on paper with real headroom: 7 of 14.
 
-Textures: 64.0/64 MB is exactly at the limit, but it is the uncompressed RGBA + mips upper bound (48 MB x 4/3). The ASTC_4x4 import products are 16.0 MiB on disk for the kit and 1.05 MB for the lamp, including mips. Device memory is not measured.
+Textures: 64.0/64 MB is exactly at the limit, but it is the uncompressed RGBA + mips upper bound (48 MB x 4/3). The ASTC_4x4 import products are 16.0 MiB on disk for the kit and 1.01 MiB (1,054,384 bytes) for the lamp, including mips. Device memory is not measured.
 
 Engine counters, CPU renderer, 1280x590, unmerged assembler. Raw at hold 3. Occluders at hold 16, after 3 warm-up views; hold 16 equals hold 32 in every view, draw calls and tris. Sources: `.captures/t017_review/occ16_counters.json`, `occ32_counters.json` (first 6 rows); `.captures/t017/fix_occ16_counters.json`, `fix_occ32_counters.json` (all 8 rows, and the first 6 match the review to the digit).
 | View | Draw calls | Tris | With box occluders: draw calls | Tris |
