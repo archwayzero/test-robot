@@ -522,7 +522,7 @@ def plaster_maps(h, w, ppm, seed):
     pal = np.array(PLASTER)
     # the blotch is mapped to all four webs of every bay, so at low frequency it is what shows bays repeating: keep it faint.
     # Contrast sits at 0.1-0.4 m and finer, which reads as worn lime and does not make a landmark.
-    v = 1.0 + 0.012 * n_lo + 0.030 * n_mid + 0.012 * n_hi + PLASTER_MID * n_trowel + PLASTER_FINE * n_grain
+    v = 1.0 + 0.012 * n_lo + PARAMS["plaster"].get("cloud", 0.030) * n_mid + 0.012 * n_hi + PLASTER_MID * n_trowel + PLASTER_FINE * n_grain
     alb = pal * v[..., None]
     alb *= 1 - 0.07 * blotch[..., None] * np.array([0.9, 1.0, 1.15])
     alb *= 1 - 0.20 * grime[..., None] * np.array([0.8, 1.0, 1.3])
