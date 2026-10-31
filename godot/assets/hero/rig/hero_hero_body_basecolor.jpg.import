@@ -3,9 +3,11 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://5its3n1p1rqc"
-path="res://.godot/imported/hero_hero_body_basecolor.jpg-63e190c2e1985af836f83e146c518e8f.ctex"
+path.bptc="res://.godot/imported/hero_hero_body_basecolor.jpg-63e190c2e1985af836f83e146c518e8f.bptc.ctex"
+path.astc="res://.godot/imported/hero_hero_body_basecolor.jpg-63e190c2e1985af836f83e146c518e8f.astc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "07df7d8b117904e545149c6d3c2a6fea"
@@ -14,7 +16,7 @@ generator_parameters={
 [deps]
 
 source_file="res://assets/hero/rig/hero_hero_body_basecolor.jpg"
-dest_files=["res://.godot/imported/hero_hero_body_basecolor.jpg-63e190c2e1985af836f83e146c518e8f.ctex"]
+dest_files=["res://.godot/imported/hero_hero_body_basecolor.jpg-63e190c2e1985af836f83e146c518e8f.bptc.ctex", "res://.godot/imported/hero_hero_body_basecolor.jpg-63e190c2e1985af836f83e146c518e8f.astc.ctex"]
 
 [params]
 
