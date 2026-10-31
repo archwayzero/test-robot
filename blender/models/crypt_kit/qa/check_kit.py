@@ -38,6 +38,7 @@ MAX_MEM_MB = 64.0
 SPLIT_SEAM_MAX = 1.6   # a bed joint between two offset courses, against an ordinary bed joint
 ASHLAR_BAND = []
 SEAM_MAX = 1.5    # floor edge-seam ratio, see seam()
+BAND_STEP_MAX = 0.03  # band A colour: mean difference of the stone either side of the wrap, 0..1
 BAND_SEAM_MAX = 1.2   # band A seam ratio, see band_seams(). Wrap and as-built pairs must look like an interior bed joint
 RUBBLE_MIN_STEP = 0.25  # m, range of the underside depth of a low ceiling
 RUBBLE_VCOL_MIN = 0.5   # COLOR_0 red, lowest vertex of a low ceiling (0.29 before pass 4)
@@ -750,6 +751,11 @@ def band_seams(G, nm, band, du):
     rec(G, "%s band A wrap V / bed joint" % nm, wrap_v / joint <= BAND_SEAM_MAX,
         "%.3f (limit %.1f); old p90 ratio %.3f (limit 1.5); median bed joint %.5f" % (wrap_v / joint, BAND_SEAM_MAX, old, joint))
     rec(G, "%s band A wrap U / bed joint" % nm, wrap_u / joint <= BAND_SEAM_MAX, "%.3f" % (wrap_u / joint))
+    # darker broken joints raise the ratio's denominator (T039), so a real step in tone needs a test of its own: stone just above
+    # and just below the wrap must have the same mean, whatever the joints do
+    if nm.endswith("color"):
+        step = float(np.abs(band[8:24].mean(0).mean(0) - band[-24:-8].mean(0).mean(0)).max())
+        rec(G, "%s band A wrap V tone step <= %.2f" % (nm, BAND_STEP_MAX), step <= BAND_STEP_MAX, "%.4f" % step)
     if du is None:
         return
     # the rows that meet at each wall split, at the U offsets the wall really has

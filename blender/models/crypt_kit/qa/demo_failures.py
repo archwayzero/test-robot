@@ -29,7 +29,7 @@ INTENDED = {
     "floor_no_collision": "floor has a -colonly child",
     "third_material": "<= 2 materials",
     "uv2_overlap": "wall UV2 non-overlapping",
-    "ashlar_seam_broken": "stone_ashlar_color band A wrap V / bed joint",
+    "ashlar_seam_broken": "stone_ashlar_color band A wrap V tone step",
     "groin_landing_low": "visible groin landing",
     "rubble_flat": "ceiling_crouch underside has depth steps",
     "pier_behind_wall": "pier shaft 1-3 mm proud",
