@@ -399,9 +399,13 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
             lens = np.array([STONES[i][1] - STONES[i][0] for i in ids_c])
             tone[ids_c] -= float((tone[ids_c] * lens).sum() / lens.sum())
     if force:                                            # the capital stones are plain: neither pale nor dark, nor orange
-        tone[n - len(force[max(force)]):] = 0.2
-        warm_s[n - len(force[max(force)]):] = 0.0
-        tone[[n - len(force[max(force)]), n - len(force[max(force)]) + 2]] = 0.62     # the two a capital maps: pale, as under the ring
+        top_ids = list(range(n - len(force[max(force)]), n))
+        warm_s[top_ids] = 0.0
+        tone[top_ids] = 0.0
+        tone[[top_ids[0], top_ids[2]]] = palette.get("capital_tone", 0.62)   # the two a capital maps: a little pale, as under the ring
+        # the top course keeps the mean of the others, or it is a stripe (T039: 0.35 linear against 0.27 with fixed 0.62 and 0.2)
+        lens = np.array([STONES[i][1] - STONES[i][0] for i in top_ids])
+        tone[top_ids] -= float((tone[top_ids] * lens).sum() / lens.sum())
     tone = (np.sign(tone) * np.abs(tone) ** 0.8)[ids]    # more stones far from the mean
     # High-pass over about a metre: stones differ from their neighbours, but no dark or pale cluster forms, because a cluster
     # is a landmark that repeats every tile.
@@ -425,7 +429,7 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
 
     base = np.array(palette["stone"])
     alb = np.ones((h, w, 3)) * base
-    v = 1.0 + palette["tone"] * tone + 0.015 * n_lo + 0.05 * n_mid + 0.02 * n_hi
+    v = 1.0 + palette["tone"] * tone + 0.015 * n_lo + 0.05 * n_mid + palette.get("grain", 0.02) * n_hi
     # a darker stone is browner, not greyer: the blue channel falls faster with tone
     alb = alb * v[..., None]
     alb[..., 2] *= 1.0 + 0.45 * palette["tone"] * tone
@@ -449,8 +453,8 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
         pale = sstep(-0.4, 2.8, -n_lo * 0.25 - n_soft * 0.9) * palette.get("pale_amt", 0.14)
     alb = alb * (1 - pale[..., None]) + np.array(palette["pale"]) * pale[..., None]
     arris = sstep(0.0, 0.6, profile) * (1 - sstep(0.6, 1.0, profile))
-    alb *= 1.0 + 0.02 * arris[..., None]
-    alb *= 1.0 - 0.13 * pits[..., None]
+    alb *= 1.0 + palette.get("arris", 0.02) * arris[..., None]
+    alb *= 1.0 - palette.get("pit_dark", 0.13) * pits[..., None]
     alb *= (1.0 + 0.035 * tool * tool_on)[..., None]
     run = streaks(h, w, seed + 9)
     dark_run = sstep(0.7, 2.4, run) * palette.get("runs", 0.0)
@@ -469,6 +473,11 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
         mort = mort * (1 - band_edge) + mort.mean((0, 1)) * band_edge
     mix = sstep(0.0, 0.35, profile)[..., None]
     alb = mort * (1 - mix) + alb * mix
+    if palette.get("joint_dark"):
+        # the photo's joints are broken dark pockets, not an even line: crisp contrast that sits on the joints, not on the stones
+        pocket = sstep(palette["pocket_lo"], palette["pocket_hi"], noise(h, w, 2.0, seed + 12, low=palette["pocket_low"]))
+        band = 1 - sstep(0.5 * jw, palette.get("pocket_w", 2.5 * joint) + 0.5 * jw, d)
+        alb *= (1.0 - palette["joint_dark"] * (pocket * band)[..., None] * np.array([0.9, 1.0, 1.1]))
     if seed == 1501:
         # as-built mortar width: area where any mortar shows, over total joint length (beds + heads)
         length = pu * len(courses) + sum(st[3] - st[2] for st in STONES)
