@@ -10,11 +10,10 @@ Last updated: 2026-10-30, session 4 (2026-10-31).
 ## Open PRs (human to review/merge)
 | PR | Branch | Task | State after merge |
 |---|---|---|---|
-| (this) | arch/wall-lamp-orientation | wall_lamp +Z orientation, status | none |
+| (this) | arch/run1-retro-lighting-alarms | retrospective, memory figures, status | none |
 
 ## Next actions, in order
-1. Close T016; human merges its PR.
-2. T017 after T016 is merged, then T018 after T017.
+1. Human decides stone (Active task); then kit fix, T017 review and merge, T018 module-dev.
 3. T016 modeler: wall_lamp prop. T017 qa: kit + lamp budgets, judged in a Mobile scene, not the Cycles frame.
 4. T019 module-dev (player): hero rig + AnimationTree; hookup rules are in godot/modules/player/CLAUDE.md (from T014).
    Can start once #42 is merged (depends on T010, T014), in parallel planning with T015.
@@ -23,10 +22,13 @@ Last updated: 2026-10-30, session 4 (2026-10-31).
 7. M3: T021 export preset (exclude `res://tests/*`, incl. the T014 preview scenes, and automation), T022, T023 (Mac).
 
 ## Active task
-T016, modeler, branch `task/modeler/T016-wall-lamp-prop`, HEAD 1ccc9fe, independent review running. Bar agreed up front:
-structure 10/10, look >= 8/10 in Godot Mobile at 1-4 m. T015 is done (#46 merged; human kept pass 4).
-Also running: reviewer texture triage in a clone under `.captures/t015_triage/`, then a modeler-side triage. Result goes
-into docs/retrospective/ with snapshots (DVC) on a new arch/ branch. T017 next after T016 merges, then T018.
+T017, qa, branch `task/qa/T017-crypt-kit-wall-lamp-budgets-an`, HEAD 1ee652c, not pushed, not reviewed. FAIL on 5 of 58
+tests from 3 kit defects, none blocks T018: arch collision reversed (all 96 faces, build.py:1050), pier missing top
+(before build.py:977), ceiling_crawl flips (before build.py:1519). Tests stay failing until fixed.
+Waiting on human: restore better stone in one kit pass with those fixes, or keep pass 4. If restored: v2 spectrum with
+more mid, not a straight revert; see docs/retrospective/t015-texture-regression.md. New T0xx modeler task either way
+for the defects, then qa changes `test_rubble_flipped_edge_pairs_match_the_known_count` to 0.
+Top course 1.66-2.00 m is brighter and check_kit skips it. Lighting (human): keep wall lamps.
 
 ## Process notes that worked in session 3
 - Quality loops: reviewer measures independently and scores out of 10 against the reference; send back with numbered,

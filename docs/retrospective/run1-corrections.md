@@ -65,6 +65,7 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
 - **Run 1:** wall lamps every ~3 corridor cells, baked lighting if possible, else real-time lights limited to 8 per
   mesh (Mobile renderer) (D9).
 - **Next time:** describe light sources (lamps, torches, candles, player lantern?) and mood (how dark).
+- **Update (T016, human):** the wall lamp came from D9, not from any spec or prompt. See "Goalposts drifted" in Part C.
 
 ### A10. Reference images
 - **Problem:** `crypt.jpg` (Winchester Cathedral crypt) contains Antony Gormley's statue *Sound II* (copyrighted
@@ -133,6 +134,18 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
    "uncommitted changes on a task branch" and suggests `git add -A`, which would commit files outside the branch's
    scope (e.g. the reference-director's image on the modeler's branch). Suggest: skip while a task is
    `in_progress` in the ledger, and never suggest `git add -A`; list only files inside the current branch scope.
+   **Confirmed costly in T015/T016 (human asked for this to be fixed):** the gate blocked the orchestrator about a dozen
+   times with identical text while agents worked, each block forcing a full turn that spent tokens to change nothing.
+   It also told a read-only reviewer to `dvc add` and commit. Causes: it ignores running subagents, it reads the
+   whole tree, and it treats a merged task's DVC outputs as untracked on a branch cut before that merge. To end these
+   false alarms (the gate is locked, so the human changes it):
+   1. Pass silently while any subagent or background job runs, or a task is `in_progress`.
+   2. Check only paths inside the current branch's scope.
+   3. Pass files that match a `.dvc` pointer on main or the DVC cache by md5.
+   4. Report an identical finding once per state, and never block a turn with no file changes since the last block.
+   5. Do not instruct read-only agents to commit, and never suggest `git add -A`.
+   6. `task.py finish` should use the same rule: it refused T016 over T015's outputs, which were removed by hand after
+      their md5s were checked. Agents can also avoid the state by cutting the next task after the previous PR merges.
 3. **`dvc add` exits 255 in the sandbox.** With `core.autostage = true`, DVC opens `.gitmodules`, which the sandbox
    masks, so every `dvc add` ends with "failed open '.gitmodules' is locked" after doing its work. Suggest: set
    `core.autostage false` in `.dvc/config` (agents stage the pointer explicitly anyway) or stop masking
@@ -340,6 +353,27 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
   renders overstated the game. Only a real import showed it. Next game: every asset review includes a Godot import.
 - **Godot can keep a texture lossless after a stale reimport (T015):** a clean `.godot` cache and two imports fixed it,
   and a `.ctex` header check catches it. Next game: verify imported format from `.ctex`, not `.import` text.
+- **Goalposts drifted from the specs (human review, T016):** the human asked whether a lamp was ever requested. It was
+  not: ASSETS.md, MECHANICS.md, PLATFORM.md and PROMPTS.md never mention lamps, and D9 added them under the approved
+  defaults. The reference photo shows bright openings (likely windows), which the contract left out with no decision,
+  while the spec says "underground". Other drift: rubble ceilings were contract wording, not a request; crypt.jpg's
+  squat proportions were not checked against kit dimensions; D13 expected a procedural look, yet T015 was scored
+  against a photo at 8.5 without that conflict being raised. Outcome: the human kept the lamps as the fastest option
+  (windows and hidden uplights were offered), and they may not match the mood of the reference.
+  - **Human side:** the specs called crypt.jpg a "reference image" but never said the modelling had to be faithful to
+    it, or which qualities mattered (architecture only, or also light, mood, proportions, materials). Lighting was
+    left unspecified, and the "same quality bar as the hero" was given without saying how it maps to a kit.
+  - **Orchestrator side:** that silence was not a licence to guess. I should have asked one focused question, listed
+    what D9 dropped from the photo, and flagged that a lit look was being replaced before the bar was set.
+  - **Next game, spec:** an ASSETS.md line per reference: "must match: X, Y; may differ: Z; ignore: W", covering
+    lighting, proportions, materials and mood.
+  - **Next game, process:** before building from a reference, the orchestrator writes a fidelity table (photo feature ->
+    keep, change or drop, with reason) and the human signs it off. Added defaults are labelled as additions, and each
+    milestone compares what exists against the original specs.
+- **Texture regression (T015):** full analysis, snapshots and evaluation rules: docs/retrospective/t015-texture-regression.md.
+- **Lamp review (T016):** agreeing the bar before the build worked: 8.5/10 with one clean fix pass. Separate commits and
+  `material_params.json` let an old look return alone (byte-identical GLB). Limits: foundation commits cannot be reverted
+  alone, and pass renders still used different rigs.
 
 ### M3 iOS device build
 (to be filled in)
