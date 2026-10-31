@@ -12,6 +12,7 @@ Nodes: wall_lamp (empty, root) > wall_lamp_iron, wall_lamp_flame (pivot at the f
 wick), light_emitter (empty, the point the maze puts its light at).
 """
 import math
+import sys
 from pathlib import Path
 
 import bmesh
@@ -19,8 +20,12 @@ import bpy
 from mathutils import Vector
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import materials  # noqa: E402
+
 EMITTER = (0.0, 0.25, 0.35)
 FLAME_BASE_Y = 0.205
+FLAME_TOP = 0.09
 
 
 def G(x, y, z):
@@ -142,12 +147,12 @@ def build_iron():
 def build_flame():
     """Teardrop, pivot at its base so scaling it dims or flickers from the wick."""
     bm = bmesh.new()
-    prof = [(0.0, 0.0), (0.009, 0.006), (0.0155, 0.022), (0.016, 0.038), (0.0115, 0.056), (0.0055, 0.073), (0.0, 0.09)]
+    prof = [(0.0, 0.0), (0.009, 0.006), (0.0155, 0.022), (0.016, 0.038), (0.0115, 0.056), (0.0055, 0.073), (0.0, FLAME_TOP)]
     lathe(bm, prof, 0.0, 0.0, 8)
     return bm
 
 
-def to_object(bm, name, material, parent, location=(0, 0, 0)):
+def to_object(bm, name, parent, location=(0, 0, 0)):
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
     me = bpy.data.meshes.new(name)
@@ -155,7 +160,7 @@ def to_object(bm, name, material, parent, location=(0, 0, 0)):
     bm.free()
     me.shade_smooth()
     me.set_sharp_from_angle(angle=math.radians(38))
-    me.materials.append(material)
+    me.materials.append(None)
     ob = bpy.data.objects.new(name, me)
     bpy.context.collection.objects.link(ob)
     ob.parent = parent
@@ -163,21 +168,14 @@ def to_object(bm, name, material, parent, location=(0, 0, 0)):
     return ob
 
 
-def plain_material(name, color):
-    m = bpy.data.materials.new(name)
-    m.use_nodes = True
-    m.use_backface_culling = True
-    m.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (*color, 1)
-    return m
-
-
 def main():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     root = bpy.data.objects.new("wall_lamp", None)
     bpy.context.collection.objects.link(root)
-    iron = to_object(build_iron(), "wall_lamp_iron", plain_material("wall_lamp_iron", (0.05, 0.05, 0.05)), root)
-    flame = to_object(build_flame(), "wall_lamp_flame", plain_material("wall_lamp_flame", (1, 0.6, 0.2)), root,
+    iron = to_object(build_iron(), "wall_lamp_iron", root)
+    flame = to_object(build_flame(), "wall_lamp_flame", root,
                       G(EMITTER[0], FLAME_BASE_Y, EMITTER[2]))
+    materials.apply(iron, flame, FLAME_TOP)
     emitter = bpy.data.objects.new("light_emitter", None)
     emitter.empty_display_size = 0.02
     bpy.context.collection.objects.link(emitter)
