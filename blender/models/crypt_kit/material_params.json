@@ -14,7 +14,7 @@
   "tone": 0.1,
   "warm": 0.022,
   "patch": 0.055,
-  "rim": 0.18,
+  "rim": 0.0,
   "stain": 0.56,
   "stain_sharp": true,
   "rough": 0.86,
