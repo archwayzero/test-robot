@@ -6,7 +6,7 @@
 background_mode = 1
 background_color = Color(0.015, 0.014, 0.02, 1)
 ambient_light_source = 2
-ambient_light_color = Color(0.42, 0.4, 0.5, 1)
+ambient_light_color = Color(0.42, 0.4, 0.4, 1)
 ambient_light_energy = 0.55
 tonemap_mode = 2
 tonemap_exposure = 1.1
@@ -19,7 +19,7 @@ fog_mode = 1
 fog_light_color = Color(0.03, 0.03, 0.04, 1)
 fog_light_energy = 1.0
 fog_density = 1.0
-fog_sky_affect = 0.0
+fog_sky_affect = 1.0
 fog_depth_curve = 1.4
 fog_depth_begin = 4.0
 fog_depth_end = 26.0
