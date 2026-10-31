@@ -1,10 +1,17 @@
 """T015 look metrics, the independent review's definitions, printed against crypt.jpg.
 
   python3 tools/qa/memguard.py -- blender -b --factory-startup -P blender/models/crypt_kit/qa/measure_look.py -- \
-      [--dir .captures/t015] [--png arcade_crypt_camera.png] [--flat arcade_flat.png]
+      [--dir .captures/t015] [--png arcade_crypt_camera.png] [--flat arcade_flat.png] [--compare-blur]
 
 From the render: luminance statistics per region, ring/soffit ratio, wall autocorrelation (reviewer's formula on the upper span
-of wall_3_tiles). From atlas.json: as-built mortar width. From the exported GLB images: the longest straight floor joint.
+of wall_3_tiles, lags 1-7 m plus the 8 m tile repeat). From atlas.json: as-built mortar width. From the exported GLB images: the
+longest straight floor joint.
+
+All blurs are gaussian with reflect padding, as in the independent review: the old periodic blur wrapped the crop's opposite
+edges into each other. --compare-blur prints every region with the old blur too, so the change can be seen.
+
+These figures come from Cycles review renders under 96 lights (see render_review.py). They judge the kit's maps and shapes;
+they say nothing about the shipped Mobile look.
 """
 import json
 import os
@@ -39,11 +46,21 @@ def load(p):
     return np.flipud(px.reshape(h, w, c))[..., :3]
 
 
-def blur(L, s):
+def blur_periodic(L, s):
+    """The pass 1-3 blur: wraps at the crop edges. Kept only for --compare-blur."""
     h, w = L.shape
     fy = np.fft.fftfreq(h)[:, None]
     fx = np.fft.rfftfreq(w)[None, :]
     return np.fft.irfft2(np.fft.rfft2(L) * np.exp(-2 * (np.pi * s) ** 2 * (fx ** 2 + fy ** 2)), s=(h, w))
+
+
+def blur_reflect(L, s):
+    """Gaussian with reflect padding. FFT on the padded image; the pad is wide enough that its wrap cannot reach the crop."""
+    r = int(4 * s) + 2
+    return blur_periodic(np.pad(L, r, mode="reflect"), s)[r:-r, r:-r]
+
+
+blur = blur_reflect
 
 
 def st(a, box, sc):
@@ -76,6 +93,13 @@ for path in [PNG] + ([os.path.join(DIR, arg("--flat"))] if arg("--flat") else []
         print(path)
         for n, d in res.items():
             show("KIT", n, d)
+        if "--compare-blur" in argv:
+            blur = blur_periodic
+            for n, b in Q.items():
+                show("old", n, st(r, b, kk))
+            blur = blur_reflect
+        print("WEB  p50 %.3f (0.62-0.66), mid %.4f (>=0.035), fine %.4f (>=0.027); ref 0.654 / 0.0442" % (
+            res["web"]["p50"], res["web"]["mid"], res["web"]["fine"]))
         print("TARGET1 back wall mid %.4f (>=0.06), span %.3f (>=0.40)" % (res["back wall"]["mid"], res["back wall"]["span"]))
         # soffit*: the review's box. Projected through the camera it lies on the plaster web of the bay between the arches at
         # x=20 and 24. "true sof" is the soffit crown of the arch at x=20, whose face the ring box measures.
@@ -87,18 +111,27 @@ for name in ("wall_3_tiles.png", "wall_3_tiles_unalternated.png"):
     if os.path.exists(f):
         w = load(f)
         q = w.shape[1] / 900                    # the review's numbers are for a 900 px wide render; px below scale with it
-        L = (w @ LUM)[int(75 * q):int(205 * q)]
-        L = L - blur(L, 12 * q)
-        L = L - L.mean(1, keepdims=True)
-        out = []
+        L0 = (w @ LUM)[int(75 * q):int(205 * q)]
         x0, n_x = int(20 * q), int(230 * q)
-        for lag_m in (1.34, 2.0, 2.76, 4.0, 8.0):
-            lag = int(round(lag_m * 72.5 * q))
-            a = L[:, x0:x0 + n_x].ravel()
-            b = L[:, x0 + lag:x0 + lag + n_x].ravel()
-            if a.size == b.size:
-                out.append("%.2f m %.3f" % (lag_m, np.corrcoef(a, b)[0, 1]))
-        print("TARGET4", name, "autocorr:", ", ".join(out))
+
+        def lags(L, metres):
+            out = []
+            for lag_m in metres:
+                lag = int(round(lag_m * 72.5 * q))
+                a = L[:, x0:x0 + n_x].ravel()
+                b = L[:, x0 + lag:x0 + lag + n_x].ravel()
+                if a.size == b.size:
+                    out.append("%.2f m %.3f" % (lag_m, np.corrcoef(a, b)[0, 1]))
+            return ", ".join(out)
+
+        metres = (1, 1.34, 2, 2.76, 3, 4, 5, 6, 7, 8)
+        L = L0 - blur(L0, 12 * q)
+        print("TARGET4", name, "autocorr:", lags(L - L.mean(1, keepdims=True), metres))
+        Lb = blur(L0, 8 * q)
+        print("TARGET4", name, "low-pass:", lags(Lb - Lb.mean(1, keepdims=True), metres))
+        if "--compare-blur" in argv:
+            L = L0 - blur_periodic(L0, 12 * q)
+            print("old    ", name, "autocorr:", lags(L - L.mean(1, keepdims=True), metres))
 
 # from the exported GLB
 d = open(os.path.join(ROOT, "godot/assets/crypt_kit/model/crypt_kit.glb"), "rb").read()

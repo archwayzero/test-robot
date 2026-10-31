@@ -1,5 +1,9 @@
 """Assemble the kit from the exported GLB and render review images (T015).
 
+NOT A REAL-TIME SCENE. `arcade_crypt_camera` and the other lit shots use 96 lights in Cycles, with bounces, one sampled area of
+the kit at a time. A phone running the Mobile renderer gets at most 8 omni + 8 spot lights per mesh and no path tracing, so
+nothing rendered here predicts the shipped look or its cost. Use these images to judge the kit's shapes and maps only.
+
   python3 tools/qa/memguard.py --expect-peak-mb 2000 -- blender -b --factory-startup --python-exit-code 1 \
       -P blender/models/crypt_kit/qa/render_review.py -- [--only arcade,flat,joins,pieces,low,tiles] [--samples N] [--scale 1.0]
 
