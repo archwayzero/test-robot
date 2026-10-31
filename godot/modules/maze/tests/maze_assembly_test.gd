@@ -470,6 +470,13 @@ func test_occluder_boxes_sit_inside_the_walls() -> void:
 	assert_eq(Rules.occluder_errors(boxes, layout), PackedStringArray())
 
 
+func _has_error(errors: PackedStringArray, text: String) -> bool:
+	for error in errors:
+		if error.contains(text):
+			return true
+	return false
+
+
 func _with_box_moved(boxes: Array[AABB], index: int, by: Vector3) -> Array[AABB]:
 	var moved: Array[AABB] = boxes.duplicate()
 	var box := moved[index]
@@ -517,9 +524,9 @@ func test_occluder_check_fails_on_a_moved_box() -> void:
 	var on_open_x := 0
 	for i in boxes.size():
 		var one: Array[AABB] = [boxes[i]]
-		if boxes[i].size.z < 1.0 and not Rules.occluder_errors(_with_box_moved(one, 0, Vector3(0, 0, 4.0)), layout).is_empty():
+		if boxes[i].size.z < 1.0 and _has_error(Rules.occluder_errors(_with_box_moved(one, 0, Vector3(0, 0, 4.0)), layout), "open edge"):
 			on_open_z += 1
-		if boxes[i].size.x < 1.0 and not Rules.occluder_errors(_with_box_moved(one, 0, Vector3(4.0, 0, 0)), layout).is_empty():
+		if boxes[i].size.x < 1.0 and _has_error(Rules.occluder_errors(_with_box_moved(one, 0, Vector3(4.0, 0, 0)), layout), "open edge"):
 			on_open_x += 1
 	assert_true(on_open_z > 0, "a wall box moved along Z onto an open edge is reported")
 	assert_true(on_open_x > 0, "a wall box moved along X onto an open edge is reported")
