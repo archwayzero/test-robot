@@ -977,6 +977,12 @@ def build_pier(mat):
             rows.append([(*rot(-w, -w), z), (*rot(w, -w), z)])
             uvs.append([band_a(um - w / 4, v), band_a(um + w / 4, v)])
         b.grid("cap%d" % k, rows, uvs, smooth=False)
+    # top of the impost: seen from above the springing where the capital stands past the wall and arch (T017: camera at 2.43 m)
+    w = cap - 0.006
+    v0, v1 = CAP_COURSE[0] + 0.025, CAP_COURSE[1] - 0.025
+    um = CAP_U[0]
+    b.face("cap_top", [(-w, -w, SPRING), (w, -w, SPRING), (w, w, SPRING), (-w, w, SPRING)],
+           [band_a(um - w / 4, v0), band_a(um + w / 4, v0), band_a(um + w / 4, v1), band_a(um - w / 4, v1)], False)
     ob = b.to_object("pier", mat)
     h = PIER / 2
     collision(ob, [((-h, -h, 0), (h, h, SHAFT_TOP)), ((-cap, -cap, SHAFT_TOP), (cap, cap, SPRING))])
