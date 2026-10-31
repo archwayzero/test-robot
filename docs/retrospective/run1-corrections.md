@@ -95,6 +95,8 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
 - **Run 1:** procedural Blender materials baked to tileable maps (D13).
 - **Next time:** before the run, download 3-4 CC0 PBR sets (e.g. Poly Haven / ambientCG: sandstone ashlar, worn
   floor slabs, plaster) into `blender/textures/<set>/` and list them in ASSETS.md; they are tracked with DVC.
+- **Confirmed in T015:** the independent ceiling for scripted stone was about 8.0-8.1/10 against crypt.jpg; real stone
+  maps were estimated at about 8.6. See "Stone quality bar (T015)" in Part C for the full list of missing inputs.
 
 ### A14. Character animation quality (RIGGING_ANIMATION.md)
 - **Problem:** the Tripo model has no rig. Scripted keyframe animation from AI reference videos will look stiff,
@@ -299,6 +301,45 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
   self-test that proves it can fail (now in the T014 tests; add to TEST_PLAN.md).
 - **Subagents and background shells don't survive a session exit:** only the main conversation can be resumed.
   Everything durable must be in git/DVC/files: CLAUDE.md "Session continuity" + docs/plan/STATUS.md.
+- **Stone quality bar (T015):** four passes took look from 7.4 to 7.6 (independent scores; passes 1 and 4 were not
+  scored independently) against a bar of 8.5, with structure 10/10. The bar could not be met by script. The human
+  accepted the look (7.6 at pass 3 in the review render, about 6.9 in a rough Godot Mobile stand-in), then kept pass 4
+  after comparing it with the earlier stone.
+  Inputs that would have allowed a higher bar, to supply before the next run:
+  1. Photographic PBR sets (colour, normal, roughness/AO), CC0 or licensed, tileable, for ashlar, floor and plaster,
+     in `blender/textures/<set>/`. Reviewer estimate with these plus scripted work: about 8.6.
+  2. Close-up stone references: joints, spalled edges, damp and tide marks. crypt.jpg shows them only at distance.
+  3. If generated textures are wanted: a ComfyUI texture workflow and a model cleared for use. Run 1 has only
+     reference-to-video, and agents may not add workflows or models.
+  4. A reference matching the wanted proportions, or dimensions that match the reference. The photo's squat bays cannot
+     be matched with a 2.2 m capital height and a 1.7 m arch rise.
+  5. What the bar applies to: a Cycles render with 96 lights, or the game on device. They differ by about 0.7 here.
+  6. Budget room if variety matters: a second wall mesh (about +0.1) or second stone set (about +0.2 to +0.3, real ASTC
+     16.4 -> about 27.3 MB). `check_budgets` counts `-colonly` primitives as draw calls, so 14 counted = 7 real.
+- **Orchestrator miss (T015):** A13 warned about this at planning, yet I started T015 with an 8.5 bar without checking
+  that the inputs existed or raising A13. Three failed look passes ran before the human was asked. Next game: before
+  setting a quality bar on an asset, list its required inputs, confirm each exists, and agree the target and the frame
+  it is judged in with the human.
+- **Unrelated changes were tied together, so one could not be undone alone (human, T015):** after pass 4 the human
+  preferred the stone from the first reviewed build (`a6d7e65`). Every build was restorable from git and DVC, but
+  reverting would also have lost the import setup, the wall repetition fix, the rubble rebuild and stronger checks.
+  Texture, geometry, pipeline and QA changes shared passes and commits, and `build.py` generates them together. The
+  human kept pass 4 rather than repeat that work. Next game: separate work into different commits, or into different
+  standalone agents with different scope (for example materials, geometry, import pipeline, QA tooling), so any one
+  version of a texture can return without repeating other work. Keep material parameters in their own versioned file,
+  and name a commit for each look candidate.
+- **Renders were not versioned (human, T015):** every pass overwrote `.captures/t015/`, so the original first-review
+  render was gone when the human wanted to compare. Next game: keep a dated render per reviewed build, using one fixed
+  camera and light rig, so people compare stone rather than lighting.
+- **Self-scores ran high (T015):** modeler 8.2 vs reviewer 7.4 on the same build. Hitting a metric can also hurt the
+  look: back wall contrast met its target through per-stone tone that read as a checker. Next game: keep the reviewer's
+  eye as the bar, with metrics as diagnostics.
+- **A contract can forbid the look (T015):** arch and vault sharing a 3.9 m crown left no ring relief, so contracts for
+  reference-matched assets need a check against the reference before modelling.
+- **Blender grime can vanish in Godot (T015):** COLOR_0 reached the mesh, but the material flag was off, so review
+  renders overstated the game. Only a real import showed it. Next game: every asset review includes a Godot import.
+- **Godot can keep a texture lossless after a stale reimport (T015):** a clean `.godot` cache and two imports fixed it,
+  and a `.ctex` header check catches it. Next game: verify imported format from `.ctex`, not `.import` text.
 
 ### M3 iOS device build
 (to be filled in)

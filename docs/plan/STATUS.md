@@ -1,6 +1,6 @@
 # Run status (orchestrator-maintained; read this first in a new session)
 
-Last updated: 2026-10-30, session 4.
+Last updated: 2026-10-30, session 4 (2026-10-31).
 
 ## Where we are
 - Milestone: **M2 art**. M1 complete (T032 merged, #33).
@@ -10,14 +10,12 @@ Last updated: 2026-10-30, session 4.
 ## Open PRs (human to review/merge)
 | PR | Branch | Task | State after merge |
 |---|---|---|---|
-| (this) | arch/crypt-kit-arch-relief | crypt_kit crown 4.15, status | none |
+| (this) | arch/t015-look-decision-retro | look decision, retrospective, status | none |
 
 ## Next actions, in order
-1. After merges: `git switch main && git pull --ff-only origin main && dvc checkout`, then `task.py done T014`.
-2. T015 modeler: crypt_kit modular pieces (docs/contracts/crypt-kit.md). Per ARCHITECTURE.md "Turnaround
-   references": decide if the kit needs reference-director stills from `reference/map/crypt.jpg` first.
-   Give the modeler measured pass/fail targets and a check script, as in T011.
-3. T016 modeler: wall_lamp prop. Then T017 qa (kit + lamp budgets, visual).
+1. Close T015 (see Active task); human merges its PR.
+2. T016, then T017 after T015 and T016 are merged, then T018 after T017.
+3. T016 modeler: wall_lamp prop. T017 qa: kit + lamp budgets, judged in a Mobile scene, not the Cycles frame.
 4. T019 module-dev (player): hero rig + AnimationTree; hookup rules are in godot/modules/player/CLAUDE.md (from T014).
    Can start once #42 is merged (depends on T010, T014), in parallel planning with T015.
 5. T018 module-dev (maze) after T017; T020 M2 milestone QA with videos.
@@ -25,24 +23,12 @@ Last updated: 2026-10-30, session 4.
 7. M3: T021 export preset (exclude `res://tests/*`, incl. the T014 preview scenes, and automation), T022, T023 (Mac).
 
 ## Active task
-T015, modeler, branch `task/modeler/T015-crypt-kit-modular-pieces`, started 2026-10-30 (session 4). T014 is done.
-Bar (human): reviewer scores against the reference; loop until met, then report. No turnaround: crypt.jpg is a real
-photo, so an orbit would only add AI invention. Bar set: structure 10/10, look >= 8.5/10.
-Pass 1 result (last commit 7590125): all measured targets pass, modeler look 8.2, orchestrator look ~7.5. Arch relief
-impossible under the shared 3.9 crown, so this branch raises vault/wall top to 4.15. Pass 2 builds to that contract.
-Pass 2 review (HEAD a6d7e65): FAIL, look 7.4, structure 9.5; modeler self-score was 8.2. Seam metric p90 confirmed
-justified. COLOR_0 is dropped in Godot without the material flag. Pass 3 applies the reviewer's targets; the review
-scene applies the T018 assembler rules and neutral light. Reviewer estimate: about 8.3 from the kit alone.
-Pass 3 review (HEAD 96e3e55): FAIL, look 7.6, structure 10/10, kit-only 7.2, Godot stand-in about 6.9. Ceilings
-(reviewer judgement): scripted 8.0-8.1, with wall_b about 8.3, with real stone maps about 8.6. ComfyUI has only the
-reference-to-video workflow, so stone maps need a human decision on source. Pass 4 covers source-independent work only:
-per-course wall UV, rubble, webs, metrics, clean import. Ashlar and floor texture tuning waits for that decision.
-Open: push T015 branch before any fresh clone needs DVC data; check_budgets counts -colonly primitives as draw calls.
-Brief: contract exact (7 pieces, one GLB, -colonly, UV2, <= 2 materials, baked tileable, 64 MB, 21,000 tris, 14 draw
-calls), tri guides floor 200, wall 400, pier 300, arch 800, vault_bay 1500, ceilings 1200; check_kit.py must be shown
-able to fail; arcade render at the crypt.jpg camera, side by side. Scope: blender/models/crypt_kit/**,
-godot/assets/crypt_kit/model/**. No wall_lamp (T016). Reviewer must examine: the seam metric denominator change
-(mean -> p90 after ashlar ORM V failed at 1.61) and texture memory at 64.0/64 with no margin.
+T015 review PASS at 3905db7 (structure 10/10, 178/178 checks, 33/33 failure demos). Being finished and pushed.
+Look decision (human, 2026-10-31): keep pass 4 as is, knowing plaster is blotchier and the first reviewed stone looked
+crisper; no replacement stone maps and no revert. 8.5 no longer applies to T015.
+T017 notes from close-out: re-check `vertex_color_is_srgb`; top course 1.66-2.00 m is brighter (0.614 vs about 0.55);
+consider a rubble winding or first-hit backface check; judge webs and piers in the Mobile scene under real lamp levels.
+Do not run `run_pipeline.py --import` during a Godot job: it deletes `godot/.godot`. A rebuild changes the .blend md5.
 
 ## Process notes that worked in session 3
 - Quality loops: reviewer measures independently and scores out of 10 against the reference; send back with numbered,
