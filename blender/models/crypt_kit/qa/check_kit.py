@@ -46,7 +46,7 @@ RUBBLE_GAP_MAX = 0.28   # m, visible underside above the collision plane (0.39 b
 RUBBLE_SET_MAX = 0.15   # m, side surface behind the collision box (0.265 before pass 4)
 RUBBLE_STEEP_MAX = 0.02  # near-vertical area over plan area, inside the cell: plates and skirts
 WALL_LAG_MAX = 0.20     # autocorrelation at lags of 1-7 m, alternated walls
-COURSE_SPREAD_MAX = 0.12  # (brightest - darkest course) / mean, base colour of band A
+COURSE_SPREAD_MAX = 0.12  # (brightest - darkest course) / mean, linear luma of band A base colour, all seven courses
 WALL_DIFF_MIN = 0.25    # m, back minus front U offset of a course, away from any whole metre
 WALL_DIFF_SPREAD = 0.10  # m, two courses of a span must differ by this in that difference (mod 4, sign free)
 WALL_JOINT_MIN = 0.05   # m, between head joints of touching courses on a wall face
@@ -411,6 +411,54 @@ def check_rubble(g, b, vis):
             (pts[first[e[0]]].tolist(), pts[first[e[1]]].tolist()) for e in open_e[:2]]))
 
 
+def flipped_pairs(m):
+    """T017's measure: directed edges used twice after welding at 0.1 mm. Two triangles walking an edge the same way disagree on
+    which side is out. A closed or open surface with consistent winding has none."""
+    key = {}
+    ids = np.array([key.setdefault(tuple(q), len(key)) for q in np.round(m["pos"] * 10000).astype(np.int64).tolist()])
+    seen = {}
+    for a_, b_, c_ in ids[m["tris"]].tolist():
+        for e in ((a_, b_), (b_, c_), (c_, a_)):
+            seen[e] = seen.get(e, 0) + 1
+    return sum(1 for v in seen.values() if v >= 2)
+
+
+def tri_normals(m):
+    t = m["pos"][m["tris"]]
+    return t, np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+
+
+def check_winding(vis, col):
+    """T017 defects, from the GLB. glTF front faces are counter-clockwise; Godot's importer keeps which side is the front."""
+    G = "6 winding"
+    for nm in PIECES:
+        if nm in vis:
+            n = flipped_pairs(vis[nm])
+            rec(G, "%s winding consistent (0 flipped edge pairs)" % nm, n == 0, "%d pairs" % n)
+    if "arch" in col:
+        t, n_ = tri_normals(col["arch"])
+        c = t.mean(1)
+        rad = np.stack([c[:, 0], c[:, 1] - 2.2], 1)
+        r = np.hypot(rad[:, 0], rad[:, 1])
+        sof = (np.abs(c[:, 2]) < 0.29) & (r < 1.75)
+        side = np.abs(np.abs(c[:, 2]) - 0.3) < 1e-4
+        top = (np.abs(c[:, 2]) < 0.29) & ~sof
+        bad = (n_[sof, 0] * rad[sof, 0] + n_[sof, 1] * rad[sof, 1] >= 0).sum()
+        rec(G, "arch collision soffit faces the opening", sof.sum() == 24 and bad == 0, "%d of %d wound into the masonry" % (bad, sof.sum()))
+        bad = (n_[side, 2] * c[side, 2] <= 0).sum()
+        rec(G, "arch collision faces point out of the arch", side.sum() == 48 and bad == 0, "%d of %d reversed" % (bad, side.sum()))
+        bad = (n_[top, 1] <= 0).sum()
+        rec(G, "arch collision top points up", top.sum() == 24 and bad == 0, "%d of %d reversed" % (bad, top.sum()))
+    if "vault_bay" in col:
+        t, n_ = tri_normals(col["vault_bay"])
+        rec(G, "vault collision faces down into the room", (n_[:, 1] < 0).all(), "%d of %d" % ((n_[:, 1] < 0).sum(), len(n_)))
+    if "pier" in vis:
+        t, n_ = tri_normals(vis["pier"])
+        on = np.all(np.abs(t[:, :, 1] - 2.2) < 1e-4, axis=1)
+        area = 0.5 * n_[on, 1].sum()
+        rec(G, "pier capital has a top face at the springing", on.sum() == 2 and area > 0.5, "%d tris, %.3f m2 facing up" % (on.sum(), area))
+
+
 def check_soiling(g, b, vis):
     G = "4b soiling"
     for nm in ("wall", "pier"):
@@ -673,10 +721,11 @@ def check_wall_lags(tab, band):
         rec(G, "wall span %d lags 1-7 m < %.2f, unlit" % (span, WALL_LAG_MAX), worst < WALL_LAG_MAX,
             "worst %.3f; %s" % (worst, ", ".join("%g m %.3f" % (m_, res[span][m_]) for m_ in metres)))
     # a course that is darker as a whole still lines up from wall to wall, as a stripe
-    L = band @ np.array([.2126, .7152, .0722])
+    # all seven courses, in linear luma: what the eye sees once lit. The top course used to be left out, and read 0.35 against 0.27.
+    L = np.where(band <= 0.04045, band / 12.92, ((band + 0.055) / 1.055) ** 2.4) @ np.array([.2126, .7152, .0722])
     edges = np.array(ATLAS["band_a_course_edges_m"])
     rows = (band.shape[0] * (1 - edges / 2.0)).astype(int)
-    means = np.array([L[rows[c + 1] + 6:rows[c] - 6].mean() for c in range(len(edges) - 2)])     # the capital course is plain
+    means = np.array([L[rows[c + 1] + 6:rows[c] - 6].mean() for c in range(len(edges) - 1)])
     spread = float(np.ptp(means) / means.mean())
     rec(G, "wall no course stripes: course mean spread <= %.2f" % COURSE_SPREAD_MAX, spread <= COURSE_SPREAD_MAX,
         "%.3f; %s" % (spread, np.round(means, 3).tolist()))
@@ -782,6 +831,7 @@ def main():
     vis, col = check_nodes(g, b)
     dims = check_dims(vis, col)
     dims["relief_m_by_angle"] = check_relief(vis)
+    check_winding(vis, col)
     check_soiling(g, b, vis)
     check_rubble(g, b, vis)
     courses = check_wall_courses(vis)

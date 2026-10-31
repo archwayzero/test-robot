@@ -317,6 +317,32 @@ def main():
     pos[t, 1] += 0.03
     write(OUT / "ceiling_crack.glb", js, b)
 
+    js, b = read()   # arch collision wound into the masonry, as before T039
+    _, _, tris = mesh_arrays(js, b, "arch-colonly")
+    tris[:] = tris[:, ::-1].copy()
+    write(OUT / "arch_collision_reversed.glb", js, b)
+
+    js, b = read()   # capital open at the top, as before T039
+    _, pos, tris = mesh_arrays(js, b, "pier")
+    for t in tris:
+        if np.ptp(pos[t, 1]) < 1e-4 and abs(pos[t[0], 1] - 2.2) < 1e-4:
+            t[:] = t[0]
+    write(OUT / "pier_no_top.glb", js, b)
+
+    js, b = read()   # one rubble triangle inside out, as before T039
+    _, pos, tris = mesh_arrays(js, b, "ceiling_crawl")
+    tris[100] = tris[100][::-1].copy()
+    write(OUT / "ceiling_triangle_flipped.glb", js, b)
+
+    js, b = read()   # the top course brighter on the whole, as before T039: 0.35 against 0.27 linear
+    r0, r1 = atl["band_a_rows"]
+
+    def bright(a):
+        a[r0:int(r1 - edges[6] * 512)] *= 1.13
+        return a
+    replace_image(js, b, "stone_ashlar_color", bright)
+    write(OUT / "ashlar_top_course_bright.glb", js, b)
+
     js, b = read()   # non-tileable image where a tile belongs (also pushes texture memory over budget)
     imgs = {i["name"]: i for i in js["images"]}
     imgs["stone_floor_color"]["bufferView"] = imgs["stone_ashlar_color"]["bufferView"]

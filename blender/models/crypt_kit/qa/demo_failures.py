@@ -49,6 +49,10 @@ INTENDED = {
     "ceiling_side_deep": "ceiling_crouch side set back",
     "ceiling_plates": "ceiling_crouch no plates",
     "ceiling_crack": "ceiling_crouch closed surface",
+    "arch_collision_reversed": "arch collision soffit faces the opening",
+    "pier_no_top": "pier capital has a top face",
+    "ceiling_triangle_flipped": "ceiling_crawl winding consistent",
+    "ashlar_top_course_bright": "wall no course stripes",
 }
 
 
