@@ -13,6 +13,7 @@ const VIEWS := [
 	[Vector3(0.0, EYE, 4.0), Vector3(0, 2.1, 0.2), 70.0],  # 4 m, square on
 	[Vector3(3.3, EYE, 1.0), Vector3(0, 2.1, 0.2), 70.0],  # along the corridor, typical first sight
 	[Vector3(0.45, 2.2, 0.85), Vector3(0, 2.1, 0.2), 45.0],  # close-up
+	[Vector3(0.9, 2.1, 0.2), Vector3(0, 2.08, 0.2), 45.0],  # close-up, profile
 ]
 
 var _cam: Camera3D
@@ -31,7 +32,7 @@ func _ready() -> void:
 	var omni := OmniLight3D.new()
 	omni.position = MOUNT + lamp.find_child("light_emitter", true, false).position
 	omni.light_color = Color(1.0, 0.9, 0.78)
-	omni.light_energy = 1.6
+	omni.light_energy = 0.8
 	omni.omni_range = 6.0
 	add_child(omni)
 	var main_scene: Node = load("res://modules/game/internal/main.tscn").instantiate()  # review under the game's own environment
