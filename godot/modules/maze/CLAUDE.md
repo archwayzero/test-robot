@@ -28,7 +28,7 @@ Maze layout grid (seeded, closed) and building the 3D maze from kit pieces, ligh
 - Same (seed, size) must give a byte-identical layout on every platform (no float math in generation).
 - World: greybox first (T003: boxes with the kit dimensions from docs/contracts/crypt-kit.md, one material), then
   the crypt_kit GLB pieces (T018). Static geometry on physics layer 1 ("world"), collision from the kit's `-col`
-  shapes or simple boxes. Merge or instance per 4x4-cell chunk so no mesh is lit by more than 8 omni lights
+  shapes or simple boxes. Merge or instance per 2x2-cell chunk (T018: 4x4 reached 14 omnis, 2x2 reaches 7 on the game seed) so no mesh instance is lit by more than 8 omni lights
   (Mobile renderer limit). Add OccluderInstance3D per chunk. Lighting (T018): baked LightmapGI if it can be baked
   headless; otherwise real-time OmniLights at lamp slots (range <= 1.5 cells, no shadows) — report which.
 - Writes `StateKeys.MAZE_SEED` in build().
@@ -47,3 +47,8 @@ Maze layout grid (seeded, closed) and building the 3D maze from kit pieces, ligh
 ## Kit assembly (T018)
 Follow "Rules for the assembler" in docs/contracts/crypt-kit.md: arch on every open edge, pier on every interior
 corner (do not carry over the collinear-wall pier skip), wall rotation and tint, vertex colour flag on kit materials.
+
+## Tied values (T018)
+- `CHUNK_DRAW_DISTANCE` (36 m) depends on the game's fog end and on the 300k budget: 38 m exceeds it with the hero. If the
+  fog moves, re-measure the long runs. Run (0,6)/(0,7) south leaves a dark slit until the game matches background to fog.
+- `tests/support/maze_preview.gd` holds a hand copy of the game's Environment values; update it if they change.

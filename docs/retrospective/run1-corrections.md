@@ -379,3 +379,13 @@ modeler task with two reviews). Next game: separate work into different commits,
 
 ### M3 iOS device build
 (to be filled in)
+- **Review rounds on T017 and T018:** each took 3-4 rounds, and most findings were false report text or tests that could
+  not fail, not game defects. An agent's "settled" reading (T017) and a "cannot fail" test (T018, three times, each in a new
+  spot) would be caught earlier if the implementer ran one mutation per new check before reporting. Reviewers also
+  corrected the orchestrator's relayed claims twice: relay agent findings as unverified, and do not reword their scope.
+- **Hook friction from M2, for the human to fix:** `bash_guard.py:78` reads `-colonly` as `-n`, and read-only commands
+  naming `core.hooksPath` or locked files are blocked. The stop hook forced a WIP commit mid-render, mixing concerns
+  in T018's 2b4a268. Harness: a Bash call over 180 s moves to the background, which caused overlap and timeouts.
+- **Git and DVC after merge:** `git merge` and fast-forward do not sync DVC files, and `git checkout -b x origin/main`
+  fails part-way here because tracking writes to the protected .git/config, leaving HEAD behind main's tree. Use
+  `--no-track`, and run `dvc checkout` after merges.
