@@ -13,6 +13,12 @@ const OCCLUDER_WALL_SIZE := Vector3(4.0, 4.15, 0.5)
 const OCCLUDER_CEILING_INSET := 0.2
 const OCCLUDER_TOP := 4.15
 const CEILING_UNDERSIDE := {&"ceiling_crouch": 1.3, &"ceiling_crawl": 0.75}
+## Lamps: real-time omnis, no shadows. LightmapGI has no bake call outside the editor and headless has no RenderingDevice.
+const OMNI_RANGE := 5.0  # 1.25 cells: 6 m (1.5 cells) gave 9-11 omnis on a 2x2 chunk
+const OMNI_ENERGY := 0.8
+const OMNI_COLOR := Color(1.0, 0.93, 0.84)  # near neutral: the albedo is already warm
+const OMNI_SPECULAR := 0.0  # 0.03, 0.1 and 0.3 keep pure white pier hairlines at 16 m; 0 removes them
+const FLAME_EMISSION := 1.0
 ## Index list of an 8-corner box, corners numbered by bits x, y, z.
 const BOX_TRIS: Array[int] = [0, 2, 1, 1, 2, 3, 4, 5, 6, 5, 7, 6, 0, 1, 4, 1, 5, 4,
 		2, 6, 3, 3, 6, 7, 0, 4, 2, 2, 4, 6, 1, 3, 5, 3, 7, 5]
@@ -51,14 +57,16 @@ func build(layout: MazeLayout) -> void:
 	_items = Assembly.items(layout)
 	var by_chunk := {}
 	for item in _items:
-		var key: Vector2i = (item.cell as Vector2i) / CHUNK_CELLS
-		if not by_chunk.has(key):
-			by_chunk[key] = []
-		by_chunk[key].append(item)
+		_group(by_chunk, item.cell, item)
+	var lamps_by_chunk := {}
+	for slot in layout.lamp_slots():
+		_group(lamps_by_chunk, slot.cell, slot)
+	kit.lamp_flame_material.emission_energy_multiplier = FLAME_EMISSION
 	var sz := layout.size()
 	for cy in range(0, sz.y, CHUNK_CELLS):
 		for cx in range(0, sz.x, CHUNK_CELLS):
-			_build_chunk(Vector2i(cx, cy), by_chunk.get(Vector2i(cx, cy) / CHUNK_CELLS, []), kit)
+			var key := Vector2i(cx, cy) / CHUNK_CELLS
+			_build_chunk(Vector2i(cx, cy), by_chunk.get(key, []), lamps_by_chunk.get(key, []), kit)
 	# Let the physics server register the new bodies before announcing that collision is ready.
 	await get_tree().physics_frame
 	await get_tree().physics_frame
@@ -66,6 +74,13 @@ func build(layout: MazeLayout) -> void:
 		return  # superseded by a newer build() call
 	_built = true
 	built.emit()
+
+
+static func _group(groups: Dictionary, cell: Vector2i, value: Dictionary) -> void:
+	var key := cell / CHUNK_CELLS
+	if not groups.has(key):
+		groups[key] = []
+	groups[key].append(value)
 
 
 func _clear() -> void:
@@ -76,7 +91,7 @@ func _clear() -> void:
 	_chunks.clear()
 
 
-func _build_chunk(origin: Vector2i, items: Array, kit: Kit) -> void:
+func _build_chunk(origin: Vector2i, items: Array, slots: Array, kit: Kit) -> void:
 	var sz := _layout.size()
 	var s := _layout.cell_size_m()
 	var end := Vector2i(mini(origin.x + CHUNK_CELLS, sz.x), mini(origin.y + CHUNK_CELLS, sz.y))
@@ -88,32 +103,42 @@ func _build_chunk(origin: Vector2i, items: Array, kit: Kit) -> void:
 	chunk.set_meta(&"maze_chunk", Rect2i(origin, end - origin))
 	var mesh := MeshInstance3D.new()
 	mesh.name = "Mesh"
-	mesh.mesh = _merge(items, kit, centre)
+	mesh.mesh = _merge(items, slots, kit, centre)
 	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	chunk.add_child(mesh)
 	chunk.add_child(_collision(items, kit, centre))
 	chunk.add_child(_occluder(items, centre))
+	for slot in slots:
+		chunk.add_child(_lamp(slot, kit, centre))
 	add_child(chunk)
 	_chunks.append(chunk)
 
 
 ## One surface per material, in the order of first appearance in the plan, which is deterministic.
-func _merge(items: Array, kit: Kit, centre: Vector3) -> ArrayMesh:
-	var tools := {}  # StandardMaterial3D -> SurfaceTool
+func _merge(items: Array, slots: Array, kit: Kit, centre: Vector3) -> ArrayMesh:
+	var tools := {}  # Material -> SurfaceTool
 	for item in items:
-		var mat := kit.material_of(item.piece)
-		if not tools.has(mat):
-			var st := SurfaceTool.new()
-			st.begin(Mesh.PRIMITIVE_TRIANGLES)
-			st.set_material(mat)
-			tools[mat] = st
 		var xform: Transform3D = item.xform
 		xform.origin -= centre
-		(tools[mat] as SurfaceTool).append_from(kit.mesh_for(item), 0, xform)
+		_append(tools, kit.material_of(item.piece), kit.mesh_for(item), xform)
+	for slot in slots:
+		var mount := Assembly.lamp_mount(_layout, slot)
+		mount.origin -= centre
+		_append(tools, kit.lamp_iron_material, kit.lamp_iron, mount * kit.lamp_iron_xform)
+		_append(tools, kit.lamp_flame_material, kit.lamp_flame, mount * kit.lamp_flame_xform)
 	var out := ArrayMesh.new()
 	for mat in tools:
 		(tools[mat] as SurfaceTool).commit(out, Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES)
 	return out
+
+
+static func _append(tools: Dictionary, mat: Material, mesh: Mesh, xform: Transform3D) -> void:
+	if not tools.has(mat):
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		st.set_material(mat)
+		tools[mat] = st
+	(tools[mat] as SurfaceTool).append_from(mesh, 0, xform)
 
 
 ## The kit's -colonly trimeshes merged into one shape per chunk, on layer 1. The faces keep the kit's winding.
@@ -164,3 +189,23 @@ static func _add_box(vertices: PackedVector3Array, indices: PackedInt32Array, xf
 		vertices.append(xform * Vector3(high.x if i & 1 else low.x, high.y if i & 2 else low.y, high.z if i & 4 else low.z))
 	for i in BOX_TRIS:
 		indices.append(base + i)
+
+
+## The lamp's meshes are merged into the chunk (flame material shared, so dim it through FLAME_EMISSION). This node is
+## the mount, on the wall face with local +Z into the cell; it has no collision. The omni stands at the kit's emitter.
+func _lamp(slot: Dictionary, kit: Kit, centre: Vector3) -> Node3D:
+	var mount := Node3D.new()
+	mount.name = "Lamp_%d_%d" % [slot.cell.x, slot.cell.y]
+	mount.transform = Assembly.lamp_mount(_layout, slot)
+	mount.position -= centre
+	mount.set_meta(&"maze_lamp", slot)
+	var omni := OmniLight3D.new()
+	omni.name = "Light"
+	omni.position = kit.lamp_emitter
+	omni.omni_range = OMNI_RANGE
+	omni.light_energy = OMNI_ENERGY
+	omni.light_color = OMNI_COLOR
+	omni.light_specular = OMNI_SPECULAR
+	omni.shadow_enabled = false
+	mount.add_child(omni)
+	return mount
