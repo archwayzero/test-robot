@@ -70,6 +70,11 @@ lands at 2.90-3.05 above the capital.
   apply a per-instance or world-space tint, because one wall mesh repeats every 4 m.
 - Kit soiling is glTF vertex colour (COLOR_0). Godot ignores it unless the materials set
   `vertex_color_use_as_albedo = true`; check `vertex_color_is_srgb` against a reference render.
+- Use anisotropic filtering on kit materials (`texture_filter` 5, linear mipmap anisotropic): the imported sampler is
+  filter 3 and visibly blurs floors and walls at grazing angles.
+- Keep lights near neutral: the albedo is already warm, and warm lamps push walls past the reference colour.
+- `ceiling_crouch` and `ceiling_crawl` rely heavily on COLOR_0 and are not acceptable without the flag above.
+- Review renders use 96 lights in Cycles. Judge the shipped look in a Mobile scene, not from those renders.
 - Rely on culling: a full FULL-cell maze is about 730k tris (seed 20261025), against 300k per frame.
 
 ## wall_lamp (separate asset `godot/assets/wall_lamp/model/wall_lamp.glb`)

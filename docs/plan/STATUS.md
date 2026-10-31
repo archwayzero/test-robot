@@ -33,6 +33,11 @@ impossible under the shared 3.9 crown, so this branch raises vault/wall top to 4
 Pass 2 review (HEAD a6d7e65): FAIL, look 7.4, structure 9.5; modeler self-score was 8.2. Seam metric p90 confirmed
 justified. COLOR_0 is dropped in Godot without the material flag. Pass 3 applies the reviewer's targets; the review
 scene applies the T018 assembler rules and neutral light. Reviewer estimate: about 8.3 from the kit alone.
+Pass 3 review (HEAD 96e3e55): FAIL, look 7.6, structure 10/10, kit-only 7.2, Godot stand-in about 6.9. Ceilings
+(reviewer judgement): scripted 8.0-8.1, with wall_b about 8.3, with real stone maps about 8.6. ComfyUI has only the
+reference-to-video workflow, so stone maps need a human decision on source. Pass 4 covers source-independent work only:
+per-course wall UV, rubble, webs, metrics, clean import. Ashlar and floor texture tuning waits for that decision.
+Open: push T015 branch before any fresh clone needs DVC data; check_budgets counts -colonly primitives as draw calls.
 Brief: contract exact (7 pieces, one GLB, -colonly, UV2, <= 2 materials, baked tileable, 64 MB, 21,000 tris, 14 draw
 calls), tri guides floor 200, wall 400, pier 300, arch 800, vault_bay 1500, ceilings 1200; check_kit.py must be shown
 able to fail; arcade render at the crypt.jpg camera, side by side. Scope: blender/models/crypt_kit/**,
