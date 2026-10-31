@@ -50,5 +50,5 @@ corner (do not carry over the collinear-wall pier skip), wall rotation and tint,
 
 ## Tied values (T018)
 - `CHUNK_DRAW_DISTANCE` (36 m) depends on the game's fog end and on the 300k budget: 38 m exceeds it with the hero. If the
-  fog moves, re-measure the long runs. Run (0,6)/(0,7) south leaves a dark slit until the game matches background to fog.
+  fog moves, re-measure the long runs. The game's `fog_sky_affect` 1.0 makes the background match fog output past the cutoff (T040); no slit remains while that holds.
 - `tests/support/maze_preview.gd` holds a hand copy of the game's Environment values; update it if they change.
