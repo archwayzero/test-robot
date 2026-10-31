@@ -27,7 +27,7 @@ const CEILING_UNDERSIDE := {&"ceiling_crouch": 1.3, &"ceiling_crawl": 0.75}
 const OMNI_RANGE := 5.0  # 1.25 cells. At 6 m (1.5 cells) the game seed sits at the limit and other seeds pass it
 const OMNI_ENERGY := 0.7  # contract 0.8 washes stone out near lamps in Mobile; 0.6 and 0.7 keep the block texture
 const OMNI_COLOR := Color(1.0, 0.93, 0.84)  # near neutral: the albedo is already warm
-const OMNI_SPECULAR := 0.0  # 16 m seam, pixels over 170 all/neutral: 1/0 at 0 and 0.03, 2/0 at 0.1, 27/11 at 0.3, 108/21 at 0.5
+const OMNI_SPECULAR := 0.0  # 16 m seam, pixels over 170 all/neutral: 1/0 at 0 and 0.03, 2/0 at 0.1, 27/11 at 0.3
 const FLAME_EMISSION := 1.0
 ## Index list of an 8-corner box, corners numbered by bits x, y, z.
 const BOX_TRIS: Array[int] = [0, 2, 1, 1, 2, 3, 4, 5, 6, 5, 7, 6, 0, 1, 4, 1, 5, 4,
