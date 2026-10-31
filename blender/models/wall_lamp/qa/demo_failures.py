@@ -3,7 +3,8 @@
 
   python3 blender/models/wall_lamp/qa/demo_failures.py
 
-Exit 0 only if the real GLB passes and every copy fails on the check it was altered to break.
+Exit 0 only if the real GLB passes and every copy fails on the check it was altered to break. Alterations take the JSON; those
+that change geometry also take a bytearray of the binary chunk and edit vertices in it, leaving the source GLB alone.
 """
 import copy
 import json
@@ -27,6 +28,18 @@ def write(path, j, b):
 
 def node(j, name):
     return next(n for n in j["nodes"] if n["name"] == name)
+
+
+def edit_positions(j, b, name, change):
+    """Rewrite the POSITION floats of a node's mesh in b: change((x, y, z)) gives the new vertex."""
+    p = j["meshes"][node(j, name)["mesh"]]["primitives"][0]["attributes"]["POSITION"]
+    a = j["accessors"][p]
+    v = j["bufferViews"][a["bufferView"]]
+    off = v.get("byteOffset", 0) + a.get("byteOffset", 0)
+    stride = v.get("byteStride", 12)
+    for i in range(a["count"]):
+        o = off + i * stride
+        struct.pack_into("<3f", b, o, *change(struct.unpack_from("<3f", b, o)))
 
 
 def rename(j):
@@ -80,12 +93,29 @@ def flipped_to_wall(j):
     node(j, "wall_lamp")["rotation"] = [0, 1, 0, 0]
 
 
+def plate_6mm_longer(j, b):
+    """Grow the plate at both ends: centred, so "origin at mid back plate" still passes and only the bottom check can see it."""
+    edit_positions(j, b, "wall_lamp_iron", lambda p: (p[0], p[1] + (0.006 if p[1] > 0 else -0.006), p[2]) if p[2] < 0.001 else p)
+
+
+def flame_pivot_6mm_off(j):
+    node(j, "wall_lamp_flame")["translation"][2] += 0.006
+
+
+def flame_floats_6mm(j, b):
+    """The pivot stays at the right coordinates, the mesh rises off it."""
+    edit_positions(j, b, "wall_lamp_flame", lambda p: (p[0], p[1] + 0.006, p[2]))
+
+
 CASES = [("renamed_node", rename, "node names exact"), ("emitter_6mm_off", move_emitter, "emitter within 5 mm"),
          ("root_moved", shift_root, "root at origin"), ("has_light", add_light, "no lights"),
          ("has_extension", extension, "no extensions"), ("no_emissive", no_emissive, "flame emissive present"),
          ("third_material", extra_material, "exactly 2 materials"), ("third_primitive", extra_primitive, "primitives <= 2"),
          ("over_budget", over_budget, "triangles <= 1000"), ("scaled_node", scale_node, "no rotation or scale on any node"),
-         ("turned_180", flipped_to_wall, "no rotation or scale on any node")]
+         ("turned_180", flipped_to_wall, "no rotation or scale on any node"),
+         ("plate_6mm_longer", plate_6mm_longer, "bounds: plate min y -0.175 within 5 mm"),
+         ("flame_pivot_6mm_off", flame_pivot_6mm_off, "bounds: flame pivot at its base within 5 mm"),
+         ("flame_floats_6mm", flame_floats_6mm, "bounds: flame pivot at its base within 5 mm")]
 
 
 def main():
@@ -98,14 +128,15 @@ def main():
     bad = r.returncode != 0
     for name, alter, expect in CASES:
         j = copy.deepcopy(j0)
-        alter(j)
+        b2 = bytearray(b)
+        alter(*((j, b2) if alter.__code__.co_argcount == 2 else (j,)))
         p = BAD / (name + ".glb")
-        write(p, j, b)
+        write(p, j, bytes(b2))
         r = subprocess.run([sys.executable, str(CHECK), "--quiet", "--glb", str(p)], capture_output=True, text=True)
         out = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else r.stderr.strip()[-200:]
         hit = r.returncode == 1 and expect in out
         bad |= not hit
-        print("%-4s %-18s %s" % ("ok" if hit else "MISS", name, out))
+        print("%-4s %-20s %s" % ("ok" if hit else "MISS", name, out))
     sys.exit(1 if bad else 0)
 
 

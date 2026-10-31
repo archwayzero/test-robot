@@ -15,6 +15,9 @@ ROOT = Path(__file__).resolve().parents[4]
 DEFAULT = ROOT / "godot/assets/wall_lamp/model/wall_lamp.glb"
 EMITTER = (0.0, 0.25, 0.35)
 EMITTER_TOL = 0.005
+PLATE_MIN_Y = -0.175  # bottom of the back plate: 1.825 m above the floor when mounted at y = 2.0
+FLAME_PIVOT = (0.0, 0.205, 0.35)  # at the wick: the game scales the flame from its base
+BOUNDS_TOL = 0.005
 NODES = {"wall_lamp", "wall_lamp_iron", "wall_lamp_flame", "light_emitter"}
 MAX_TRIS, MAX_PRIMS, MAX_TEX, MAX_MB = 1000, 2, 2048, 16
 
@@ -99,18 +102,26 @@ def run(path):
     it, fl = verts["wall_lamp_iron"], verts["wall_lamp_flame"]
     lo = [min(p[i] for p in it + fl) for i in range(3)]
     hi = [max(p[i] for p in it + fl) for i in range(3)]
-    check("bounds", True, "x %.3f..%.3f y %.3f..%.3f z %.3f..%.3f, size %.3f x %.3f x %.3f m"
-          % (lo[0], hi[0], lo[1], hi[1], lo[2], hi[2], hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]))
+    extent = "x %.3f..%.3f y %.3f..%.3f z %.3f..%.3f, size %.3f x %.3f x %.3f m" \
+        % (lo[0], hi[0], lo[1], hi[1], lo[2], hi[2], hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2])
     check("wall face at z = 0, nothing behind it", abs(lo[2]) < 0.001, "min z %.4f" % lo[2])
     plate = [p for p in it if p[2] - lo[2] < 0.001]
     px = [min(p[0] for p in plate), max(p[0] for p in plate)]
     py = [min(p[1] for p in plate), max(p[1] for p in plate)]
+    check("bounds: plate min y -0.175 within 5 mm", abs(py[0] - PLATE_MIN_Y) <= BOUNDS_TOL,
+          "plate min y %.4f, %.3f m at y = 2.0; %s" % (py[0], 2.0 + py[0], extent))
     check("origin at mid back plate within 5 mm", abs(sum(px) / 2) < 0.005 and abs(sum(py) / 2) < 0.005,
           "plate x %.3f..%.3f y %.3f..%.3f" % (*px, *py))
     flo = [min(p[i] for p in fl) for i in range(3)]
     fhi = [max(p[i] for p in fl) for i in range(3)]
     check("flame surrounds the emitter", all(flo[i] < world["light_emitter"][i] < fhi[i] for i in range(3)),
           "flame x %.3f..%.3f y %.3f..%.3f z %.3f..%.3f" % (flo[0], fhi[0], flo[1], fhi[1], flo[2], fhi[2]))
+
+    pivot_err = math.dist(world["wall_lamp_flame"], FLAME_PIVOT)
+    base_err = abs(flo[1] - world["wall_lamp_flame"][1])  # coordinates alone would pass a mesh floating above its pivot
+    check("bounds: flame pivot at its base within 5 mm", pivot_err <= BOUNDS_TOL and base_err <= BOUNDS_TOL,
+          "pivot (%.4f, %.4f, %.4f), error %.2f mm; mesh base %.2f mm from it"
+          % (*world["wall_lamp_flame"], pivot_err * 1000, base_err * 1000))
 
     ms = j.get("materials", [])
     check("exactly 2 materials", len(ms) == 2, [m.get("name") for m in ms])
