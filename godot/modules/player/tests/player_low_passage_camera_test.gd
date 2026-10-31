@@ -200,7 +200,7 @@ func test_orbit_drag_reclamps_shoulder() -> void:
 	assert_eq(bad, 0, "drag events leaving the shifted view inside a wall")
 
 
-## Review finding 4: the fade reaches meshes added under Visual later (T019 hero swap) without rescanning each frame.
+## Review finding 4: the fade reaches meshes added under Visual later (hero swaps) without rescanning each frame.
 func test_fade_reaches_visual_added_later() -> void:
 	arena.add_box(Vector3(Arena.TUNNEL_X1 + 0.3, 1.5, Arena.CROUCH_TUNNEL_Z), Vector3(0.6, 3.0, 4.0))
 	await auto.advance_frames(2)
@@ -231,8 +231,8 @@ func test_close_camera_fades_player() -> void:
 	print("  backed against the end wall: camera %.3f m from the head, fade %.2f" % [dist, _fade()])
 	assert_true(dist < 0.6, "setup: camera close (%.3f m)" % dist)
 	assert_true(_fade() >= 0.5, "player visual faded/hidden when the camera is %.3f m away (fade %.2f)" % [dist, _fade()])
-	var capsule := player.get_node("Visual/Capsule") as GeometryInstance3D
-	assert_true(capsule.transparency >= 0.5 or not capsule.is_visible_in_tree(), "capsule transparent or hidden")
+	var hero := player.get_node("Visual/Hero/Armature/Skeleton3D/hero") as GeometryInstance3D
+	assert_true(hero.transparency >= 0.5 or not hero.is_visible_in_tree(), "hero transparent or hidden")
 	assert_true(ray_clear(cam_pivot(), cam), "pivot -> camera ray hits nothing")
 	assert_false(_in_body(cam), "camera not inside geometry")
 	assert_true(cam.y < Arena.CROUCH_CEILING - 0.1, "camera below the ceiling")
@@ -243,7 +243,7 @@ func test_close_camera_fades_player() -> void:
 	await auto.advance_frames(30)
 	assert_almost_eq(_fade(), 0.0, 1e-3, "visible again once the camera is far enough")
 	assert_true(player.get_node("Visual").visible, "visual node visible again")
-	assert_almost_eq(capsule.transparency, 0.0, 1e-3, "capsule opaque again")
+	assert_almost_eq(hero.transparency, 0.0, 1e-3, "hero opaque again")
 
 
 ## Open floor: arm lengths 2.5/1.8/1.2, default pitch, pivot at 0.9 x height, visual opaque (unchanged by T030).

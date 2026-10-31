@@ -1,4 +1,4 @@
-## Player implementation (T004): capsule placeholder, stances, walk/run/jump, third-person spring-arm camera.
+## Player implementation (T004, hero rig T019): stances, walk/run/jump, third-person spring-arm camera.
 ## Input only through GameActions. See godot/modules/player/CLAUDE.md for the contract.
 extends PlayerController
 
@@ -60,7 +60,7 @@ const FADE_START := 0.8
 const FADE_END := 0.5
 const FADE_SMOOTHING := 12.0
 
-## Standing collision height (m). 1.75 until the conformed hero reports its height (T019).
+## Standing collision height (m): the hero height in docs/contracts/blender-godot-assets.md "Asset: hero" (1.75).
 @export var stand_height := 1.75
 
 var _stance: Stance = Stance.STAND
@@ -81,7 +81,7 @@ var _pitch_limit := PITCH_MIN
 var _visual_fade := 0.0
 ## Smoothed sideways view offset (m) under low ceilings (target before the wall clamp in _place_rig()).
 var _shoulder := 0.0
-## GeometryInstance3D nodes under $Visual (rebuilt when its children change, e.g. the T019 hero swap) and the
+## GeometryInstance3D nodes under $Visual (rebuilt when its children change) and the
 ## transparency last applied to them (-1 = never / list rebuilt).
 var _fade_geoms: Array[GeometryInstance3D] = []
 var _fade_geoms_dirty := true
@@ -339,30 +339,6 @@ func has_clearance_for(target: Stance) -> bool:
 func _apply_shape() -> void:
 	_collision.shape = _shapes[_stance]
 	_collision.position = Vector3(0.0, _height_of(_stance) * 0.5, 0.0)
-	_update_visual()
-
-
-func _update_visual() -> void:
-	var h := _height_of(_stance)
-	var body := _visual.get_node_or_null("Capsule") as MeshInstance3D
-	if body != null:
-		var mat := body.material_override
-		if h < RADIUS * 2.0:
-			var cyl := CylinderMesh.new()
-			cyl.top_radius = RADIUS
-			cyl.bottom_radius = RADIUS
-			cyl.height = h
-			body.mesh = cyl
-		else:
-			var cap := CapsuleMesh.new()
-			cap.radius = RADIUS
-			cap.height = h
-			body.mesh = cap
-		body.material_override = mat
-		body.position = Vector3(0.0, h * 0.5, 0.0)
-	var nose := _visual.get_node_or_null("Nose") as Node3D
-	if nose != null:
-		nose.position = Vector3(0.0, h * 0.8, -RADIUS)
 
 
 # --- Camera -------------------------------------------------------------------------------------------
@@ -476,7 +452,7 @@ func _ray_distance(from: Vector3, to: Vector3, full: float) -> float:
 
 
 ## Fades (GeometryInstance3D.transparency) and finally hides the player visual when the camera is close to the
-## head, so the view ahead stays visible. Generic over whatever meshes live under $Visual (capsule, hero rig).
+## head, so the view ahead stays visible. Generic over whatever meshes live under $Visual.
 func _update_fade(delta: float) -> void:
 	if delta <= 0.0:
 		# Snap (spawn/load): the spring arm has not placed the camera yet, so its position is stale. Start opaque;
