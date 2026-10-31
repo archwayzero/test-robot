@@ -158,23 +158,35 @@ vault_bay 378,240, arch 351,200, pier 53,802, wall 37,694, ceilings 7,022, floor
 
 Textures: 64.0/64 MB is exactly at the limit, but it is the uncompressed RGBA + mips upper bound (48 MB x 4/3). The ASTC_4x4 import products are 16.0 MiB on disk for the kit and 1.05 MB for the lamp, including mips. Device memory is not measured.
 
-Engine counters, CPU renderer, 1280x590, unmerged assembler. Raw at hold 3; occluders at hold 8, after 3 warm-up views:
+Engine counters, CPU renderer, 1280x590, unmerged assembler. Raw at hold 3. Occluders at hold 16, after 3 warm-up views; hold 16 equals hold 32 in every view, draw calls and tris. Sources: `.captures/t017_review/occ16_counters.json`, `occ32_counters.json` (first 6 rows); `.captures/t017/fix_occ16_counters.json`, `fix_occ32_counters.json` (all 8 rows, and the first 6 match the review to the digit).
 | View | Draw calls | Tris | With box occluders: draw calls | Tris |
 |---|---|---|---|---|
-| corridor centre | 239 | 50,425 | 90 | 23,768 |
+| corridor centre | 239 | 50,425 | 86 | 22,008 |
 | corridor wall-hug | 294 | 59,797 | 97 | 25,378 |
-| pier close | 1225 | 204,156 | 46 | 17,726 |
-| mixed edge | 925 | 144,714 | 135 | 32,648 |
-| long view, wall face | 1831 | 282,568 | 153 | 34,224 |
-| far corridor (new) | 1554 | 213,317 | **236** | 42,104 |
+| pier close | 1225 | 204,156 | 20 | 9,774 |
+| mixed edge | 925 | 144,714 | 137 | 32,864 |
+| long view, wall face | 1831 | 282,568 | 52 | 19,042 |
+| far corridor | 1554 | 213,317 | 186 | 34,210 |
+| frontal lit wall (new) | 1741 | 273,134 | 61 | 20,464 |
+| far corridor, level camera (new) | 1560 | 213,809 | 167 | 29,870 |
 
-**Correction to the first report.** Its occluder column (204, 259, 168, 128, 249) was read at hold 3, before occlusion had settled. The first report's "exceed 200 in 3 of 5 views" does not hold: 5 of 5 of those views are under 200 once settled. The long corridor is still over, at 236.
-Occluders do nothing in the first frames: at hold 3 the first 3 views read raw counts, and at hold 8 the first view still does. So expect a raw-count spike after load or teleport. Cause unknown.
+**Settled range: 20-186 draw calls.** Every sampled view is under 200. The 3 warm-up views, `lamp_2m`, `lamp_3m`, `lamp_4m`, read 67, 88 and 93.
+
+**Correction (T017 fix pass).** The occluder column at c16c50e was read at hold 8 and was not settled. Its conclusion that the long corridor stays over 200 was wrong: that view settles at 186, and the 236 was a hold 8 reading. The hold 8 numbers themselves were read correctly and the reviewer reproduced them. Against hold 16, 6 of 9 views change at hold 8: first view 494 -> 67, wall face 153 -> 52, far corridor 236 -> 186, pier 46 -> 20, corridor 90 -> 86, mixed edge 135 -> 137.
+
+**Correction to the first report.** Its occluder column (204, 259, 168, 128, 249) was read at hold 3, before occlusion had settled. The first report's "exceed 200 in 3 of 5 views" does not hold: 5 of 5 of those views are under 200 once settled.
+
+Occlusion needs more than 8 frames after a camera cut or load, and is stable by 16 in the sampled views. Occluders do nothing in the very first frames: at hold 3 the first 3 views read raw counts, and at hold 8 the first view still does (494, its raw count). Cause unknown, and it is not known whether the lag follows frames or clock time: these are CPU frames at `--fixed-fps 30`, so the frame count may not carry over to a device.
+
+Limits of this evidence:
+- **Coverage.** 11 of 39 views have occluder counts. They include the 4 heaviest raw views. The other 28 are unmeasured, the heaviest being `top_course` at 1375 raw.
+- **The spike.** The load case is direct: the first view of a run. The teleport case is weaker, because it comes from camera cuts between preview views. No real teleport or respawn was measured.
+- **Resolution.** Settled counts depend on it. A first attempt at the same 11 views ran at `capture.py`'s default `--resolution 960x540` by mistake, and read lower: far corridor 128 against 186, level camera 164 against 167, range 16-164. Hold 16 equalled hold 32 there too. Those numbers are not used above. So 186 is a 1280x590 number, not an iPhone one.
 
 ## Notes for T018
 1. `vertex_color_is_srgb = false`, `vertex_color_use_as_albedo = true`, texture filter 5.
-2. Merge or MultiMesh by chunk and add occluders: 1831 raw draw calls against 200. Box occluders alone settle at 46-236, still 236 in the long corridor.
-3. New: occluders lag after load or a teleport (see "Counts"). Plan for raw counts in those frames.
+2. Merge or MultiMesh by chunk and add occluders: 1831 raw draw calls against 200. Box occluders alone settle at 20-186 in the 8 views of "Counts", under 200 in all 11 sampled views of 39, at 1280x590. Merging is still what covers the frames before they settle.
+3. New: occluders need more than 8 frames after a load or camera cut, stable by 16 in the sampled views (see "Counts"). Plan for raw counts in those frames. Measure a real teleport in the game: the evidence here is camera cuts in a preview.
 4. Omni per mesh: a 4x4-cell chunk reaches 14 against a limit of 8, single pieces 5. Pick chunks so no chunk passes 8.
 5. Lower `light_specular` on lamp omnis. New: that handles both the font cap (G) and the white hairlines (F). 0 is proved to remove both; no value between was tried.
 6. Lamps here have shadows off, so light may pass through walls. Check it in the real scene, including the crawl ceiling wedges.
@@ -196,7 +208,7 @@ Occluders do nothing in the first frames: at hold 3 the first 3 views read raw c
 
 ## Images (not committed, under `.captures/t017/`)
 `run2_a/`, `run2_b/`, `run2_c/`: all 39 views, hold 3, each with `contact_sheet.png`; view order in `run2_<x>_counters.json`.
-`run2_mag1/`, `run2_mag2/`: magenta holes. `run2_cull0/`, `run2_cull1/`: back-face diff. `run2_nospec/`: specular off. `run2_occ/`: occluders.
+`run2_mag1/`, `run2_mag2/`: magenta holes. `run2_cull0/`, `run2_cull1/`: back-face diff. `run2_nospec/`: specular off. `run2_occ/`: occluders, hold 8. `fix_occ16/`, `fix_occ32/`: occluders, 11 views. `fix_wrongres_960x540/`: the 960x540 attempt, not used for the table.
 Logs: `run2_tests_final.log`, `run2_tests_oldkit.log`, `run2_tests_mut_srgb.log`, `run2_baseline_tests.log`.
 Older captures in the same folder are the pre-T039 build, kept for comparison. Cycles review: `.captures/t039/pass4/`.
 `crypt_preview.tscn` takes env `T017_PREVIEW`, for example `hold=3,only=lamp_1m+lamp_4m,tag=x`.
