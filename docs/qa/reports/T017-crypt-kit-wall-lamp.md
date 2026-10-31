@@ -82,6 +82,8 @@ Pre-T039 GLB (md5 fff6162c) against the final tests: **50 passed, 9 failed**.
 Mutation `vertex_color_srgb := true` in the same copy: `test_assembly_rules` fails on "contract: vertex colour is linear" (10 failed in total, the 9 above plus this one).
 The tests were also run unchanged on the T039 kit first: 56 passed, 2 failed, and those 2 were the pins above. So no other test needed changing.
 
+`test_real_player_camera_under_arch` now counts through the plain helper `_masonry_hit` (TEST_PLAN: no `if` after an await). Temporary mutation, restored: the helper tests a known masonry point instead of the camera. Result: 24 of 24 in masonry, "expected 0, got 24", 58 passed, 1 failed. The restored file passes 59 of 59.
+
 ## Defects A, B, C: closed
 A (arch collision), B (pier top) and C (rubble flips) are fixed, with the numbers in the table above. The rule from the first report that rays above 2.2 m under arches are wrong no longer applies.
 
@@ -209,6 +211,6 @@ Limits of this evidence:
 ## Images (not committed, under `.captures/t017/`)
 `run2_a/`, `run2_b/`, `run2_c/`: all 39 views, hold 3, each with `contact_sheet.png`; view order in `run2_<x>_counters.json`.
 `run2_mag1/`, `run2_mag2/`: magenta holes. `run2_cull0/`, `run2_cull1/`: back-face diff. `run2_nospec/`: specular off. `run2_occ/`: occluders, hold 8. `fix_occ16/`, `fix_occ32/`: occluders, 11 views. `fix_wrongres_960x540/`: the 960x540 attempt, not used for the table.
-Logs: `run2_tests_final.log`, `run2_tests_oldkit.log`, `run2_tests_mut_srgb.log`, `run2_baseline_tests.log`.
+Logs: `run2_tests_final.log`, `run2_tests_oldkit.log`, `run2_tests_mut_srgb.log`, `run2_baseline_tests.log`, `fix_tests_final.log`, `fix_tests_mut_helper.log`.
 Older captures in the same folder are the pre-T039 build, kept for comparison. Cycles review: `.captures/t039/pass4/`.
 `crypt_preview.tscn` takes env `T017_PREVIEW`, for example `hold=3,only=lamp_1m+lamp_4m,tag=x`.
