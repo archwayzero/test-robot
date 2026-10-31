@@ -56,10 +56,10 @@ func test_chunks() -> void:
 		if c.has_meta(&"maze_chunk"):
 			chunks += 1
 			var r: Rect2i = c.get_meta(&"maze_chunk")
-			assert_true(r.size.x <= 4 and r.size.y <= 4, "chunk at most 4x4 cells")
+			assert_true(r.size.x <= 2 and r.size.y <= 2, "chunk at most 2x2 cells")
 			var body := c.get_node("Collision") as StaticBody3D
 			assert_eq(body.collision_layer, 1, "world geometry on physics layer 1")
-	assert_eq(chunks, 25, "20x20 maze -> 5x5 chunks")
+	assert_eq(chunks, 100, "20x20 maze -> 10x10 chunks")
 
 
 func test_raycasts_match_has_wall() -> void:
@@ -103,7 +103,7 @@ func test_floor_at_zero() -> void:
 func test_ceiling_heights() -> void:
 	await get_tree().physics_frame
 	var expected := {
-		MazeLayout.Clearance.FULL: 3.9,
+		MazeLayout.Clearance.FULL: 4.148,  # vault crown, collision matches the render mesh (T017)
 		MazeLayout.Clearance.CROUCH: 1.3,
 		MazeLayout.Clearance.CRAWL: 0.75,
 	}
@@ -137,7 +137,7 @@ func test_rebuild_is_idempotent() -> void:
 	await world.built
 	assert_true(world.is_built(), "second rebuild finished")
 	assert_eq(built_count, before + 2)
-	assert_eq(_count_chunks(), 25, "old chunks removed on rebuild")
+	assert_eq(_count_chunks(), 100, "old chunks removed on rebuild")
 	assert_eq(world.get_layout(), layout)
 	assert_eq(core().state.get_value(StateKeys.MAZE_SEED), MazeFactory.GAME_SEED)
 	# Collision matches the rebuilt layout again.

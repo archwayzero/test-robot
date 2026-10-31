@@ -8,6 +8,14 @@ const Kit := preload("res://modules/maze/internal/maze_kit.gd")
 ## 2x2 cells: with OMNI_RANGE below, no chunk mesh meets more than 8 omni lights (4x4 reached 12-13, 3x3 reached 13).
 const CHUNK_CELLS := 2
 const WORLD_LAYER := 1
+## Boxes inside the masonry: T017 validated 0.5 m thick walls; the low ceilings stay clear of their 0.138 m rubble.
+const OCCLUDER_WALL_SIZE := Vector3(4.0, 4.15, 0.5)
+const OCCLUDER_CEILING_INSET := 0.2
+const OCCLUDER_TOP := 4.15
+const CEILING_UNDERSIDE := {&"ceiling_crouch": 1.3, &"ceiling_crawl": 0.75}
+## Index list of an 8-corner box, corners numbered by bits x, y, z.
+const BOX_TRIS: Array[int] = [0, 2, 1, 1, 2, 3, 4, 5, 6, 5, 7, 6, 0, 1, 4, 1, 5, 4,
+		2, 6, 3, 3, 6, 7, 0, 4, 2, 2, 4, 6, 1, 3, 5, 3, 7, 5]
 
 var _layout: MazeLayout
 var _built := false
@@ -38,6 +46,7 @@ func build(layout: MazeLayout) -> void:
 	_clear()
 	_layout = layout
 	Core.state.set_value(StateKeys.MAZE_SEED, layout.get_seed())
+	get_viewport().use_occlusion_culling = true  # the project default is off and the chunks rely on it
 	var kit := Kit.new()
 	_items = Assembly.items(layout)
 	var by_chunk := {}
@@ -82,6 +91,8 @@ func _build_chunk(origin: Vector2i, items: Array, kit: Kit) -> void:
 	mesh.mesh = _merge(items, kit, centre)
 	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	chunk.add_child(mesh)
+	chunk.add_child(_collision(items, kit, centre))
+	chunk.add_child(_occluder(items, centre))
 	add_child(chunk)
 	_chunks.append(chunk)
 
@@ -103,3 +114,53 @@ func _merge(items: Array, kit: Kit, centre: Vector3) -> ArrayMesh:
 	for mat in tools:
 		(tools[mat] as SurfaceTool).commit(out, Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES)
 	return out
+
+
+## The kit's -colonly trimeshes merged into one shape per chunk, on layer 1. The faces keep the kit's winding.
+func _collision(items: Array, kit: Kit, centre: Vector3) -> StaticBody3D:
+	var faces := PackedVector3Array()
+	for item in items:
+		var xform: Transform3D = item.xform
+		xform.origin -= centre
+		faces.append_array(xform * (kit.faces[item.piece] as PackedVector3Array))
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(faces)
+	var node := CollisionShape3D.new()
+	node.shape = shape
+	var body := StaticBody3D.new()
+	body.name = "Collision"
+	body.collision_layer = WORLD_LAYER
+	body.collision_mask = 0
+	body.add_child(node)
+	return body
+
+
+## One OccluderInstance3D per chunk: a box in each wall and in each solid low ceiling.
+func _occluder(items: Array, centre: Vector3) -> OccluderInstance3D:
+	var vertices := PackedVector3Array()
+	var indices := PackedInt32Array()
+	for item in items:
+		var xform: Transform3D = item.xform
+		xform.origin -= centre
+		if item.piece == &"wall":
+			var half := OCCLUDER_WALL_SIZE * 0.5
+			_add_box(vertices, indices, xform, Vector3(-half.x, 0, -half.z), Vector3(half.x, OCCLUDER_WALL_SIZE.y, half.z))
+		elif CEILING_UNDERSIDE.has(item.piece):
+			var half := _layout.cell_size_m() * 0.5 - OCCLUDER_CEILING_INSET
+			_add_box(vertices, indices, xform, Vector3(-half, CEILING_UNDERSIDE[item.piece], -half),
+					Vector3(half, OCCLUDER_TOP, half))
+	var occluder := ArrayOccluder3D.new()
+	occluder.set_arrays(vertices, indices)
+	var node := OccluderInstance3D.new()
+	node.name = "Occluder"
+	node.occluder = occluder
+	return node
+
+
+static func _add_box(vertices: PackedVector3Array, indices: PackedInt32Array, xform: Transform3D, low: Vector3,
+		high: Vector3) -> void:
+	var base := vertices.size()
+	for i in 8:
+		vertices.append(xform * Vector3(high.x if i & 1 else low.x, high.y if i & 2 else low.y, high.z if i & 4 else low.z))
+	for i in BOX_TRIS:
+		indices.append(base + i)
