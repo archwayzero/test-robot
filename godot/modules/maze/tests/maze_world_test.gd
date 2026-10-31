@@ -64,6 +64,10 @@ func test_chunks() -> void:
 
 func test_raycasts_match_has_wall() -> void:
 	await get_tree().physics_frame
+	_check_raycasts()
+
+
+func _check_raycasts() -> void:
 	var sz := layout.size()
 	var sampled := 0
 	var walls := 0
@@ -91,6 +95,10 @@ func test_raycasts_match_has_wall() -> void:
 
 func test_floor_at_zero() -> void:
 	await get_tree().physics_frame
+	_check_floor()
+
+
+func _check_floor() -> void:
 	var sz := layout.size()
 	for c in [Vector2i(0, 0), Vector2i(sz.x - 1, sz.y - 1), layout.start_cell(), Vector2i(7, 13)]:
 		var p := layout.cell_to_world(c)
@@ -102,6 +110,10 @@ func test_floor_at_zero() -> void:
 
 func test_ceiling_heights() -> void:
 	await get_tree().physics_frame
+	_check_ceilings()
+
+
+func _check_ceilings() -> void:
 	var expected := {
 		MazeLayout.Clearance.FULL: 4.148,  # vault crown, collision matches the render mesh (T017)
 		MazeLayout.Clearance.CROUCH: 1.3,
@@ -131,17 +143,28 @@ func test_rebuild_is_idempotent() -> void:
 	world.build(other)
 	assert_false(world.is_built(), "not built while rebuilding")
 	await world.built
-	assert_true(world.is_built(), "first rebuild finished")
-	assert_eq(core().state.get_value(StateKeys.MAZE_SEED), 42)
+	_check_rebuilt(42, "first rebuild finished")
 	world.build(layout)
 	await world.built
-	assert_true(world.is_built(), "second rebuild finished")
-	assert_eq(built_count, before + 2)
+	_check_rebuilt(MazeFactory.GAME_SEED, "second rebuild finished")
+	_check_counts_after_rebuild(before + 2)
+	await get_tree().physics_frame
+	_check_start_cell_collision()
+
+
+func _check_rebuilt(want_seed: int, message: String) -> void:
+	assert_true(world.is_built(), message)
+	assert_eq(core().state.get_value(StateKeys.MAZE_SEED), want_seed)
+
+
+func _check_counts_after_rebuild(want_built: int) -> void:
+	assert_eq(built_count, want_built)
 	assert_eq(_count_chunks(), 100, "old chunks removed on rebuild")
 	assert_eq(world.get_layout(), layout)
-	assert_eq(core().state.get_value(StateKeys.MAZE_SEED), MazeFactory.GAME_SEED)
-	# Collision matches the rebuilt layout again.
-	await get_tree().physics_frame
+
+
+## Collision matches the rebuilt layout again.
+func _check_start_cell_collision() -> void:
 	var start := layout.start_cell()
 	for d in 4:
 		var from := layout.cell_to_world(start) + Vector3(0, RAY_Y, 0)

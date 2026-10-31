@@ -414,17 +414,67 @@ func test_every_chunk_has_a_working_occluder() -> void:
 	assert_true(world.get_viewport().use_occlusion_culling, "occlusion on")
 
 
-func test_occluder_boxes_sit_inside_the_walls() -> void:
-	var outside := 0
+## Every occluder box of the world in world space (each box is 8 consecutive vertices).
+func _occluder_boxes() -> Array[AABB]:
+	var boxes: Array[AABB] = []
 	for chunk: Node3D in _chunks():
 		var v: PackedVector3Array = (chunk.get_node("Occluder").occluder as ArrayOccluder3D).vertices
-		for p in v:
-			var w := chunk.to_global(p)
-			var off_x := absf(w.x - roundf(w.x / 4.0) * 4.0)
-			var off_z := absf(w.z - roundf(w.z / 4.0) * 4.0)
-			if minf(off_x, off_z) > 2.0 or w.y < -0.001 or w.y > 4.151:
-				outside += 1
-	assert_eq(outside, 0, "occluder corners")
+		for i in range(0, v.size(), 8):
+			var box := AABB(chunk.to_global(v[i]), Vector3.ZERO)
+			for k in range(1, 8):
+				box = box.expand(chunk.to_global(v[i + k]))
+			boxes.append(box)
+	return boxes
+
+
+func test_occluder_boxes_sit_inside_the_walls() -> void:
+	var boxes := _occluder_boxes()
+	assert_eq(boxes.size(), 401 + 6, "all boxes seen")
+	assert_eq(Rules.occluder_errors(boxes, layout), PackedStringArray())
+
+
+func _with_box_moved(boxes: Array[AABB], index: int, by: Vector3) -> Array[AABB]:
+	var moved: Array[AABB] = boxes.duplicate()
+	var box := moved[index]
+	box.position += by
+	moved[index] = box
+	return moved
+
+
+func test_occluder_check_fails_on_a_moved_box() -> void:
+	var boxes := _occluder_boxes()
+	var wall_x := -1  # a wall running along X, first found
+	var wall_z := -1
+	var ceiling := -1
+	for i in boxes.size():
+		var thin_z := boxes[i].size.z < 1.0
+		if thin_z and wall_x < 0:
+			wall_x = i
+		elif boxes[i].size.x < 1.0 and wall_z < 0:
+			wall_z = i
+		elif not thin_z and boxes[i].size.x >= 1.0 and ceiling < 0:
+			ceiling = i
+	assert_true(wall_x >= 0 and wall_z >= 0 and ceiling >= 0, "one box of each kind")
+	var cases := {
+		"wall across, z": [wall_x, Vector3(0, 0, 0.1)],
+		"wall across, x": [wall_z, Vector3(0.1, 0, 0)],
+		"wall along, x": [wall_x, Vector3(0.1, 0, 0)],
+		"wall along, z": [wall_z, Vector3(0, 0, 0.1)],
+		"wall to another cell line": [wall_x, Vector3(0, 0, 2.0)],
+		"wall too high": [wall_x, Vector3(0, 0.1, 0)],
+		"ceiling, x": [ceiling, Vector3(0.3, 0, 0)],
+		"ceiling, z": [ceiling, Vector3(0, 0, 0.3)],
+		"ceiling too low": [ceiling, Vector3(0, -2.0, 0)],
+	}
+	for what: String in cases:
+		var broken := _with_box_moved(boxes, cases[what][0], cases[what][1])
+		assert_false(Rules.occluder_errors(broken, layout).is_empty(), what)
+	# A correct box on the wrong spot: a whole cell across puts it on some edge, and the layout has open ones.
+	var on_open := 0
+	for i in boxes.size():
+		if boxes[i].size.z < 1.0 and not Rules.occluder_errors(_with_box_moved([boxes[i]] as Array[AABB], 0, Vector3(0, 0, 4.0)), layout).is_empty():
+			on_open += 1
+	assert_true(on_open > 0, "a wall box on an open edge is reported")
 
 
 func test_build_is_deterministic() -> void:
@@ -445,4 +495,4 @@ func test_merged_meshes_cast_no_shadow_and_stop_past_the_fog() -> void:
 	for chunk in _chunks():
 		var mi := chunk.get_node("Mesh") as MeshInstance3D
 		assert_eq(mi.cast_shadow, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "no shadow pass")
-		assert_between(mi.visibility_range_end, 26.0 + 5.7, 40.0, "past fog end + half a chunk diagonal")
+		assert_eq(mi.visibility_range_end, 36.0, "34 shows the background at run ends, 38 is over the triangle budget")

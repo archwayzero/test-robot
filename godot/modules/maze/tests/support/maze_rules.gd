@@ -5,6 +5,9 @@ extends RefCounted
 const Assembly := preload("res://modules/maze/internal/maze_assembly.gd")
 const OMNI_LIMIT := 8
 const WALL_RAY_DISTANCE := 1.7  # cell centre to wall face
+const OCCLUDER_TOP := 4.15
+const OCCLUDER_WALL_REACH := 0.25
+const OCCLUDER_EPS := 0.001
 
 
 static func _edge_key(at: Vector3) -> Vector2i:
@@ -254,6 +257,56 @@ static func low_cell_errors(space: PhysicsDirectSpaceState3D, layout: MazeLayout
 			if capsule_blocked(space, layout.cell_to_world(c), stance_height(cl)):
 				errors.append("cell %s clearance %d blocks its own stance" % [c, cl])
 	return errors
+
+
+## Occluder boxes (world space) against the layout: each wall box within 0.25 m of a walled edge line and inside that
+## edge's span, each ceiling box inside a low cell, none outside the kit's height.
+static func occluder_errors(boxes: Array[AABB], layout: MazeLayout) -> PackedStringArray:
+	var errors := PackedStringArray()
+	for box in boxes:
+		if box.position.y < -OCCLUDER_EPS or box.end.y > OCCLUDER_TOP + OCCLUDER_EPS:
+			errors.append("box %s outside the kit height" % box)
+		if minf(box.size.x, box.size.z) < 1.0:
+			errors.append_array(_wall_box_errors(box, layout))
+		else:
+			errors.append_array(_ceiling_box_errors(box, layout))
+	return errors
+
+
+static func _wall_box_errors(box: AABB, layout: MazeLayout) -> PackedStringArray:
+	var s := layout.cell_size_m()
+	var across := Vector3.AXIS_X if box.size.x < box.size.z else Vector3.AXIS_Z
+	var along := Vector3.AXIS_Z if across == Vector3.AXIS_X else Vector3.AXIS_X
+	var line := roundf(box.get_center()[across] / s) * s
+	var i := floori(box.get_center()[along] / s)
+	var errors := PackedStringArray()
+	if absf(box.position[across] - line) > OCCLUDER_WALL_REACH or absf(box.end[across] - line) > OCCLUDER_WALL_REACH:
+		errors.append("box %s more than %.2f m off its edge line" % [box, OCCLUDER_WALL_REACH])
+	if box.position[along] < i * s - OCCLUDER_EPS or box.end[along] > (i + 1) * s + OCCLUDER_EPS:
+		errors.append("box %s leaves its edge" % box)
+	var n := roundi(line / s)
+	# The cell after the line, or the last one at the far boundary, with the edge on its near or far side.
+	var after := Vector2i(n, i) if across == Vector3.AXIS_X else Vector2i(i, n)
+	var near_dir := MazeLayout.Dir.WEST if across == Vector3.AXIS_X else MazeLayout.Dir.NORTH
+	var far_dir := MazeLayout.Dir.EAST if across == Vector3.AXIS_X else MazeLayout.Dir.SOUTH
+	var offset := Vector2i(1, 0) if across == Vector3.AXIS_X else Vector2i(0, 1)
+	if layout.in_bounds(after):
+		if not layout.has_wall(after, near_dir):
+			errors.append("box %s on an open edge" % box)
+	elif not layout.in_bounds(after - offset) or not layout.has_wall(after - offset, far_dir):
+		errors.append("box %s on no wall" % box)
+	return errors
+
+
+static func _ceiling_box_errors(box: AABB, layout: MazeLayout) -> PackedStringArray:
+	var s := layout.cell_size_m()
+	var cell := Vector2i(floori(box.get_center().x / s), floori(box.get_center().z / s))
+	var inside := AABB(Vector3(cell.x * s, 0.0, cell.y * s), Vector3(s, OCCLUDER_TOP, s)).grow(OCCLUDER_EPS)
+	if not inside.encloses(box):
+		return PackedStringArray(["box %s leaves cell %s" % [box, cell]])
+	if not layout.in_bounds(cell) or layout.clearance(cell) == MazeLayout.Clearance.FULL:
+		return PackedStringArray(["box %s over a cell with no low ceiling" % box])
+	return PackedStringArray()
 
 
 ## Everything the build produced, as bytes: merged meshes, collision, occluders, lamps.
