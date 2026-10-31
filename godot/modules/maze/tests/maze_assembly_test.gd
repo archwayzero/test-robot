@@ -502,16 +502,27 @@ func test_occluder_check_fails_on_a_moved_box() -> void:
 		"ceiling, x": [ceiling, Vector3(0.3, 0, 0)],
 		"ceiling, z": [ceiling, Vector3(0, 0, 0.3)],
 		"ceiling too low": [ceiling, Vector3(0, -2.0, 0)],
+		"ceiling too low, 0.1": [ceiling, Vector3(0, -0.1, 0)],
 	}
 	for what: String in cases:
 		var broken := _with_box_moved(boxes, cases[what][0], cases[what][1])
 		assert_false(Rules.occluder_errors(broken, layout).is_empty(), what)
-	# A correct box on the wrong spot: a whole cell across puts it on some edge, and the layout has open ones.
-	var on_open := 0
+	# Every low ceiling, crouch and crawl: each has its own underside to hold.
 	for i in boxes.size():
-		if boxes[i].size.z < 1.0 and not Rules.occluder_errors(_with_box_moved([boxes[i]] as Array[AABB], 0, Vector3(0, 0, 4.0)), layout).is_empty():
-			on_open += 1
-	assert_true(on_open > 0, "a wall box on an open edge is reported")
+		if minf(boxes[i].size.x, boxes[i].size.z) >= 1.0:
+			var lowered := _with_box_moved([boxes[i]] as Array[AABB], 0, Vector3(0, -0.1, 0))
+			assert_false(Rules.occluder_errors(lowered, layout).is_empty(), "ceiling box %d lowered 0.1 m" % i)
+	# A correct box on the wrong spot: a whole cell across puts it on some edge, and the layout has open ones.
+	var on_open_z := 0
+	var on_open_x := 0
+	for i in boxes.size():
+		var one: Array[AABB] = [boxes[i]]
+		if boxes[i].size.z < 1.0 and not Rules.occluder_errors(_with_box_moved(one, 0, Vector3(0, 0, 4.0)), layout).is_empty():
+			on_open_z += 1
+		if boxes[i].size.x < 1.0 and not Rules.occluder_errors(_with_box_moved(one, 0, Vector3(4.0, 0, 0)), layout).is_empty():
+			on_open_x += 1
+	assert_true(on_open_z > 0, "a wall box moved along Z onto an open edge is reported")
+	assert_true(on_open_x > 0, "a wall box moved along X onto an open edge is reported")
 
 
 func test_build_is_deterministic() -> void:

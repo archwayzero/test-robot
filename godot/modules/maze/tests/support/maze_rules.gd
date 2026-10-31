@@ -303,7 +303,8 @@ static func low_cell_errors(space: PhysicsDirectSpaceState3D, layout: MazeLayout
 
 
 ## Occluder boxes (world space) against the layout: each wall box within 0.25 m of a walled edge line and inside that
-## edge's span, each ceiling box inside a low cell, none outside the kit's height.
+## edge's span, each ceiling box inside a low cell with its lower face at or above the underside, none outside the
+## kit's height.
 static func occluder_errors(boxes: Array[AABB], layout: MazeLayout) -> PackedStringArray:
 	var errors := PackedStringArray()
 	for box in boxes:
@@ -349,6 +350,9 @@ static func _ceiling_box_errors(box: AABB, layout: MazeLayout) -> PackedStringAr
 		return PackedStringArray(["box %s leaves cell %s" % [box, cell]])
 	if not layout.in_bounds(cell) or layout.clearance(cell) == MazeLayout.Clearance.FULL:
 		return PackedStringArray(["box %s over a cell with no low ceiling" % box])
+	# AABB.position is the lower corner, so position.y is the box's lower face.
+	if box.position.y < _underside(layout.clearance(cell)) - OCCLUDER_EPS:
+		return PackedStringArray(["box %s hangs below the underside of cell %s" % [box, cell]])
 	return PackedStringArray()
 
 
