@@ -1,0 +1,97 @@
+{
+ "_note": "All generated-material settings of crypt_kit. build.py reads this; change values here, one at a time, one commit each.",
+ "ashlar": {
+  "stone": [
+   0.76,
+   0.64,
+   0.43
+  ],
+  "pale": [
+   0.86,
+   0.79,
+   0.64
+  ],
+  "tone": 0.14,
+  "warm": 0.022,
+  "patch": 0.0,
+  "rim": 0.0,
+  "stain": 0.56,
+  "stain_sharp": true,
+  "rough": 0.86,
+  "polish": 0.04,
+  "runs": 0.26,
+  "tone_hp": 0.32,
+  "capital_tone": 0.2,
+  "grain": 0.03,
+  "pit_dark": 0.3,
+  "arris": 0.06,
+  "joint_dark": 0.55,
+  "pocket_w": 0.012,
+  "pocket_lo": -0.4,
+  "pocket_hi": 1.2,
+  "pocket_low": 6,
+  "tone_low": -0.75
+ },
+ "ashlar_maps": {
+  "warp": 0.005,
+  "relief": 0.009,
+  "joint": 0.003,
+  "wear": 0.008
+ },
+ "voussoir": {
+  "tone": 0.11,
+  "warm": 0.02,
+  "stain": 0.56,
+  "rim": 0,
+  "stone": [
+   0.965,
+   0.858,
+   0.682
+  ],
+  "tone_hp": 0,
+  "patch": 0,
+  "joint_dark": 0.25,
+  "pocket_w": 0.008,
+  "wash": 0.46
+ },
+ "voussoir_maps": {
+  "joint": 0.003,
+  "wear": 0.008,
+  "relief": 0.008,
+  "warp": 0.005
+ },
+ "floor": {
+  "stone": [
+   0.615,
+   0.565,
+   0.485
+  ],
+  "pale": [
+   0.67,
+   0.625,
+   0.545
+  ],
+  "tone": 0.045,
+  "warm": 0.02,
+  "stain": 0.24,
+  "rough": 0.7,
+  "polish": 0.2,
+  "tone_hp": 0.6
+ },
+ "floor_maps": {
+  "joint": 0.0028,
+  "wear": 0.024,
+  "relief": 0.0045,
+  "warp": 0.008
+ },
+ "plaster": {
+  "colour": [
+   0.925,
+   0.885,
+   0.8
+  ],
+  "mid": 0.015,
+  "fine": 0.016,
+  "cloud": 0.015
+ }
+}

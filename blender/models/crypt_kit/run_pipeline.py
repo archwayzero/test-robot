@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 KIT = "blender/models/crypt_kit"
 GLB = "godot/assets/crypt_kit/model/crypt_kit.glb"
 GUARD = ["python3", "tools/qa/memguard.py", "--expect-peak-mb", "2000", "--"]
+GODOT_GUARD = ["python3", "tools/qa/memguard.py", "--expect-peak-mb", "2500", "--"]     # a clean import peaks about 2.1 GB
 BL = ["blender", "-b", "--python-exit-code", "1"]
 MAPS = sys.argv[sys.argv.index("--maps") + 1:sys.argv.index("--maps") + 2] if "--maps" in sys.argv else []
 STEPS = [
@@ -44,7 +45,7 @@ def main():
 
 
 def run(step):
-    cmd = step if step[0] == "python3" else GUARD + step
+    cmd = step if step[0] == "python3" else GODOT_GUARD + step if step[0] == "godot" else GUARD + step
     print("==", " ".join(cmd), flush=True)
     r = subprocess.run(cmd, cwd=ROOT)
     if r.returncode:
