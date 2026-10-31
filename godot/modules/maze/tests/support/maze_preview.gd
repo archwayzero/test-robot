@@ -1,6 +1,7 @@
 ## Visual and counter check of the assembled maze (tests only, not shipped), Mobile renderer. Switches view every
 ## `hold` frames; each view's engine counters go to .captures/t018/<tag>_counters.json (counts, not device performance).
-## Env MAZE_PREVIEW="hold=16,tag=x,only=a+b,spec=0.1,energy=0.8,range=5,occ=0" overrides for tuning runs.
+## Env MAZE_PREVIEW="hold=16,tag=x,only=a+b,spec=0.1,energy=0.8,range=5,occ=0,split=1" overrides for tuning runs.
+## split=1 gives every surface its own instance, so the counters show one draw per surface for the same visibility.
 extends Node3D
 
 const PITCH := -0.35
@@ -16,7 +17,7 @@ var views: Array[Dictionary] = []
 var counters := {}
 var _cam: Camera3D
 var _world: MazeWorld
-var _frame := -1
+var _frame := -2  # capture.py --every hold then keeps the LAST frame of each view, after it settled
 var _shown := -1
 
 
@@ -78,6 +79,9 @@ func _game_environment() -> WorldEnvironment:
 
 
 func _apply_overrides() -> void:
+	if overrides.get("split", 0.0) != 0.0:
+		for mi: MeshInstance3D in _world.find_children("Mesh", "MeshInstance3D", true, false):
+			_split(mi)
 	if overrides.has("occ"):
 		get_viewport().use_occlusion_culling = overrides.occ != 0.0
 	for omni: OmniLight3D in _world.find_children("Light", "OmniLight3D", true, false):
@@ -86,10 +90,22 @@ func _apply_overrides() -> void:
 		omni.omni_range = overrides.get("range", omni.omni_range)
 
 
+func _split(mi: MeshInstance3D) -> void:
+	for s in mi.mesh.get_surface_count():
+		var one := ArrayMesh.new()
+		one.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, mi.mesh.surface_get_arrays(s))
+		one.surface_set_material(0, mi.mesh.surface_get_material(s))
+		var part := MeshInstance3D.new()
+		part.mesh = one
+		part.visibility_range_end = mi.visibility_range_end
+		mi.add_child(part)
+	mi.mesh = null
+
+
 func _process(_delta: float) -> void:
 	_frame += 1
-	var i := _frame / hold
-	if _frame % hold == hold - 1 and _shown >= 0:
+	var i := maxi(_frame, 0) / hold
+	if _frame >= 0 and _frame % hold == hold - 1 and _shown >= 0:
 		counters[views[_shown].name] = {
 			"draw_calls": Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
 			"primitives": Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME),
@@ -139,8 +155,9 @@ func _make_views() -> void:
 	_add("mixed_edge_crawl", cw + Vector3(-5.5, CAM_H, 0.0), cw + Vector3(-2.0, 0.4, 0))
 	_add("pier_capital", c + along * 1.2 - wall_dir * 0.6 + Vector3(0, 1.6, 0), c + along * 2.0 + wall_dir * 1.8 + Vector3(0, 2.1, 0), 55.0)
 	_add("wall_frontal_lit", c + wall_dir * 1.7 - wall_dir * 3.2 + Vector3(0, 2.0, 0), c + wall_dir * 1.7 + Vector3(0, 2.0, 0), 60.0)
-	var seam := c + wall_dir * 1.7 + along * 1.7
-	_add("seam_far_16m", seam - along * 16.0 - wall_dir * 1.4 + Vector3(0, CAM_H, 0), seam + Vector3(0, 1.2, 0), 12.0)
+	# Down the seed's longest run, cell (19, 0) south, at a pier on the east wall. T017's eye for this view stands 0.3 m
+	# behind a wall here, which the wall's back faces hide but a solid occluder does not.
+	_add("seam_far_16m", Vector3(78.0, CAM_H, 1.0), Vector3(79.7, 1.2, 16.0), 12.0)
 	for d: float in [1.0, 2.0, 3.0, 4.0]:
 		_add("lamp_%dm" % int(d), e - wall_dir * 0.7 - along * sqrt(d * d - 0.49) + Vector3(0, CAM_H - e.y, 0), e)
 	var far := layout.cell_to_world(Vector2i(19, 0)) + Vector3(0, 0, -1.0)

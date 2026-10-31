@@ -5,17 +5,20 @@ extends MazeWorld
 const Assembly := preload("res://modules/maze/internal/maze_assembly.gd")
 const Kit := preload("res://modules/maze/internal/maze_kit.gd")
 
-## 2x2 cells: with OMNI_RANGE below, no chunk mesh meets more than 8 omni lights (4x4 reached 12-13, 3x3 reached 13).
+## 2x2 cells: with OMNI_RANGE below no chunk mesh meets more than 8 omni lights; 3x3 and 4x4 pass 8 at this range.
 const CHUNK_CELLS := 2
 const WORLD_LAYER := 1
+## Past the game's fog end (26 m) a chunk is flat fog colour. 32 m = fog end + half a chunk diagonal, measured to the
+## chunk centre. Bounds the frames before occlusion settles; settled views rarely reach it. Follow the fog if it moves.
+const CHUNK_DRAW_DISTANCE := 32.0
 ## Boxes inside the masonry: T017 validated 0.5 m thick walls; the low ceilings stay clear of their 0.138 m rubble.
 const OCCLUDER_WALL_SIZE := Vector3(4.0, 4.15, 0.5)
 const OCCLUDER_CEILING_INSET := 0.2
 const OCCLUDER_TOP := 4.15
 const CEILING_UNDERSIDE := {&"ceiling_crouch": 1.3, &"ceiling_crawl": 0.75}
 ## Lamps: real-time omnis, no shadows. LightmapGI has no bake call outside the editor and headless has no RenderingDevice.
-const OMNI_RANGE := 5.0  # 1.25 cells: 6 m (1.5 cells) gave 9-11 omnis on a 2x2 chunk
-const OMNI_ENERGY := 0.8
+const OMNI_RANGE := 5.0  # 1.25 cells. At 6 m (1.5 cells) the game seed sits at the limit and other seeds pass it
+const OMNI_ENERGY := 0.7  # contract 0.8 washes stone out near lamps in Mobile; 0.6 and 0.7 keep the block texture
 const OMNI_COLOR := Color(1.0, 0.93, 0.84)  # near neutral: the albedo is already warm
 const OMNI_SPECULAR := 0.0  # 0.03, 0.1 and 0.3 keep pure white pier hairlines at 16 m; 0 removes them
 const FLAME_EMISSION := 1.0
@@ -105,6 +108,7 @@ func _build_chunk(origin: Vector2i, items: Array, slots: Array, kit: Kit) -> voi
 	mesh.name = "Mesh"
 	mesh.mesh = _merge(items, slots, kit, centre)
 	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mesh.visibility_range_end = CHUNK_DRAW_DISTANCE
 	chunk.add_child(mesh)
 	chunk.add_child(_collision(items, kit, centre))
 	chunk.add_child(_occluder(items, centre))

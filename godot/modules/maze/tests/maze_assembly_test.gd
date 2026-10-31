@@ -441,7 +441,8 @@ func _check_digests(a: String, b: String, c: String) -> void:
 	assert_ne(a, c, "different seed differs")
 
 
-func test_no_rendered_shadow_casting_on_merged_meshes() -> void:
+func test_merged_meshes_cast_no_shadow_and_stop_past_the_fog() -> void:
 	for chunk in _chunks():
 		var mi := chunk.get_node("Mesh") as MeshInstance3D
 		assert_eq(mi.cast_shadow, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "no shadow pass")
+		assert_between(mi.visibility_range_end, 26.0 + 5.7, 40.0, "past fog end + half a chunk diagonal")
