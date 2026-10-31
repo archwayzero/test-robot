@@ -75,6 +75,7 @@ var _cam_yaw := 0.0
 var _cam_pitch := DEFAULT_PITCH
 var _arm_length := 2.5
 var _pivot_height := 1.5
+var _under_low_ceiling := false
 ## Smoothed lower bound on the camera pitch from low ceilings (PITCH_MIN = no constraint).
 var _pitch_limit := PITCH_MIN
 ## Smoothed fade of the player visual: 0 opaque .. 1 hidden.
@@ -96,6 +97,7 @@ var _clearance_shapes := {}
 @onready var _arm: SpringArm3D = $CameraRig/SpringArm3D
 @onready var _camera: Camera3D = $CameraRig/SpringArm3D/Camera3D
 @onready var _visual: Node3D = $Visual
+@onready var _animator: AnimationTree = $Visual/Animator
 
 
 func _ready() -> void:
@@ -125,6 +127,7 @@ func _ready() -> void:
 	_arm_length = ARM_LENGTHS[_stance]
 	_pivot_height = _height_of(_stance) * PIVOT_FRACTION
 	_update_rig(0.0)
+	_animator.setup(self)
 	_camera.make_current()
 
 
@@ -162,6 +165,7 @@ func spawn_at(spawn_position: Vector3, yaw: float = 0.0) -> void:
 		_arm_length = ARM_LENGTHS[_stance]
 		_pivot_height = _height_of(_stance) * PIVOT_FRACTION
 		_update_rig(0.0)
+		_animator.snap()
 	if is_inside_tree():
 		_write_state()
 
@@ -189,6 +193,7 @@ func restore_stance(stance: Stance) -> void:
 		_arm_length = ARM_LENGTHS[_stance]
 		_pivot_height = _height_of(_stance) * PIVOT_FRACTION
 		_update_rig(0.0)
+		_animator.snap()
 	if is_inside_tree():
 		_write_state()
 	if changed:
@@ -368,6 +373,7 @@ func _update_rig(delta: float) -> void:
 	var target_shoulder := 0.0
 	if is_inside_tree():
 		var above := _ceiling_above(global_position)
+		_under_low_ceiling = above < LOW_CEILING_MAX
 		if above < LOW_CEILING_MAX:
 			target_pivot = maxf(minf(stance_pivot + LOW_PIVOT_RAISE, above - CEILING_MARGIN), LOW_PIVOT_MIN)
 		# Lowest ceiling over the part of the arm path that is reachable (up to the first wall behind).
@@ -512,6 +518,11 @@ func get_camera_shoulder() -> float:
 ## Fade of the player visual (0 opaque .. 1 hidden). Exposed for tests.
 func get_visual_fade() -> float:
 	return _visual_fade if _visual.visible else 1.0
+
+
+## A ceiling under LOW_CEILING_MAX over the body, as of the last rig update. Read by the hero animator.
+func is_under_low_ceiling() -> bool:
+	return _under_low_ceiling
 
 
 ## Camera yaw (radians); movement input is relative to it. Exposed for tests and the preview.

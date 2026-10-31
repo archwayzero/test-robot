@@ -1,7 +1,8 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://modules/player/internal/player.gd" id="1_player"]
 [ext_resource type="PackedScene" uid="uid://0s5wligap81w" path="res://assets/hero/rig/hero.glb" id="2_hero"]
+[ext_resource type="Script" path="res://modules/player/internal/hero_animator.gd" id="3_animator"]
 
 [sub_resource type="CapsuleShape3D" id="Shape_stand"]
 radius = 0.3
@@ -24,6 +25,10 @@ collision_mask = 1
 [node name="Visual" type="Node3D" parent="."]
 
 [node name="Hero" parent="Visual" instance=ExtResource("2_hero")]
+
+[node name="Animator" type="AnimationTree" parent="Visual"]
+anim_player = NodePath("../Hero/AnimationPlayer")
+script = ExtResource("3_animator")
 
 [node name="CameraRig" type="Node3D" parent="."]
 top_level = true
