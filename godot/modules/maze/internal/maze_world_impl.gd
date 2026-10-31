@@ -62,7 +62,7 @@ func build(layout: MazeLayout) -> void:
 	_clear()
 	_layout = layout
 	Core.state.set_value(StateKeys.MAZE_SEED, layout.get_seed())
-	get_viewport().use_occlusion_culling = true  # the project default is off and the chunks rely on it
+	get_viewport().use_occlusion_culling = true  # the project setting reaches the root viewport only, so this keeps occlusion on when the maze is hosted in a SubViewport
 	var kit := Kit.new()
 	_items = Assembly.items(layout)
 	var by_chunk := {}
