@@ -5,6 +5,7 @@
 ## One scene for every capture: set env T017_PREVIEW="key=value,..." (keys below) before capture.py, for example
 ## T017_PREVIEW="srgb=0,first=6,max=3,tag=srgb_false_low". Reading the env var is the only outside input.
 ## only=a+b picks views by name; magenta=1 paints the background magenta, so any pixel through a hole counts.
+## nocull=1 draws back faces: the difference from a normal run is exactly the pixels a missing or flipped face changes.
 extends Node3D
 
 const Assembly := preload("res://tests/assets/crypt_assembly.gd")
@@ -22,6 +23,7 @@ const CAM_H := 2.43
 
 var only := PackedStringArray()
 var magenta := false
+var no_cull := false
 var layout: MazeLayout
 var asm: Assembly
 var views: Array[Dictionary] = []
@@ -38,6 +40,9 @@ func _ready() -> void:
 	asm.vertex_color_srgb = vertex_color_srgb
 	asm.with_occluders = use_occluders
 	asm.build()
+	if no_cull:
+		for m: StandardMaterial3D in asm.all_materials():
+			m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	get_viewport().use_occlusion_culling = use_occluders
 	var env := _game_environment()
 	if env:
@@ -83,6 +88,8 @@ func _read_env() -> void:
 				only = kv[1].split("+")
 			"magenta":
 				magenta = kv[1] == "1"
+			"nocull":
+				no_cull = kv[1] == "1"
 
 
 func _game_environment() -> Environment:
@@ -179,6 +186,7 @@ func _make_views() -> void:
 	_add("pier_top_orbit_mid", free + Vector3(1.0, 2.8, 0.8), top)
 	_add("pier_top_game_height", free + Vector3(1.3, 2.43, 0.6), top)
 	_add("pier_top_close", free + Vector3(0.75, 2.5, 0.65), top, 40.0)
+	_add("control_void_above_the_maze", Vector3(38, 6, 30), Vector3(38, 20, 31))  # must be magenta: proves the hole count works
 	# The low cell's flips at the game's field of view, from the eye of the fan rays that hit them.
 	_add("crawl_flip_game_fov_room", Vector3(37.3, 0.45, 30.7), Vector3(39.98, 0.946, 28.34))
 	_add("crawl_flip_game_fov_full", Vector3(34.7, 0.8, 30.7), Vector3(36.04, 1.108, 28.48))
