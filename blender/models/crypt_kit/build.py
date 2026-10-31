@@ -1042,7 +1042,8 @@ def build_arch(mat):
     outer = [(2.0 * math.cos(math.pi * i / seg) if abs(math.cos(math.pi * i / seg)) > 0.71 else
               R_ARCH * math.cos(math.pi * i / seg), TOP if i not in (0, seg) else SPRING) for i in range(seg + 1)]
     outer[0], outer[seg] = (2.0, SPRING), (-2.0, SPRING)
-    # outline (counter-clockwise seen from +Y is not required for a trimesh, but keep normals outward)
+    # Quads below are listed inward; pts[::-1] makes every normal outward. A one-sided trimesh ignores back faces: spring-arm rays
+    # would pass through a soffit wound into the masonry (T017).
     for i in range(seg):
         a, c = ring[i], ring[i + 1]
         d, e = outer[i], outer[i + 1]
@@ -1050,7 +1051,7 @@ def build_arch(mat):
         tris.append([(a[0], -t, a[1]), (c[0], -t, c[1]), (e[0], -t, e[1]), (d[0], -t, d[1])])  # face -Y
         tris.append([(a[0], t, a[1]), (d[0], t, d[1]), (e[0], t, e[1]), (c[0], t, c[1])])      # face +Y
         tris.append([(d[0], -t, d[1]), (e[0], -t, e[1]), (e[0], t, e[1]), (d[0], t, d[1])])    # top
-    collision(ob, tris=tris)
+    collision(ob, tris=[pts[::-1] for pts in tris])
     return ob
 
 
