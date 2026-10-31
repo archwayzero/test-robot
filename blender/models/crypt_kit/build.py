@@ -667,7 +667,7 @@ def build_textures():
     fold = np.abs(((np.arange(bh) + 0.5) / bh - 0.5) * B_DEPTH)[:, None]
     edge = 0.275 + 0.075 * np.clip(noise(bh, bw, 2.8, 1650, low=2) / 1.5, -1, 1)
     edge = edge + 0.010 * noise(bh, bw, 1.6, 1651, low=20)
-    wash = 0.20 * (1 - sstep(-0.025, 0.025, fold - edge))[..., None]
+    wash = PARAMS["voussoir"]["wash"] * (1 - sstep(-0.025, 0.025, fold - edge))[..., None]
     b_alb = b_alb * (1 - wash) + np.array([0.86, 0.785, 0.625]) * (0.93 + 0.07 * b_alb / b_alb.mean()) * wash
     b_n = normal_from_height(b_h, bppm)
     b_ao = ao_from_height(b_h, bppm, 0.012)

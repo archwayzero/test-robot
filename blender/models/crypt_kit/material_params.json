@@ -51,7 +51,8 @@
   "tone_hp": 0,
   "patch": 0.04,
   "joint_dark": 0.25,
-  "pocket_w": 0.008
+  "pocket_w": 0.008,
+  "wash": 0.2
  },
  "voussoir_maps": {
   "joint": 0.003,
