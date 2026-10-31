@@ -21,7 +21,8 @@
   "polish": 0.04,
   "runs": 0.26,
   "tone_hp": 0.32,
-  "capital_tone": 0.2
+  "capital_tone": 0.2,
+  "grain": 0.03
  },
  "ashlar_maps": {
   "warp": 0.005,
