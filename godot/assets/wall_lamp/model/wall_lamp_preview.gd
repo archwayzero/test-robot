@@ -35,16 +35,32 @@ func _ready() -> void:
 	omni.light_energy = 0.8
 	omni.omni_range = 6.0
 	add_child(omni)
-	var main_scene: Node = load("res://modules/game/internal/main.tscn").instantiate()  # review under the game's own environment
-	var env: Environment = main_scene.get_node("WorldEnvironment").environment
-	main_scene.free()
-	var world := WorldEnvironment.new()
-	world.environment = env
-	add_child(world)
+	var env := _game_environment()  # review under the game's own environment
+	if env:
+		var world := WorldEnvironment.new()
+		world.environment = env
+		add_child(world)
 	_cam = Camera3D.new()
 	add_child(_cam)
 	_cam.make_current()
 	_view(0)
+
+
+## The Environment of the first WorldEnvironment in the project's main scene, or null (with a warning) if there is none: the
+## preview then renders under Godot's default environment and does not show the game's look.
+func _game_environment() -> Environment:
+	var path: String = ProjectSettings.get_setting("application/run/main_scene", "")
+	var packed := load(path) as PackedScene if not path.is_empty() else null
+	if packed == null:
+		push_warning("wall_lamp_preview: no main scene to take the environment from (%s)" % path)
+		return null
+	var main_scene := packed.instantiate()
+	var found := main_scene.find_children("*", "WorldEnvironment", true, false)
+	var env: Environment = (found[0] as WorldEnvironment).environment if not found.is_empty() else null
+	main_scene.free()
+	if env == null:
+		push_warning("wall_lamp_preview: no WorldEnvironment with an Environment in %s" % path)
+	return env
 
 
 func _process(_delta: float) -> void:
