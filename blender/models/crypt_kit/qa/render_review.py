@@ -339,10 +339,12 @@ def low_view(src):
     s = Scene(src)
     assemble(s, {(2, 0): "ceiling_crouch", (3, 0): "ceiling_crawl"})
     lights()
-    camera((1.0, 2.0, 1.3), (12.0, 2.0, 1.2), 20)
-    shot("low_ceilings_aisle")
-    camera((3.2, 2.0, 0.7), (6.5, 2.0, 1.9), 18)
-    shot("low_ceilings_close")
+    if not NAMES or "aisle" in NAMES:
+        camera((1.0, 2.0, 1.3), (12.0, 2.0, 1.2), 20)
+        shot("low_ceilings_aisle")
+    if not NAMES or "close" in NAMES:
+        camera((3.2, 2.0, 0.7), (6.5, 2.0, 1.9), 18)
+        shot("low_ceilings_close")
 
 
 def main():

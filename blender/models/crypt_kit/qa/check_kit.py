@@ -35,9 +35,20 @@ GUIDE = {"floor": 200, "wall": 400, "pier": 300, "arch": 800, "vault_bay": 1500,
 TOTAL_TRIS = 21000
 MAX_TEX = 2048
 MAX_MEM_MB = 64.0
+SPLIT_SEAM_MAX = 1.6   # a bed joint between two offset courses, against an ordinary bed joint
+ASHLAR_BAND = []
 SEAM_MAX = 1.5    # floor edge-seam ratio, see seam()
 BAND_SEAM_MAX = 1.2   # band A seam ratio, see band_seams(). Wrap and as-built pairs must look like an interior bed joint
 RUBBLE_MIN_STEP = 0.25  # m, range of the underside depth of a low ceiling
+RUBBLE_VCOL_MIN = 0.5   # COLOR_0 red, lowest vertex of a low ceiling (0.29 before pass 4)
+RUBBLE_FACET_MAX = 0.35  # m2, largest triangle of a low ceiling (0.38 before pass 4)
+RUBBLE_GAP_MAX = 0.28   # m, visible underside above the collision plane (0.39 before pass 4)
+RUBBLE_SET_MAX = 0.15   # m, side surface behind the collision box (0.265 before pass 4)
+RUBBLE_STEEP_MAX = 0.02  # near-vertical area over plan area, inside the cell: plates and skirts
+WALL_LAG_MAX = 0.20     # autocorrelation at lags of 1-7 m, alternated walls
+WALL_DIFF_MIN = 0.25    # m, back minus front U offset of a course, away from any whole metre
+WALL_DIFF_SPREAD = 0.10  # m, two courses of a span must differ by this in that difference (mod 4, sign free)
+WALL_JOINT_MIN = 0.05   # m, between head joints of touching courses on a wall face
 LM_RES = 1024
 
 TOP = 4.15        # vault crown, wall top, arch block top, ceiling insert tops (contract, PR #44)
@@ -331,6 +342,74 @@ def check_relief(vis):
     return {str(k): round(v, 4) for k, v in table.items()}
 
 
+def lowest_y(m, x, z, t):
+    """Lowest y of the mesh over a plan point."""
+    a, b, c = t[:, 0], t[:, 1], t[:, 2]
+    d = (b[:, 0] - a[:, 0]) * (c[:, 2] - a[:, 2]) - (b[:, 2] - a[:, 2]) * (c[:, 0] - a[:, 0])
+    ok = np.abs(d) > 1e-12
+    w1 = np.where(ok, ((x - a[:, 0]) * (c[:, 2] - a[:, 2]) - (z - a[:, 2]) * (c[:, 0] - a[:, 0])) / np.where(ok, d, 1), -1)
+    w2 = np.where(ok, ((b[:, 0] - a[:, 0]) * (z - a[:, 2]) - (b[:, 2] - a[:, 2]) * (x - a[:, 0])) / np.where(ok, d, 1), -1)
+    hit = (w1 >= -1e-6) & (w2 >= -1e-6) & (w1 + w2 <= 1 + 1e-6)
+    return float((a[hit, 1] + w1[hit] * (b[hit, 1] - a[hit, 1]) + w2[hit] * (c[hit, 1] - a[hit, 1])).min()) if hit.any() else None
+
+
+def check_rubble(g, b, vis):
+    """Item 5, from the GLB."""
+    G = "5 rubble"
+    for nm, under in (("ceiling_crouch", 1.3), ("ceiling_crawl", 0.75)):
+        node = next((n for n in g["nodes"] if n.get("name") == nm), None)
+        if nm not in vis or node is None:
+            rec(G, "%s present" % nm, False)
+            continue
+        prim = g["meshes"][node["mesh"]]["primitives"][0]
+        if "COLOR_0" in prim["attributes"]:
+            c = accessor(g, b, prim["attributes"]["COLOR_0"]).astype(float)
+            c = c / {5121: 255.0, 5123: 65535.0, 5126: 1.0}[g["accessors"][prim["attributes"]["COLOR_0"]]["componentType"]]
+            rec(G, "%s COLOR_0 crevice R >= %.1f" % (nm, RUBBLE_VCOL_MIN), c[:, 0].min() >= RUBBLE_VCOL_MIN,
+                "min %.3f, mean %.3f" % (c[:, 0].min(), c[:, 0].mean()))
+        else:
+            rec(G, "%s COLOR_0 crevice R >= %.1f" % (nm, RUBBLE_VCOL_MIN), False, "no COLOR_0")
+        m = vis[nm]
+        t = m["pos"][m["tris"]]
+        n_ = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+        area = 0.5 * np.linalg.norm(n_, axis=1)
+        rec(G, "%s largest facet <= %.2f m2" % (nm, RUBBLE_FACET_MAX), area.max() <= RUBBLE_FACET_MAX,
+            "%.3f m2; %.0f %% of the area in facets over 0.2 m2" % (area.max(), 100 * area[area > 0.2].sum() / area.sum()))
+        ys = []
+        for x in np.linspace(-1.93, 1.93, 26):
+            for z in np.linspace(-1.91, 1.95, 26):
+                y = lowest_y(m, x, z, t)
+                if y is not None:
+                    ys.append(y - under)
+        ys = np.array(ys)
+        rec(G, "%s visible underside to collision <= %.2f m" % (nm, RUBBLE_GAP_MAX), ys.max() <= RUBBLE_GAP_MAX and len(ys) > 600,
+            "max %.3f, mean %.3f, over %d points" % (ys.max(), ys.mean(), len(ys)))
+        p = m["pos"]
+        up = p[p[:, 1] > under + 0.45]
+        back = 2.0 - np.abs(up[:, [0, 2]]).max(1)
+        rec(G, "%s side set back <= %.2f m" % (nm, RUBBLE_SET_MAX), back.max() <= RUBBLE_SET_MAX, "max %.3f m" % back.max())
+        c_ = t.mean(1)
+        low = (c_[:, 1] < under + 0.45) & (np.abs(c_[:, 0]) < 1.85) & (np.abs(c_[:, 2]) < 1.85)
+        unit = np.abs(n_[:, 1]) / np.maximum(np.linalg.norm(n_, axis=1), 1e-12)
+        steep = area[low & (unit < 0.26)].sum() / 3.7 ** 2
+        rec(G, "%s no plates: near-vertical area / plan <= %.2f" % (nm, RUBBLE_STEEP_MAX), steep <= RUBBLE_STEEP_MAX, "%.3f" % steep)
+        key = {}
+        ids = np.array([key.setdefault(tuple(q), len(key)) for q in np.round(p, 3).tolist()])
+        tid = ids[m["tris"]]
+        edge = {}
+        for a_, b_, c_i in tid.tolist():
+            for u, v in ((a_, b_), (b_, c_i), (c_i, a_)):
+                if u != v:
+                    edge[(min(u, v), max(u, v))] = edge.get((min(u, v), max(u, v)), 0) + 1
+        pts = np.round(p, 3)
+        first = {}
+        for i, k_ in enumerate(ids.tolist()):
+            first.setdefault(k_, i)
+        open_e = [e for e, k_ in edge.items() if k_ == 1 and min(pts[first[e[0]], 1], pts[first[e[1]], 1]) < TOP - 0.01]
+        rec(G, "%s closed surface below the top edge" % nm, not open_e, "%d open edges %s" % (len(open_e), [
+            (pts[first[e[0]]].tolist(), pts[first[e[1]]].tolist()) for e in open_e[:2]]))
+
+
 def check_soiling(g, b, vis):
     G = "4b soiling"
     for nm in ("wall", "pier"):
@@ -442,25 +521,159 @@ def seam(a, axis):
     return float(wrap / (np.percentile(inner, 90) + 1e-9)), float(wrap / (inner.mean() + 1e-9))
 
 
-def wall_u_offsets(vis):
-    """As-built U offsets where the wall restarts band A: (height, du) of each restart, from the GLB's wall vertices."""
+def wall_table(vis):
+    """Per long face, from the GLB: {y0: (y1, u offset of the course, V low, V high)}. front = the face at glTF z=+0.3."""
     m = vis["wall"]
-    p, uv = m["pos"], m["uv1"]
+    t = m["pos"][m["tris"]]
+    uv = m["uv1"][m["tris"]]
     out = {}
-    for y0 in (2.0, 4.0):
-        tz = p[m["tris"]][:, :, 2]
-        face = m["tris"][(np.abs(np.abs(tz[:, 0]) - 0.3) < 1e-4) & (np.ptp(tz, axis=1) < 1e-4)]      # long faces, not the ends
-        on = np.intersect1d(face.ravel(), np.flatnonzero((np.abs(p[:, 1] - y0) < 1e-4) & (np.abs(p[:, 0]) > 1.9)))
-        keys = {}
-        for i in on:
-            keys.setdefault((round(float(p[i, 0]), 3), round(float(p[i, 2]), 3)), []).append(i)
-        ds = []
-        for ids in keys.values():
-            if len(ids) >= 2:
-                u = uv[ids, 0]
-                ds.append(float(np.ptp(u)) * np.sign(uv[ids[np.argmax(uv[ids, 1])], 0] - uv[ids[np.argmin(uv[ids, 1])], 0]))
-        out[y0] = ds[0] % 1.0 if ds else None
+    for key, side in (("f", 1), ("b", -1)):
+        rows = {}
+        for k in np.flatnonzero(np.all(np.abs(t[:, :, 2] - side * 0.3) < 1e-4, axis=1)):
+            r = rows.setdefault(round(float(t[k, :, 1].min()), 3), [float(t[k, :, 1].max()), [], []])
+            r[0] = max(r[0], float(t[k, :, 1].max()))
+            r[1].extend(uv[k, :, 0].tolist())
+            r[2].extend(uv[k, :, 1].tolist())
+        out[key] = {y: (r[0], 0.5 * (min(r[1]) + max(r[1])) % 1.0, min(r[2]), max(r[2])) for y, r in sorted(rows.items())}
     return out
+
+
+def v_to_z(v):
+    """glTF V counts from the top of the image, like the atlas rows."""
+    r0, r1 = ATLAS["band_a_rows"]
+    return (r1 - v * ATLAS["atlas_size"]) / (r1 - r0) * 2.0
+
+
+def check_wall_courses(vis):
+    """Item 3, from the GLB's wall mesh."""
+    G = "3b courses"
+    if "wall" not in vis or "band_a_course_edges_m" not in ATLAS:
+        rec(G, "wall and course table present", False)
+        return None
+    tab = wall_table(vis)
+    edges = ATLAS["band_a_course_edges_m"]
+    n = len(edges) - 1
+    want = [round(e, 3) for e in edges[:-1]] + [round(2.0 + e, 3) for e in edges[:-1]] + [4.0]
+    for key in "fb":
+        got = sorted(tab[key])
+        rec(G, "wall face %s split on every bed joint" % key, got == want, "%d rows of %d" % (len(got), len(want)))
+        worst = 0.0
+        for y0, (y1, o, v0, v1) in tab[key].items():
+            if y0 >= 4.0:
+                continue
+            base = 2.0 if y0 >= 2.0 - 1e-6 else 0.0
+            lo, hi = sorted((v_to_z(v0), v_to_z(v1)))
+            worst = max(worst, abs(lo - (y0 - base)), abs(hi - (y1 - base)))
+        rec(G, "wall face %s V follows the course heights exactly" % key, worst <= 0.002, "worst %.4f m" % worst)
+    if sorted(tab["f"]) != want or sorted(tab["b"]) != want:
+        return None
+    table = ATLAS["wall_course_u_offsets"]
+    worst = 0.0
+    for key in "fb":
+        for span in (0, 1):
+            for c in range(n):
+                worst = max(worst, abs(((tab[key][round(edges[c] + 2.0 * span, 3)][1] - table[key][span][c]) + 0.5) % 1.0 - 0.5))
+    rec(G, "wall U offsets equal atlas.json", worst <= 2e-3, "worst %.5f tile" % worst)
+    near_whole, near_each = 9.0, 9.0
+    for span in (0, 1):
+        ds = []
+        for c in range(n):
+            y = round(edges[c] + 2.0 * span, 3)
+            d = 4.0 * (tab["b"][y][1] - tab["f"][y][1]) % 4.0
+            near_whole = min(near_whole, abs(((d + 0.5) % 1.0) - 0.5))
+            ds.append(d)
+        for i in range(n):
+            for j in range(i):
+                g = abs((ds[i] - ds[j] + 2.0) % 4.0 - 2.0)
+                near_each = min(near_each, g)
+    rec(G, "wall face difference stays off whole metres", near_whole >= WALL_DIFF_MIN, "min %.3f m (>= %.2f)" % (near_whole, WALL_DIFF_MIN))
+    rec(G, "wall face differences spread over the courses", near_each >= WALL_DIFF_SPREAD, "min %.3f m (>= %.2f)" % (near_each, WALL_DIFF_SPREAD))
+    return tab
+
+
+def course_pairs(tab):
+    """Touching courses on a wall face: (course below, course above, tile U shift of the upper over the lower)."""
+    edges = ATLAS["band_a_course_edges_m"]
+    n = len(edges) - 1
+    out = []
+    for key in "fb":
+        for span in (0, 1):
+            for c in range(1, n):
+                out.append((c - 1, c, tab[key][round(edges[c] + 2.0 * span, 3)][1] - tab[key][round(edges[c - 1] + 2.0 * span, 3)][1]))
+        out.append((n - 1, 0, tab[key][2.0][1] - tab[key][round(edges[n - 1], 3)][1]))
+    return out
+
+
+def check_head_joints(tab):
+    """Head joints of touching courses on the wall, from atlas.json's stones and the GLB's offsets. Only meaningful for the
+    generated band: a replacement map is not bound by it."""
+    G = "3b courses"
+    if tab is None or "band_a_stones_m" not in ATLAS or ATLAS.get("replacement_maps"):
+        return
+    st = np.array(ATLAS["band_a_stones_m"])
+    z = ATLAS["band_a_course_edges_m"]
+    joints = [st[np.abs(st[:, 2] - z[c]) < 1e-3, 0] for c in range(len(z) - 1)]
+    worst = 9.0
+    for lo, hi, du in course_pairs(tab):
+        g = np.abs(np.mod(joints[hi][:, None] - joints[lo][None, :] - du * 4.0 + 2.0, 4.0) - 2.0)
+        worst = min(worst, float(g.min()))
+    rec(G, "wall head joints do not line up across a bed joint", worst >= WALL_JOINT_MIN, "closest %.3f m (>= %.2f)" % (worst, WALL_JOINT_MIN))
+
+
+def gauss_reflect(L, s):
+    r = int(4 * s) + 2
+    P = np.pad(L, r, mode="reflect")
+    h, w = P.shape
+    fy = np.fft.fftfreq(h)[:, None]
+    fx = np.fft.rfftfreq(w)[None, :]
+    return np.fft.irfft2(np.fft.rfft2(P) * np.exp(-2 * (np.pi * s) ** 2 * (fx ** 2 + fy ** 2)), s=(h, w))[r:-r, r:-r]
+
+
+def wall_strip(band, tab, span, alternate):
+    """Unlit luminance of three walls in a row, one 2 m span, built from the GLB's offsets: front, back, front. Row 0 = top."""
+    h, w = band.shape[:2]
+    L = band @ np.array([.2126, .7152, .0722])
+    edges = ATLAS["band_a_course_edges_m"]
+    keys = "fbf" if alternate else "fff"
+    out = np.zeros((h, 3 * w))
+    z = 2.0 * (h - 0.5 - np.arange(h)) / h
+    for i, key in enumerate(keys):
+        for c in range(len(edges) - 1):
+            o = tab[key][round(edges[c] + 2.0 * span, 3)][1]
+            rows = (z >= edges[c]) & (z < edges[c + 1])
+            # tile i covers x = 4i .. 4i+4, s = x - 4i - 2, u = s / 4 + o
+            out[rows, i * w:(i + 1) * w] = np.roll(L[rows], -int(round((o - 0.5) * w)), axis=1)
+    return out
+
+
+def strip_lags(strip, ppm, metres):
+    L = strip - gauss_reflect(strip, 0.165 * ppm)
+    L = L - L.mean(1, keepdims=True)
+    x0, n_x = int(0.076 * ppm), int(3.17 * ppm)
+    a = L[:, x0:x0 + n_x].ravel()
+    out = {}
+    for m_ in metres:
+        lag = int(round(m_ * ppm))
+        out[m_] = float(np.corrcoef(a, L[:, x0 + lag:x0 + lag + n_x].ravel())[0, 1])
+    return out
+
+
+def check_wall_lags(tab, band):
+    """Repetition without a render, on the same crop and formula as measure_look.py: the base colour alone, no light or soiling."""
+    G = "3b courses"
+    if tab is None:
+        return {}
+    ppm = band.shape[1] / 4.0
+    metres = [1, 2, 3, 4, 5, 6, 7, 8]
+    res = {}
+    for span in (0, 1):
+        res[span] = strip_lags(wall_strip(band, tab, span, True), ppm, metres)
+        worst = max(abs(res[span][m_]) for m_ in metres[:-1])
+        rec(G, "wall span %d lags 1-7 m < %.2f, unlit" % (span, WALL_LAG_MAX), worst < WALL_LAG_MAX,
+            "worst %.3f; %s" % (worst, ", ".join("%g m %.3f" % (m_, res[span][m_]) for m_ in metres)))
+    un = strip_lags(wall_strip(band, tab, 1, False), ppm, metres)
+    print("wall unalternated, unlit, upper span: " + ", ".join("%g m %.3f" % (m_, un[m_]) for m_ in metres))
+    return res
 
 
 def band_seams(G, nm, band, du):
@@ -479,12 +692,18 @@ def band_seams(G, nm, band, du):
     rec(G, "%s band A wrap V / bed joint" % nm, wrap_v / joint <= BAND_SEAM_MAX,
         "%.3f (limit %.1f); old p90 ratio %.3f (limit 1.5); median bed joint %.5f" % (wrap_v / joint, BAND_SEAM_MAX, old, joint))
     rec(G, "%s band A wrap U / bed joint" % nm, wrap_u / joint <= BAND_SEAM_MAX, "%.3f" % (wrap_u / joint))
-    for y0, off in du.items():
-        if off is None:
-            rec(G, "%s as-built wall pair at z=%g" % (nm, y0), False, "no vertices")
-            continue
-        r = float(np.abs(band[0] - np.roll(band[-1], int(round(off * w)), axis=0)).mean()) / joint
-        rec(G, "%s as-built wall pair at z=%g / bed joint" % (nm, y0), r <= BAND_SEAM_MAX, "%.3f at U offset %.2f" % (r, off))
+    if du is None:
+        return
+    # the rows that meet at each wall split, at the U offsets the wall really has
+    edges_m = ATLAS["band_a_course_edges_m"]
+    worst, where = 0.0, ""
+    for lo, hi, shift in du:
+        below = h - 1 - int(np.floor(h * edges_m[lo + 1] / 2.0 - 0.5)) if lo + 1 < len(edges_m) - 1 else 0
+        above = h - 1 - int(np.ceil(h * edges_m[hi] / 2.0 - 0.5))
+        r = float(np.abs(band[below % h] - np.roll(band[above % h], -int(round(shift * w)), axis=0)).mean()) / joint
+        if r > worst:
+            worst, where = r, "courses %d/%d, shift %.2f" % (lo, hi, shift)
+    rec(G, "%s wall course splits / bed joint" % nm, worst <= SPLIT_SEAM_MAX, "worst %.3f (limit %.1f) at %s" % (worst, SPLIT_SEAM_MAX, where))
 
 
 def check_materials(g, b, vis):
@@ -529,13 +748,20 @@ def check_materials(g, b, vis):
                 r, old = seam(imgs[nm], ax)
                 rec(G, "%s edge seam %s" % (nm, lab), r <= SEAM_MAX, "p90 ratio %.3f, old mean ratio %.3f" % (r, old))
     r0, r1 = ATLAS["band_a_rows"]
-    du = wall_u_offsets(vis)
+    tab = wall_table(vis) if "wall" in vis else None
+    du = None
+    edges_m = ATLAS.get("band_a_course_edges_m", [])
+    want = sorted([round(e, 3) for e in edges_m[:-1]] + [round(2.0 + e, 3) for e in edges_m[:-1]] + [4.0])
+    if tab and sorted(tab["f"]) == want and sorted(tab["b"]) == want:
+        du = course_pairs(tab)
     for nm in ("stone_ashlar_color", "stone_ashlar_normal", "stone_ashlar_orm"):
         if nm in imgs:
             a = imgs[nm]
             f = a.shape[0] / ATLAS["atlas_size"]
             band = a[int(r0 * f):int(r1 * f)]
             band_seams(G, nm, band, du)
+            if nm == "stone_ashlar_color":
+                ASHLAR_BAND.append(band)
     return sizes, mb
 
 
@@ -548,6 +774,9 @@ def main():
     dims = check_dims(vis, col)
     dims["relief_m_by_angle"] = check_relief(vis)
     check_soiling(g, b, vis)
+    check_rubble(g, b, vis)
+    courses = check_wall_courses(vis)
+    check_head_joints(courses)
     total = 0
     tri_row = {}
     all_meshes = sum(len(accessor(g, b, p["indices"])) // 3 for m in g["meshes"] for p in m["primitives"])
@@ -560,6 +789,8 @@ def main():
     rec("3 tris", "total <= 21,000 (all meshes incl. collision)", all_meshes <= TOTAL_TRIS, all_meshes)
     check_uv2(vis)
     sizes, mb = check_materials(g, b, vis)
+    lags = check_wall_lags(courses, ASHLAR_BAND[0]) if ASHLAR_BAND else {}
+    dims["wall_lags_unlit"] = {str(k): {str(m_): round(v, 3) for m_, v in d.items()} for k, d in lags.items()}
     fails = [r for r in results if not r["ok"]]
     for r in results:
         print("%-4s %-13s %-52s %s" % ("ok" if r["ok"] else "FAIL", r["group"], r["check"], r["detail"]))

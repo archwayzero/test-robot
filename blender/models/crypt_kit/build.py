@@ -1,8 +1,11 @@
 """crypt_kit generator (T015). Contract: docs/contracts/crypt-kit.md.
 
-  python3 tools/qa/memguard.py --expect-peak-mb 2000 -- blender -b --factory-startup -P blender/models/crypt_kit/build.py
+  python3 tools/qa/memguard.py --expect-peak-mb 2000 -- blender -b --factory-startup -P blender/models/crypt_kit/build.py \
+      [-- --maps <folder>] [--out-dir <folder>]
 
-Re-runnable: wipes the scene, regenerates textures/*.png (seeded) and writes crypt_kit_model.blend + atlas.json.
+Re-runnable: wipes the scene, regenerates textures/*.png (seeded) and writes crypt_kit_model.blend + atlas.json. --maps uses the
+replacement maps found in that folder instead of the generated ones (MAPS.md). --out-dir writes the blend, textures and atlas.json
+there instead of here, for trials that must not touch the committed kit.
 
 Blender axes: X along the piece, Y across, Z up. glTF/Godot: (x, y, z) -> (x, z, -y). `wall` and `arch` run along
 local X (Godot `_wall_h`); rotate 90 deg about up for edges along Z. All root nodes sit at the origin of the file; each
@@ -10,18 +13,22 @@ piece's origin is the contract's logical pivot.
 
 Texture layout. stone_ashlar is a 2048 atlas, stone_floor a 1024 full tile:
   band A  ashlar, 4 m x 2 m at 512 px/m, periodic in U and V: walls, piers, capitals and ceilings. Bed joints line up
-          between wall and pier; head joints do not, because the assembler alternates `wall` by 180 degrees and the two
-          faces differ by half a tile. The pier stands PIER_PROUD in front of the wall, so that butt joint is covered by
-          the pier below the capital, and by the transverse arch above it. Above z=2 the wall restarts at the bottom of the
-          band (bed joint) with a U offset, to hide the 2 m repeat. The top course holds two plain 0.85 m stones that the
-          capitals map onto (no joint crosses a capital). The low ceilings map each rubble block inside ONE stone of this
-          band, magnified, so that no joint crosses a block.
+          between wall and pier; head joints do not, because the assembler alternates `wall` by 180 degrees and each face
+          has its own U offset per course. The pier stands PIER_PROUD in front of the wall, so that butt joint is covered by
+          the pier below the capital, and by the transverse arch above it. Each long wall face is split along every bed joint
+          and every course gets a U offset from WALL_COURSE_U: this is what breaks the 2 m and 6 m repeats, and it uses
+          the documented course heights only, never the stones of one texture. So bed joints must be straight lines at the
+          course heights; head joints may be anywhere. Above z=2 the wall restarts at the bottom of the band. The top
+          course holds two plain 0.85 m stones that the capitals map onto (no joint crosses a capital). The low ceilings
+          map each rubble block inside ONE stone of this band (STONES, or stones.json with replacement maps), magnified, so
+          that no joint crosses a block.
   band B  voussoir strip, not tiled: arch soffit + the arch face ring folded over the arris.
   band C  plaster, not tiled: vault webs.
 
 Height-varying soiling is a COLOR_0 multiplier on stone_ashlar pieces (standard glTF: base colour x vertex colour). It only
 varies with height. A piece is one mesh, so anything that varies along a wall repeats per instance; see the task report.
-The rubble ceilings use COLOR_0 too: a per-block shade, darkened towards the recesses (painted occlusion).
+The rubble ceilings use COLOR_0 only as a light per-block shade that falls to about 0.55 in the crevices; their form comes from
+the facets, so that they hold up under weak real-time light.
 """
 import json
 import math
@@ -37,8 +44,18 @@ FLOOR_RUN_M = 0.0    # as built, set by rect_field
 MORTAR_CM = 0.0      # as built, set by stone_maps
 LAST_IDS = None      # stone id per pixel of the last stone_maps call
 HERE = os.path.dirname(os.path.abspath(__file__))
-TEX_DIR = os.path.join(HERE, "textures")
-BLEND = os.path.join(HERE, "crypt_kit_model.blend")
+ARGV = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+
+
+def cli(name):
+    return os.path.abspath(ARGV[ARGV.index(name) + 1]) if name in ARGV else None
+
+
+OUT_DIR = cli("--out-dir") or HERE
+MAPS_DIR = cli("--maps")
+TEX_DIR = os.path.join(OUT_DIR, "textures")
+BLEND = os.path.join(OUT_DIR, "crypt_kit_model.blend")
+REPLACED = []       # replacement files used in this build
 
 # ---------------------------------------------------------------- contract numbers
 CELL = 4.0
@@ -69,6 +86,7 @@ A_ROWS = (PAD, PAD + 1024)      # rows counted from the top of the image
 B_ROWS = (1048, 1428)
 C_ROWS = (1428, 2048)
 A_M = (4.0, 2.0)
+ATLAS_PPM = 512
 B_LEN = 5.46                    # metres of arc mapped to the width of band B
 B_DEPTH = B_LEN * (B_ROWS[1] - B_ROWS[0]) / ATLAS
 
@@ -85,8 +103,43 @@ CAP_JOINTS = [0.35, 1.20, 1.55, 2.40, 2.90, 3.35]   # top course: 0.35-1.20 and 
 STONE_LEN = (0.35, 1.10)
 CAP_U = (0.775 / 4, 1.975 / 4)
 ASHLAR_COURSES = [0.32, 0.24, 0.30, 0.22, 0.33, 0.25, 0.34]  # bottom to top, sum 2.0 (last one: capital course)
+BOND_GAPS = []  # smallest head joint offset, m, per course of the generated band A, over the touching pairs on the wall
 STONES = []     # band A stones as (u0, u1, z0, z1) in metres, filled by block_field; the rubble blocks map into these
 CAP_COURSE = (1.66, 2.0)
+COURSE_EDGES = [0.0] + [round(sum(ASHLAR_COURSES[:i + 1]), 6) for i in range(len(ASHLAR_COURSES))]
+
+
+def wall_course_table():
+    """U offset of each course, in tile widths, per wall face and 2 m span. Fixed numbers from the course count only.
+    A wall alternates with its own back face, so course c repeats at lag L when the two faces differ by L metres, mod 4. The
+    difference is about k + 0.5 m (0.3 m or more from any whole lag) and takes a different value on every course, so no lag,
+    whole or not, lines up more than about one course in seven."""
+    n = len(ASHLAR_COURSES)
+    diff = [0.34, 1.62, 2.44, 3.38, 0.58, 1.36, 2.66]        # metres, back face minus front face
+    table = {"f": [[], []], "b": [[], []]}
+    for span in (0, 1):
+        for c in range(n):
+            f = (0.618034 * (c + 1) + 0.37 * span) % 1.0     # golden ratio steps: courses of one face never fall into step
+            table["f"][span].append(round(f, 4))
+            table["b"][span].append(round((f + diff[(c + 3 * span) % n] / 4.0) % 1.0, 4))
+    return table
+
+
+WALL_COURSE_U = wall_course_table()
+WALL_CAP_U = {"f": 0.23, "b": 0.71}     # the 0.15 m above z=4, the bottom of band A again
+
+
+def course_shifts():
+    """(course below, course above) -> metres by which the wall slides one over the other: every pair of courses that end up
+    touching on a wall face. The generated stones avoid straight joints at these shifts; the layout does not depend on them."""
+    n = len(ASHLAR_COURSES)
+    out = {}
+    for t in WALL_COURSE_U.values():
+        for span in (0, 1):
+            for c in range(1, n):
+                out.setdefault((c - 1, c), []).append(4.0 * (t[span][c] - t[span][c - 1]))
+        out.setdefault((n - 1, 0), []).append(4.0 * (t[1][0] - t[0][n - 1]))
+    return out
 
 
 def band_a(u, z):
@@ -243,19 +296,31 @@ def block_field(h, w, ppm, courses, seed, len_range, warp=0.012, force=None):
     xx = (xx + 0.5) / ppm
     wx = noise(h, w, 3.0, seed + 1) * warp
     wy = noise(h, w, 3.0, seed + 2) * warp
-    if force:
-        # the wall restarts this band at z=2 with a U offset: the wrap's bed joint must be straight so it meets any U
-        wy = wy * sstep(0.0, 0.05, np.minimum(yy, pv - yy))
-    x = np.mod(xx + wx, pu)
-    y = np.mod(yy + wy, pv)
     edges = np.concatenate([[0.0], np.cumsum(courses)])
     edges[-1] = pv
+    if force:
+        # the wall has a UV split on every bed joint, so a bed joint must be a straight line to meet its neighbour at any U
+        wy = wy * sstep(0.0, 0.05, np.abs(yy[..., None] - edges).min(-1))
+    x = np.mod(xx + wx, pu)
+    y = np.mod(yy + wy, pv)
     ids = np.zeros((h, w), dtype=np.int32)
     dist = np.zeros((h, w))
     next_id = 0
     prev = None
+    top = len(courses) - 1
+    shifts = course_shifts() if force else {}
+
+    def bond_gap(joints, below, above, jb):
+        """Smallest distance between head joints of two touching courses, in the band and at every shift a wall uses."""
+        best = 9.0
+        for sh in [0.0] + shifts.get((below, above), []):
+            g = np.abs(np.mod(joints[:, None] - jb[None, :] - sh + pu / 2, pu) - pu / 2)
+            best = min(best, float(g.min()))
+        return best
+
     for c in range(len(courses)):
         m = (y >= edges[c]) & (y < edges[c + 1])
+        best = None
         for attempt in range(4000):
             n_st = rng.randint(int(np.ceil(pu / len_range[1])), int(pu / len_range[0]) + 1)
             ln = rng.uniform(len_range[0], len_range[1], n_st)
@@ -263,12 +328,25 @@ def block_field(h, w, ppm, courses, seed, len_range, warp=0.012, force=None):
             joints = rng.uniform(0, 0.5) + np.concatenate([[0.0], np.cumsum(ln[:-1])])
             if ln.min() < len_range[0] or ln.max() > len_range[1]:
                 continue
-            if prev is None or len(courses) < 2:
+            if len(courses) < 2:
+                best = (9.0, joints)
                 break
-            # broken bond: no head joint sits over the one below
-            gap = np.abs(joints[:, None] - prev[None, :])
-            if np.minimum(gap, pu - gap).min() >= 0.11:
+            # broken bond: no head joint sits over the one below, on the band or on a wall face. Keep the best one found.
+            gaps = []
+            if prev is not None:
+                gaps.append(bond_gap(joints, c - 1, c, prev))
+            if force and c == 0:
+                gaps.append(bond_gap(joints, top, 0, np.array(force[top])))
+            if force and c == top - 1:
+                gaps.append(bond_gap(np.array(force[top]), c, top, joints))
+            g = min(gaps) if gaps else 9.0
+            if best is None or g > best[0]:
+                best = (g, joints)
+            if g >= 0.09:
                 break
+        joints = best[1]
+        if force and c not in force:
+            BOND_GAPS.append(round(best[0], 3))
         if force and c in force:
             joints = force[c]
         joints = np.array(joints)
@@ -395,6 +473,11 @@ def ao_from_height(h, ppm, scale):
     return np.clip(1.0 - 0.75 * np.clip(small, 0, 1) - 0.35 * np.clip(large, 0, 1), 0.25, 1.0)
 
 
+PLASTER = (0.900, 0.862, 0.780)
+PLASTER_MID = 0.075
+PLASTER_FINE = 0.06
+
+
 def plaster_maps(h, w, ppm, seed):
     n_lo = noise(h, w, 3.4, seed)
     n_mid = noise(h, w, 2.4, seed + 1, low=5)
@@ -408,10 +491,13 @@ def plaster_maps(h, w, ppm, seed):
     blotch = sstep(-0.4, 2.2, n_lo + 0.25 * n_mid)
     crack = 1 - sstep(0.0, 0.035, np.abs(noise(h, w, 3.0, seed + 3)))
     crack = crack * sstep(0.7, 1.6, noise(h, w, 3.2, seed + 4))
-    height = 0.0045 * n_lo + 0.0010 * n_mid + 0.00012 * n_hi - 0.0010 * crack
-    pal = np.array([0.810, 0.776, 0.702])
-    # the blotch is mapped to all four webs of every bay, so at low frequency it is what shows bays repeating: keep it faint
-    v = 1.0 + 0.012 * n_lo + 0.024 * n_mid + 0.010 * n_hi
+    n_trowel = noise(h, w, 1.8, seed + 5, low=14)            # 0.1-0.4 m: trowel passes and damp patches
+    n_grain = noise(h, w, 1.0, seed + 6, low=120)            # under 4 cm: lime grain
+    height = 0.0045 * n_lo + 0.0010 * n_mid + 0.00012 * n_hi - 0.0010 * crack + 0.0005 * n_trowel + 0.00012 * n_grain
+    pal = np.array(PLASTER)
+    # the blotch is mapped to all four webs of every bay, so at low frequency it is what shows bays repeating: keep it faint.
+    # Contrast sits at 0.1-0.4 m and finer, which reads as worn lime and does not make a landmark.
+    v = 1.0 + 0.012 * n_lo + 0.030 * n_mid + 0.012 * n_hi + PLASTER_MID * n_trowel + PLASTER_FINE * n_grain
     alb = pal * v[..., None]
     alb *= 1 - 0.07 * blotch[..., None] * np.array([0.9, 1.0, 1.15])
     alb *= 1 - 0.20 * grime[..., None] * np.array([0.8, 1.0, 1.3])
@@ -426,6 +512,8 @@ def plaster_maps(h, w, ppm, seed):
 
 def to_image(name, arr, srgb):
     """arr: h x w x 3, row 0 = top. Saves textures/<name>.png, returns the loaded, packed image."""
+    new = read_map(name + ".png")
+    arr = arr if new is None else new
     h, w = arr.shape[:2]
     path = os.path.join(TEX_DIR, name + ".png")
     img = bpy.data.images.new(name + "_tmp", w, h, alpha=False)
@@ -441,6 +529,60 @@ def to_image(name, arr, srgb):
     out.colorspace_settings.name = "sRGB" if srgb else "Non-Color"
     out.pack()
     return out
+
+
+# ---------------------------------------------------------------- replacement maps (MAPS.md)
+MAP_FILES = {
+    "stone_ashlar_color.png": (ATLAS, ATLAS), "stone_ashlar_normal.png": (ATLAS, ATLAS), "stone_ashlar_orm.png": (ATLAS // 2, ATLAS // 2),
+    "stone_floor_color.png": (1024, 1024), "stone_floor_normal.png": (1024, 1024), "stone_floor_orm.png": (1024, 1024),
+    "ashlar_band_a_color.png": (1024, 2048), "ashlar_band_a_normal.png": (1024, 2048), "ashlar_band_a_orm.png": (1024, 2048),
+}
+
+
+def check_maps_folder():
+    """A misspelt file would silently fall back to the generated map, so anything unknown stops the build."""
+    if not MAPS_DIR:
+        return
+    if not os.path.isdir(MAPS_DIR):
+        raise SystemExit("no such maps folder: %s" % MAPS_DIR)
+    extra = [f for f in sorted(os.listdir(MAPS_DIR)) if f not in MAP_FILES and f != "stones.json"]
+    if extra:
+        raise SystemExit("unknown files in the maps folder: %s" % extra)
+    path = os.path.join(MAPS_DIR, "stones.json")
+    if os.path.exists(path):
+        REPLACED.append("stones.json")
+
+
+def read_map(fname):
+    """The file's pixels as stored, h x w x 3, row 0 = top. None when there is no such replacement."""
+    if not MAPS_DIR:
+        return None
+    path = os.path.join(MAPS_DIR, fname)
+    if not os.path.exists(path):
+        return None
+    im = bpy.data.images.load(path)
+    im.colorspace_settings.name = "Non-Color"
+    w, h = im.size
+    if (h, w) != MAP_FILES[fname]:
+        raise SystemExit("%s is %dx%d, must be %dx%d" % (fname, w, h, MAP_FILES[fname][1], MAP_FILES[fname][0]))
+    px = np.empty(w * h * 4, dtype=np.float32)
+    im.pixels.foreach_get(px)
+    ch = im.channels
+    bpy.data.images.remove(im)
+    REPLACED.append(fname)
+    return np.flipud(px.reshape(h, w, 4))[..., :3].astype(np.float64) if ch else None
+
+
+def replaced_stones():
+    """stones.json: the real stones of a replacement band A, for the rubble blocks to map into."""
+    path = os.path.join(MAPS_DIR, "stones.json") if MAPS_DIR else ""
+    if not os.path.exists(path):
+        return
+    rows = json.load(open(path))
+    bad = [r for r in rows if len(r) != 4 or r[0] >= r[1] or r[2] >= r[3] or r[2] < 0 or r[3] > A_M[1]]
+    if bad or not rows:
+        raise SystemExit("stones.json: rows must be [u0, u1, z0, z1] in metres inside band A; bad: %s" % bad[:3])
+    STONES[:] = [tuple(float(v) for v in r) for r in rows]
 
 
 def even_voussoirs(alb, ids, ppm):
@@ -478,6 +620,15 @@ def build_textures():
                                  wear=0.008, force={len(ASHLAR_COURSES) - 1: CAP_JOINTS})
     a_n = normal_from_height(a_h, ppm)
     a_ao = ao_from_height(a_h, ppm, 0.012)
+    new = read_map("ashlar_band_a_color.png")
+    a_alb = a_alb if new is None else new
+    keep_cavity = new is None
+    new = read_map("ashlar_band_a_normal.png")
+    a_n = a_n if new is None else new
+    new = read_map("ashlar_band_a_orm.png")
+    if new is not None:
+        a_ao, a_r = new[..., 0], new[..., 1]
+    replaced_stones()
     # band B: voussoirs. One course across, irregular joints along the arc. Generated on a square-ish torus in metres.
     bh, bw = B_ROWS[1] - B_ROWS[0], ATLAS
     bppm = ATLAS / B_LEN
@@ -519,8 +670,12 @@ def build_textures():
         nrm[rr[0]:rr[1]] = nn
         rgh[rr[0]:rr[1]] = ro
         aoc[rr[0]:rr[1]] = ao
-    # cavity also goes into the base colour a little: Cycles and glTF viewers ignore the occlusion input differently
-    alb = alb * (0.90 + 0.10 * aoc)[..., None]
+    # cavity also goes into the base colour a little: Cycles and glTF viewers ignore the occlusion input differently.
+    # A replacement band A keeps its own base colour as delivered.
+    cavity = 0.90 + 0.10 * aoc
+    if not keep_cavity:
+        cavity[:B_ROWS[0]] = 1.0
+    alb = alb * cavity[..., None]
     imgs = {}
     imgs["ashlar_color"] = to_image("stone_ashlar_color", alb, True)
     imgs["ashlar_normal"] = to_image("stone_ashlar_normal", nrm, False)
@@ -729,6 +884,21 @@ def build_wall(mat):
     end_l = lambda s, z: (-h, -s, z)
     spans = [(0.0, 2.0, 0.0), (2.0, 4.0, 0.37), (4.0, TOP, 0.71)]
 
+    def coursed(tag, s0, s1, place):
+        """A long face: one quad per course, split on the bed joints, each with the U offset of WALL_COURSE_U."""
+        table = WALL_COURSE_U[tag]
+        for span in (0, 1):
+            base = 2.0 * span
+            for c in range(len(ASHLAR_COURSES)):
+                za, zb = COURSE_EDGES[c], COURSE_EDGES[c + 1]
+                o = table[span][c]
+                pts = [place(s0, base + za), place(s1, base + za), place(s1, base + zb), place(s0, base + zb)]
+                u0, u1 = s0 / 4 + o, s1 / 4 + o
+                b.face("%s%d_%d" % (tag, span, c), pts, [band_a(u0, za), band_a(u1, za), band_a(u1, zb), band_a(u0, zb)], False)
+        o = WALL_CAP_U[tag]
+        b.face(tag + "cap", [place(s0, 4.0), place(s1, 4.0), place(s1, TOP), place(s0, TOP)],
+               [band_a(s0 / 4 + o, 0), band_a(s1 / 4 + o, 0), band_a(s1 / 4 + o, TOP - 4.0), band_a(s0 / 4 + o, TOP - 4.0)], False)
+
     def tiled(tag, s0, s1, place, off):
         for k, (z0, z1, o) in enumerate(spans):
             rows = [z for z in WALL_ROWS if z0 <= z <= z1]
@@ -738,8 +908,8 @@ def build_wall(mat):
                 u0, u1 = s0 / 4 + off + o, s1 / 4 + off + o
                 b.face("%s%d" % (tag, k), pts, [band_a(u0, za), band_a(u1, za), band_a(u1, zb), band_a(u0, zb)], False)
 
-    tiled("f", -h, h, front, 0.5)
-    tiled("b", -h, h, back, 0.0)        # the two sides of a wall differ, so a corridor does not mirror itself
+    coursed("f", -h, h, front)
+    coursed("b", -h, h, back)           # the two sides of a wall differ, so a corridor does not mirror itself
     tiled("e", -t, t, end_r, 0.0)
     tiled("g", -t, t, end_l, 0.0)
     b.face("top", [(-h, -t, TOP), (h, -t, TOP), (h, t, TOP), (-h, t, TOP)],
@@ -1048,96 +1218,86 @@ def stone_map(poly, rng):
     return uv, (cx, cy), f
 
 
-def planar_uv(pts, rng):
-    """UVs of a flat-ish 3D polygon, mapped undistorted inside one stone."""
-    o = pts[0]
-    e1 = [pts[1][i] - o[i] for i in range(3)]
-    ln = math.sqrt(sum(a * a for a in e1)) or 1.0
-    e1 = [a / ln for a in e1]
-    far = max(pts[1:], key=lambda r: sum((r[i] - o[i]) ** 2 for i in range(3)))
-    t = sum((far[i] - o[i]) * e1[i] for i in range(3))
-    e2 = [far[i] - o[i] - t * e1[i] for i in range(3)]
-    ln = math.sqrt(sum(a * a for a in e2)) or 1.0
-    e2 = [a / ln for a in e2]
-    flat = [(sum((r[i] - o[i]) * e1[i] for i in range(3)), sum((r[i] - o[i]) * e2[i] for i in range(3))) for r in pts]
-    uv = stone_map(flat, rng)[0]
-    return [uv(f) for f in flat]
+def rubble_block(b, g, name, poly, centre, rim_depth, inner_depth, centre_depth, m, place, up, uv, tone, vcol):
+    """One rubble block: rim polygon on the valley between blocks, an inner ring of m points, a centre. Every facet slopes, so
+    the block reads from N.L alone, without a painted crevice. poly[i] sits at rim_depth[i]. `up` is the sign of the wanted
+    normal along the patch's own normal."""
+    n = len(poly)
+    cx, cy = centre
+    frame = _normal([place(0, 0, 0), place(1, 0, 0), place(0, 1, 0)])
 
-
-def relief_patch(b, name, pieces, n_blocks, depth, place, rng, shade, boundary=None):
-    """A broken surface: convex blocks at different depths. `pieces` from voronoi(); depth(bi, o, p) >= 0 is the depth of a
-    point of block bi, place(x, y, d) its 3D position. Blocks are fans around a slightly deeper centre (a tumbled, faceted
-    face). A shared edge makes one skirt, owned by the nearer block, which is the visible depth step. boundary(...) closes
-    edges that have no neighbour. Each block is its own vertex group, so it can carry its own COLOR_0 and stay flat shaded."""
-    VCOL.setdefault(name, {})
-    edges = {}
-    mags = []
-    blocks = []
-    tone = [rng.uniform(0.72, 1.0) for _ in range(n_blocks)]
-    for pi, (bi, o, poly) in enumerate(pieces):
-        uv, c, f = stone_map(poly, rng)
-        mags.append(f)
-        blocks.append((bi, o, poly, uv, c))
-        for i in range(len(poly)):
-            p, q = poly[i], poly[(i + 1) % len(poly)]
-            ka, kb = (round(p[0], 4), round(p[1], 4)), (round(q[0], 4), round(q[1], 4))
-            if ka == kb:
-                continue
-            edges.setdefault(tuple(sorted((ka, kb))), []).append((pi, p, q))
-    for pi, (bi, o, poly, uv, c) in enumerate(blocks):
-        g = "%s_b%d" % (name, pi)
-        n = len(poly)
-        cen = place(c[0], c[1], depth(bi, o, c) + 0.022)
-        cen_uv = uv(c)
-        for i in range(n):
-            p, q = poly[i], poly[(i + 1) % n]
-            pts = [cen, place(p[0], p[1], depth(bi, o, p)), place(q[0], q[1], depth(bi, o, q))]
-            nrm = _normal(pts)
-            test = _normal([place(0, 0, 0), place(1, 0, 0), place(0, 1, 0)])
-            if sum(a * t for a, t in zip(nrm, test)) * shade["wind"] < 0:
-                b.face(g, [pts[0], pts[2], pts[1]], [cen_uv, uv(q), uv(p)], False)
-            else:
-                b.face(g, pts, [cen_uv, uv(p), uv(q)], False)
-        for k in list(b.index):
-            if k[0] == g:
-                c_v = tone[bi]
-                VCOL[name][b.index[k]] = (c_v, c_v * 0.985, c_v * 0.95)
-
-    for ed in edges.values():
-        if len(ed) == 1:
-            if boundary:
-                pi, p, q = ed[0]
-                boundary(blocks[pi], p, q)
-            continue
-        (pa, p, q), (pb, _, _) = ed[0], ed[1]
-        ba, bb = blocks[pa], blocks[pb]
-        mid = (0.5 * (p[0] + q[0]), 0.5 * (p[1] + q[1]))
-        da, db = depth(ba[0], ba[1], mid), depth(bb[0], bb[1], mid)
-        if da > db:
-            ba, bb = bb, ba
-            da, db = db, da
-        if db - da < 0.004:
-            continue
-        pts = [place(p[0], p[1], depth(ba[0], ba[1], p)), place(q[0], q[1], depth(ba[0], ba[1], q)),
-               place(q[0], q[1], depth(bb[0], bb[1], q)), place(p[0], p[1], depth(bb[0], bb[1], p))]
-        cx, cy = ba[4]
-        uvs = planar_uv(pts, rng)
-        out = (mid[0] - cx, mid[1] - cy)     # from the block outwards: the skirt must face its lower neighbour
-        o0 = place(mid[0], mid[1], da)
-        o1 = place(mid[0] + out[0], mid[1] + out[1], da)
-        w = (o1[0] - o0[0], o1[1] - o0[1], o1[2] - o0[2])
-        nrm = _normal(pts[:3])
-        if sum(a * c for a, c in zip(nrm, w)) < 0:
-            pts, uvs = pts[::-1], uvs[::-1]
-        g = "%s_s%d" % (name, len(b.index))
+    def tri(p, q, r):
+        pts = [place(a[0], a[1], a[2]) for a in (p, q, r)]
+        uvs = [uv((a[0], a[1])) for a in (p, q, r)]
+        flat = [(a[0], a[1]) for a in (p, q, r)]
+        if sum(x * y for x, y in zip(_normal(pts), frame)) * up < 0:
+            pts, uvs, flat = pts[::-1], uvs[::-1], flat[::-1]
+        n0 = len(b.faces)
         b.face(g, pts, uvs, False)
-        t = tone[ba[0]]
-        # painted occlusion: the skirt darkens into the recess
-        near = {tuple(place(p[0], p[1], depth(ba[0], ba[1], p))), tuple(place(q[0], q[1], depth(ba[0], ba[1], q)))}
-        for pt in pts:
-            c_v = 0.84 * t if tuple(pt) in near else 0.40 * t
-            VCOL[name][b.index[(g, round(pt[0], 5), round(pt[1], 5), round(pt[2], 5))]] = (c_v, c_v * 0.97, c_v * 0.90)
-    return mags
+        if len(b.faces) > n0:
+            UV2_FLAT.setdefault(name, []).append(flat)
+
+    rim = [(poly[i][0], poly[i][1], rim_depth[i]) for i in range(n)]
+    area = 0.5 * abs(sum(poly[i][0] * poly[(i + 1) % n][1] - poly[(i + 1) % n][0] * poly[i][1] for i in range(n)))
+    if area < 0.05:                     # a sliver left by clipping: no room for a ring
+        mid = (cx, cy, sum(rim_depth) / n)
+        for i in range(n):
+            tri(rim[i], rim[(i + 1) % n], mid)
+        paint_block(b, g, rim, place, tone, vcol)
+        return
+    ang = [math.atan2(p[1] - cy, p[0] - cx) for p in poly]
+    # walk the rim counter-clockwise from the centre's point of view; the inner ring is evenly spaced in angle around the centre
+    turn = sum(((ang[(i + 1) % n] - ang[i] + math.pi) % (2 * math.pi)) - math.pi for i in range(n))
+    if turn < 0:
+        rim, ang = rim[::-1], ang[::-1]
+    a0 = ang[0]
+    run = [((ang[i] - a0) % (2 * math.pi)) for i in range(n)]
+    inner = []
+    for j in range(m):
+        th = a0 + 2 * math.pi * j / m
+        hit = 1e9
+        for i in range(n):                         # ray from the centre to the outline
+            p, q = rim[i], rim[(i + 1) % n]
+            ex, ey = q[0] - p[0], q[1] - p[1]
+            det = math.cos(th) * -ey + ex * math.sin(th)
+            if abs(det) > 1e-9:
+                tt = ((p[0] - cx) * -ey + ex * (p[1] - cy)) / det
+                uu = (math.cos(th) * (p[1] - cy) - math.sin(th) * (p[0] - cx)) / det
+                if tt > 0 and -1e-6 <= uu <= 1 + 1e-6:
+                    hit = min(hit, tt)
+        f, d = inner_depth[j]
+        inner.append((cx + hit * f * math.cos(th), cy + hit * f * math.sin(th), d))
+    mid = (cx, cy, centre_depth)
+    # radial sweep: step whichever ring comes next in angle, so the band between the rings cannot fold
+    run.append(2 * math.pi)
+    i = j = 0
+    while i < n or j < m:
+        if j >= m or (i < n and run[i + 1] <= 2 * math.pi * (j + 1) / m):
+            tri(rim[i % n], rim[(i + 1) % n], inner[j % m])
+            i += 1
+        else:
+            tri(rim[i % n], inner[(j + 1) % m], inner[j % m])
+            j += 1
+    for j in range(m):
+        tri(inner[j], inner[(j + 1) % m], mid)
+    paint_block(b, g, rim, place, tone, vcol)
+
+
+def paint_block(b, g, rim, place, tone, vcol):
+    rims = {tuple(round(v, 5) for v in place(*r)) for r in rim}
+    for k, v in b.index.items():
+        if k[0] == g:
+            c = tone * (RUBBLE_VALLEY if (k[1], k[2], k[3]) in rims else 1.0)
+            vcol[v] = (c, c * 0.985, c * 0.95)
+
+
+RUBBLE_VALLEY = 0.62        # COLOR_0 in the crevices, over the block tone
+RUBBLE_TONE = (0.86, 1.0)   # so the crevice stays above 0.5
+RUBBLE_LONG_EDGE = 1.0      # m
+UNDER_RANGE = 0.19          # m, deepest block centre above the underside
+UNDER_VALLEY = (0.05, 0.08)  # m, valley above its deeper neighbour
+SIDE_SET = (0.0, 0.055)     # m, setback of a side block from the cell boundary
+SIDE_VALLEY = (0.05, 0.085)
 
 
 def _normal(p):
@@ -1147,89 +1307,174 @@ def _normal(p):
 
 
 VCOL = {}
+UV2_FLAT = {}       # per polygon of a rubble ceiling: its block's flat layout, one lightmap chart per block
 
 
-def build_ceiling(name, underside, seed, mat, n_under=(5, 6), n_side=(3, 5)):
+def block_centre(poly):
+    return sum(p[0] for p in poly) / len(poly), sum(p[1] for p in poly) / len(poly)
+
+
+def build_ceiling(name, underside, seed, mat, n_under=(5, 4), n_side=(4, 3)):
+    """One closed surface from the underside up the four sides: rounded, faceted blocks that meet in V valleys. No skirts,
+    no stacked plates: depth changes across a block's own sloped rim. The surface is periodic over 4 m, so low cells of
+    one kind join, and the side patches start exactly on the underside's outline."""
     b = Builder()
     h = CELL / 2
     rng = np.random.RandomState(seed)
-    # underside: periodic in 4 m, so that neighbouring low cells of one kind join without a step
+    VCOL.setdefault(name, {})
+    vcol = VCOL[name]
     box = (-h, -h, h, h)
     sites = jitter_sites(n_under[0], n_under[1], box, rng, 0.44)
-    pieces = voronoi(sites, box, (CELL, CELL), 1.3)
-    # neighbour table, to keep a visible step between adjacent blocks
-    near = {i: set() for i in range(len(sites))}
-    seen = {}
+    pieces = []
+    for bi, o, poly in voronoi(sites, box, (CELL, CELL), 1.15):
+        out = []
+        for p in poly:      # a Voronoi corner a hair inside the cell edge belongs on it, or the side patch cannot meet it
+            q = tuple(round(math.copysign(h, v) if h - abs(v) < 0.02 else v, 2) for v in p)
+            if not out or math.hypot(out[-1][0] - q[0], out[-1][1] - q[1]) > 1e-6:
+                out.append(q)
+        if len(out) > 1 and math.hypot(out[-1][0] - out[0][0], out[-1][1] - out[0][1]) < 1e-6:
+            out.pop()
+        if len(out) >= 3:
+            pieces.append((bi, o, out))
+
+    def wrap(p):
+        return (round(round(p[0], 3) % CELL, 3), round(round(p[1], 3) % CELL, 3))
+
+    corner = {}
     for bi, o, poly in pieces:
         for p in poly:
-            key = (round(p[0], 3) % CELL, round(p[1], 3) % CELL)
-            for other in seen.setdefault(key, []):
-                if other != bi:
-                    near[bi].add(other)
-                    near[other].add(bi)
-            seen[key].append(bi)
-    drop = {}
+            corner.setdefault(wrap(p), set()).add(bi)
+    near = {i: set() for i in range(len(sites))}
+    for blocks in corner.values():
+        for i in blocks:
+            near[i] |= blocks - {i}
+    dep = {}
     for i in rng.permutation(len(sites)):
         i = int(i)
         for attempt in range(60):
-            d = rng.uniform(0.0, 0.34)
-            if all(abs(d - drop[o]) >= 0.075 for o in near[i] if o in drop):
+            d = UNDER_RANGE * rng.uniform() ** 1.7   # most blocks hang low, near the collision plane; a few are deep
+            if all(abs(d - dep[o]) >= 0.03 for o in near[i] if o in dep):
                 break
-        drop[i] = d
-    slope = {i: rng.uniform(-0.05, 0.05, 2) for i in range(len(sites))}
-
-    def under_depth(bi, o, p):
-        sx, sy = sites[bi][0] + o[0], sites[bi][1] + o[1]
-        return drop[bi] + float(np.clip(slope[bi][0] * (p[0] - sx) + slope[bi][1] * (p[1] - sy), -0.03, 0.03))
-
-    lo = min(under_depth(bi, o, p) for bi, o, poly in pieces for p in poly)
-    hi = max(under_depth(bi, o, p) for bi, o, poly in pieces for p in poly) - lo
-    z0 = underside + hi + 0.03          # the side walls start here, behind the plates
+        dep[i] = d
+    least = min(dep.values())
+    dep = {i: d - least for i, d in dep.items()}
+    dep[max(dep, key=dep.get)] = UNDER_RANGE      # one really deep block in every cell
+    valley = {k: max(dep[i] for i in v) + rng.uniform(*UNDER_VALLEY) for k, v in sorted(corner.items())}
 
     def place_u(x, y, d):
-        return (x, y, underside + d - lo)
+        return (x, y, underside + d)
 
-    def plate(blk, p, q):
-        """Outer edge of an underside block: a plate on the cell boundary, rising above z0 by a per-block amount. The tops
-        of the plates step, so the side wall does not start on one straight line."""
-        bi, o, poly, uv, c = blk
-        rise = z0 + 0.03 + 0.30 * ((bi * 7919 + seed) % 13) / 12.0
-        pts = [place_u(p[0], p[1], under_depth(bi, o, p)), place_u(q[0], q[1], under_depth(bi, o, q)),
-               (q[0], q[1], rise), (p[0], p[1], rise)]
-        m = (0.5 * (p[0] + q[0]), 0.5 * (p[1] + q[1]))
-        out = (1.0 if m[0] > h - 1e-6 else -1.0 if m[0] < -h + 1e-6 else 0.0, 1.0 if m[1] > h - 1e-6 else -1.0 if m[1] < -h + 1e-6 else 0.0)
-        uvs = planar_uv(pts, rng)
-        nrm = _normal(pts[:3])
-        if nrm[0] * out[0] + nrm[1] * out[1] < 0:
-            pts, uvs = pts[::-1], uvs[::-1]
-        g = "%s_p%d" % (name, len(b.index))
-        b.face(g, pts, uvs, False)
-        t = 0.62 + 0.3 * ((bi * 31 + seed) % 7) / 6.0
-        for pt in pts:
-            c_v = t * (0.55 if pt[2] >= z0 else 1.0)
-            VCOL[name][b.index[(g, round(pt[0], 5), round(pt[1], 5), round(pt[2], 5))]] = (c_v, c_v * 0.97, c_v * 0.91)
+    tone = {i: rng.uniform(*RUBBLE_TONE) for i in range(len(sites))}
+    outline = {0: {}, 1: {}, 2: {}, 3: {}}
+    for pi, (bi, o, poly) in enumerate(pieces):
+        c = block_centre(poly)
+        uv = stone_map(poly, rng)[0]
+        rim = [valley[wrap(p)] for p in poly]
+        d0 = dep[bi]
+        ring = [(rng.uniform(0.52, 0.72), d0 + rng.uniform(0.012, 0.035)) for _ in poly]
+        rubble_block(b, "%s_u%d" % (name, pi), name, poly, c, rim, ring, d0, len(poly), place_u, -1, uv, tone[bi], vcol)
+        for p, r in zip(poly, rim):
+            if abs(p[1] + h) < 1e-6:
+                outline[0][round(p[0], 5)] = underside + r
+            if abs(p[0] - h) < 1e-6:
+                outline[1][round(p[1], 5)] = underside + r
+            if abs(p[1] - h) < 1e-6:
+                outline[2][round(-p[0], 5)] = underside + r
+            if abs(p[0] + h) < 1e-6:
+                outline[3][round(-p[1], 5)] = underside + r
 
-    relief_patch(b, name, pieces, len(sites), under_depth, place_u, rng, dict(wind=-1), plate)
-
-    # the four sides: tumbled blocks, wide rather than tall, set back up to 0.27 m. Depth fades to 0 at the cell corners so
-    # that neighbouring sides meet
+    z_base = underside + UNDER_RANGE + UNDER_VALLEY[1] + 0.02        # the side patches are laid out above this line ...
     for k in range(4):
         ca, sa = [(1, 0), (0, 1), (-1, 0), (0, -1)][k]
-        box_s = (-h, z0, h, TOP)
-        ss = jitter_sites(n_side[0], n_side[1], box_s, rng, 0.46)
-        ps = voronoi(ss, box_s, (0, 0), 2.2)
-        dr = {i: rng.uniform(0.014, 0.25) for i in range(len(ss))}
-        sl = {i: rng.uniform(-0.05, 0.05, 2) for i in range(len(ss))}
+        line = sorted(outline[k].items())
+        ls, lz = [q[0] for q in line], [q[1] for q in line]
 
-        def side_depth(bi, o, p, ss=ss, dr=dr, sl=sl):
-            fade = 1.0 - (abs(p[0]) / h) ** 8
-            return max(0.0, dr[bi] + float(np.clip(sl[bi][0] * (p[0] - ss[bi][0]) + sl[bi][1] * (p[1] - ss[bi][1]), -0.02, 0.02))) * fade
+        def z_of(s, z, ls=ls, lz=lz):
+            """... and stretched down onto the underside's outline at the bottom edge, unchanged at the top."""
+            t = (TOP - z) / (TOP - z_base)
+            return z + (float(np.interp(s, ls, lz)) - z_base) * t
 
-        def place_s(s, z, d, ca=ca, sa=sa):
+        def place_s(s, z, d, ca=ca, sa=sa, z_of=z_of):
             x, y = s, -h + d
-            return (ca * x - sa * y, sa * x + ca * y, z)
+            return (ca * x - sa * y, sa * x + ca * y, z_of(s, z))
 
-        relief_patch(b, name, ps, len(ss), side_depth, place_s, rng, dict(wind=1))
+        box_s = (-h, z_base, h, TOP)
+        ss = jitter_sites(n_side[0], n_side[1], box_s, rng, 0.42)
+        grid = [z_base + (TOP - z_base) * i / 3.0 for i in range(4)]
+
+        def snap(p, ls=ls, grid=grid):
+            """Border points move onto points the neighbouring surface already has: the underside's outline along the bottom,
+            a shared height grid at the cell corners. No T-junctions, so no cracks between surfaces."""
+            x, z = p
+            if z - z_base < 0.05:
+                return (min(ls, key=lambda q: abs(q - x)), z_base)
+            if TOP - z < 0.05:
+                z = TOP
+            if h - abs(x) < 0.05:
+                return (math.copysign(h, x), min(grid, key=lambda q: abs(q - z)))
+            return (x, z)
+
+        ps = []
+        for bi, o, poly in voronoi(ss, box_s, (0, 0), 1.9):
+            out = []
+            for p in map(snap, poly):
+                if not out or math.hypot(out[-1][0] - p[0], out[-1][1] - p[1]) > 1e-6:
+                    out.append(p)
+            if len(out) > 1 and math.hypot(out[-1][0] - out[0][0], out[-1][1] - out[0][1]) < 1e-6:
+                out.pop()
+            if len(out) >= 3:
+                ps.append((bi, o, out))
+        set_b = {i: rng.uniform(*SIDE_SET) for i in range(len(ss))}
+        tone_s = {i: rng.uniform(*RUBBLE_TONE) for i in range(len(ss))}
+        # long valleys get a midpoint, so that no facet spans a whole block. Both blocks of an edge get the same point.
+        split = []
+        for bi, o, poly in ps:
+            for i, p in enumerate(poly):
+                q = poly[(i + 1) % len(poly)]
+                free = (abs(p[1] - z_base) < 1e-6 and abs(q[1] - z_base) < 1e-6) or (abs(abs(p[0]) - h) < 1e-6 and abs(p[0] - q[0]) < 1e-6)
+                if not free and math.hypot(p[0] - q[0], p[1] - q[1]) > RUBBLE_LONG_EDGE:
+                    split.append(tuple(sorted((p, q))))
+        split = set(split)
+
+        def subdivide(poly):
+            out = []
+            for i, p in enumerate(poly):
+                q = poly[(i + 1) % len(poly)]
+                out.append(p)
+                if tuple(sorted((p, q))) in split:
+                    out.append((0.5 * (p[0] + q[0]), 0.5 * (p[1] + q[1])))
+            return out
+
+        ps = [(bi, o, subdivide(poly)) for bi, o, poly in ps]
+        cor = {}
+        for bi, o, poly in ps:
+            for p in poly:
+                cor.setdefault((round(p[0], 3), round(p[1], 3)), set()).add(bi)
+
+        def rim_set(p):
+            # zero on the patch's border: on the cell boundary, where the underside and the neighbouring sides meet it
+            if abs(abs(p[0]) - h) < 1e-3 or abs(p[1] - z_base) < 1e-3 or abs(p[1] - TOP) < 1e-3:
+                return 0.0
+            return max(set_b[i] for i in cor[(round(p[0], 3), round(p[1], 3))]) + rng.uniform(*SIDE_VALLEY)
+
+        rims = {key: rim_set(key) for key in sorted(cor)}
+        for pi, (bi, o, poly) in enumerate(ps):
+            c = block_centre(poly)
+            uv = stone_map(poly, rng)[0]
+            full = []                    # the outline's points go into the bottom edge, or the two surfaces would crack
+            for i, p in enumerate(poly):
+                q = poly[(i + 1) % len(poly)]
+                full.append(p)
+                if abs(p[1] - z_base) < 1e-6 and abs(q[1] - z_base) < 1e-6:
+                    between = sorted((s for s in ls if min(p[0], q[0]) + 1e-4 < s < max(p[0], q[0]) - 1e-4), reverse=p[0] > q[0])
+                    full.extend((s, z_base) for s in between)
+                if abs(abs(p[0]) - h) < 1e-6 and abs(p[0] - q[0]) < 1e-6:
+                    between = sorted((z for z in grid if min(p[1], q[1]) + 1e-4 < z < max(p[1], q[1]) - 1e-4), reverse=p[1] > q[1])
+                    full.extend((p[0], z) for z in between)
+            rim = [0.0 if abs(p[1] - z_base) < 1e-6 or abs(abs(p[0]) - h) < 1e-6 else rims[(round(p[0], 3), round(p[1], 3))] for p in full]
+            m = 4 if 0.5 * abs(sum(p[0] * q[1] - q[0] * p[1] for p, q in zip(full, full[1:] + full[:1]))) > 0.56 else 3
+            ring = [(rng.uniform(0.55, 0.72), set_b[bi] + rng.uniform(0.01, 0.03)) for _ in range(m)]
+            rubble_block(b, "%s_s%d_%d" % (name, k, pi), name, full, c, rim, ring, set_b[bi], m, place_s, 1, uv, tone_s[bi], vcol)
     ob = b.to_object(name, mat)
     collision(ob, [((-h, -h, underside), (h, h, TOP))])
     return ob
@@ -1240,13 +1485,20 @@ def add_uv2(ob):
     me = ob.data
     uv2 = me.uv_layers.new(name="UV2")
     me.uv_layers.active = uv2
+    flat = UV2_FLAT.get(ob.name)
+    if flat:
+        # Smart Project folds on the steep rims of a rubble block. A block is a star over its flat layout, so that is a clean chart.
+        for poly, pts in zip(me.polygons, flat):
+            for li, q in zip(poly.loop_indices, pts):
+                uv2.uv[li].vector = (q[0] / 8.0 + 0.5, q[1] / 8.0 + 0.5)
     bpy.ops.object.select_all(action="DESELECT")
     ob.select_set(True)
     bpy.context.view_layer.objects.active = ob
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
-    bpy.ops.uv.smart_project(angle_limit=math.radians(50), island_margin=0.012, area_weight=1.0,
-                             correct_aspect=True, scale_to_bounds=False)
+    if not flat:
+        bpy.ops.uv.smart_project(angle_limit=math.radians(50), island_margin=0.012, area_weight=1.0,
+                                 correct_aspect=True, scale_to_bounds=False)
     bpy.ops.uv.select_all(action="SELECT")
     bpy.ops.uv.pack_islands(rotate=True, scale=True, margin=0.012)
     bpy.ops.object.mode_set(mode="OBJECT")
@@ -1256,6 +1508,8 @@ def add_uv2(ob):
 
 def main():
     bpy.ops.wm.read_factory_settings(use_empty=True)
+    os.makedirs(OUT_DIR, exist_ok=True)
+    check_maps_folder()
     imgs = build_textures()
     ashlar = make_material("stone_ashlar", imgs["ashlar_color"], imgs["ashlar_normal"], imgs["ashlar_orm"], vcol=True)
     flr = make_material("stone_floor", imgs["floor_color"], imgs["floor_normal"], imgs["floor_orm"])
@@ -1271,7 +1525,14 @@ def main():
         "band_a_courses_m": ASHLAR_COURSES, "band_a_stone_len_m": [round(min(s[1] - s[0] for s in STONES), 3),
                                                                    round(max(s[1] - s[0] for s in STONES), 3)],
         "floor_longest_straight_joint_m": round(FLOOR_RUN_M, 3), "band_a_mortar_width_cm": round(MORTAR_CM, 2),
-    }, open(os.path.join(HERE, "atlas.json"), "w"), indent=1)
+        "band_a_px_per_m": ATLAS_PPM, "band_a_size_m": list(A_M), "band_a_course_edges_m": COURSE_EDGES,
+        "band_a_course_rows": [round(A_ROWS[1] - z * ATLAS_PPM, 2) for z in COURSE_EDGES],
+        "wall_course_u_offsets": WALL_COURSE_U, "wall_cap_u_offsets": WALL_CAP_U,
+        "generated_head_joint_min_gap_m": min(BOND_GAPS or [0.0]),
+        "capital_stones_m": [[0.35, 1.20, CAP_COURSE[0], CAP_COURSE[1]], [1.55, 2.40, CAP_COURSE[0], CAP_COURSE[1]]],
+        "band_a_stones_m": [[round(v, 4) for v in st] for st in STONES],
+        "replacement_maps": sorted(REPLACED),
+    }, open(os.path.join(OUT_DIR, "atlas.json"), "w"), indent=1)
     for ob in pieces:
         me = ob.data
         print("piece %-16s tris %5d" % (ob.name, sum(len(p.vertices) - 2 for p in me.polygons)))
