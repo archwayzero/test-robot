@@ -171,7 +171,7 @@ def lights(strength=1.0):
         fill((i + 0.5) * S, 0.7, 2.0, 13)         # wall lamps at the game's lamp height, y = 2.0
         fill((i + 0.5) * S, 3.3, 2.0, 13)
         fill((i + 0.5) * S, 6.0, 2.0, 12)
-    fill(LEN * S - 1.2, 1.2, 0.5, 26)                     # far end wall: a flood in the corner, as in the photo
+    fill(LEN * S - 1.2, 1.2, 0.5, 30)                     # far end wall: a flood in the corner, as in the photo
 
 
 def flat_lights():
@@ -205,7 +205,7 @@ def setup(w=1500, h=1000):
             break
         except TypeError:
             pass
-    sc.view_settings.exposure = 0.55
+    sc.view_settings.exposure = 0.85
     if sc.world is None:
         sc.world = bpy.data.worlds.new("w")
     sc.world.use_nodes = True

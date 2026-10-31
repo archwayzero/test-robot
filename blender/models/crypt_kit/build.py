@@ -446,7 +446,7 @@ def half(a):
 def build_textures():
     os.makedirs(TEX_DIR, exist_ok=True)
     STONES.clear()
-    pal_a = dict(stone=[0.760, 0.640, 0.430], pale=[0.86, 0.79, 0.64], tone=0.225, warm=0.022, patch=0.055, rim=0.13,
+    pal_a = dict(stone=[0.760, 0.640, 0.430], pale=[0.86, 0.79, 0.64], tone=0.24, warm=0.022, patch=0.055, rim=0.13,
                  stain=0.22, rough=0.86, polish=0.04, runs=0.26, tone_hp=0.32)
     # band A
     ppm = 512
@@ -460,6 +460,9 @@ def build_textures():
     pal_b = dict(pal_a, tone=0.11, warm=0.02, stain=0.20, stone=[0.905, 0.825, 0.645], tone_hp=0, patch=0.04)
     b_alb, b_h, b_r = stone_maps(bh, bw, bppm, [bh / bppm], 1604, (0.17, 0.27), pal_b, joint=0.003, wear=0.008,
                                  relief=0.008, warp=0.005)
+    # one strip serves every arch: a metre-scale gradient along it would show at the same spot of every arch, so take it out
+    lum_b = b_alb.mean(2)
+    b_alb = b_alb * (lum_b.mean() / blur(lum_b, 0.7 * bppm))[..., None]
     # the soffit carries the limewash of the crypt.jpg arches: paler and lower contrast than the ring on the arch face.
     # Its edge is brushed: it wanders over 0.20-0.35 m from the arch mid-plane, per side, along the arc.
     fold = np.abs(((np.arange(bh) + 0.5) / bh - 0.5) * B_DEPTH)[:, None]
