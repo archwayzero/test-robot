@@ -370,6 +370,7 @@ Status: started 2026-10-25 at planning (Phase B). Updated at each milestone.
   - **Next game, process:** before building from a reference, the orchestrator writes a fidelity table (photo feature ->
     keep, change or drop, with reason) and the human signs it off. Added defaults are labelled as additions, and each
     milestone compares what exists against the original specs.
+- **Texture regression (T015):** full analysis, snapshots and evaluation rules: docs/retrospective/t015-texture-regression.md.
 - **Lamp review (T016):** agreeing the bar before the build worked: 8.5/10 with one clean fix pass. Separate commits and
   `material_params.json` let an old look return alone (byte-identical GLB). Limits: foundation commits cannot be reverted
   alone, and pass renders still used different rigs.

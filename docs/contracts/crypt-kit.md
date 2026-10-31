@@ -79,7 +79,11 @@ lands at 2.90-3.05 above the capital.
 - Keep lights near neutral: the albedo is already warm, and warm lamps push walls past the reference colour.
 - `ceiling_crouch` and `ceiling_crawl` use the strongest COLOR_0 shading in the kit; check them under real game light.
 - Review renders use 96 lights in Cycles. Judge the shipped look in a Mobile scene, not from those renders.
-- Rely on culling: a full FULL-cell maze is about 730k tris (seed 20261025, before T015 pass 4; re-measure), against
+- Keep `vertex_color_is_srgb = false` (T017: closer to the reference render in 4 of 5 wall bands).
+- Lower omni `light_specular` near lamps: the white font cap is omni specular, with the emitter 3.6 cm above the iron.
+- T017 counts for a QA assembler, not device performance: worst raw view 1831 draw calls against 200, and 204-259 in 3
+  of 5 views with wall-box occluders, so merge or instance. A 4x4 chunk reaches 14 omni lights against the limit of 8.
+- Rely on culling: the full maze is 909,396 tris (seed 20261025); a typical corridor view is about 50-60k, against
   300k per frame.
 
 ## wall_lamp (separate asset `godot/assets/wall_lamp/model/wall_lamp.glb`)
