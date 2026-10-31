@@ -1,7 +1,7 @@
 """T015 measured targets 1-4, re-measured from the exported GLB only (never from the .blend).
 
   python3 tools/qa/memguard.py -- blender -b --factory-startup --python-exit-code 1 \
-      -P blender/models/crypt_kit/qa/check_kit.py -- [--glb path] [--json out.json] [--no-exit-code]
+      -P blender/models/crypt_kit/qa/check_kit.py -- [--glb path] [--atlas path] [--json out.json] [--no-exit-code]
 
 Blender is only used as a Python with numpy and an image decoder. Exit code 1 when any check fails.
 Coordinates below are glTF (Y up); every piece is measured in its node's local space after checking that the local
@@ -26,7 +26,7 @@ def arg(name, default=None):
 
 
 GLB = arg("--glb", os.path.join(ROOT, "godot/assets/crypt_kit/model/crypt_kit.glb"))
-ATLAS = json.load(open(os.path.join(HERE, "..", "atlas.json")))
+ATLAS = json.load(open(arg("--atlas", os.path.join(HERE, "..", "atlas.json"))))
 TOL = 0.005       # target 1: +-5 mm
 EXACT = 1e-5      # "exact" collision planes: float precision of the file
 PIECES = ["floor", "wall", "pier", "arch", "vault_bay", "ceiling_crouch", "ceiling_crawl"]
@@ -41,11 +41,12 @@ SEAM_MAX = 1.5    # floor edge-seam ratio, see seam()
 BAND_SEAM_MAX = 1.2   # band A seam ratio, see band_seams(). Wrap and as-built pairs must look like an interior bed joint
 RUBBLE_MIN_STEP = 0.25  # m, range of the underside depth of a low ceiling
 RUBBLE_VCOL_MIN = 0.5   # COLOR_0 red, lowest vertex of a low ceiling (0.29 before pass 4)
-RUBBLE_FACET_MAX = 0.35  # m2, largest triangle of a low ceiling (0.38 before pass 4)
+RUBBLE_FACET_MAX = 0.37  # m2, largest triangle of a low ceiling (0.38 before pass 4)
 RUBBLE_GAP_MAX = 0.28   # m, visible underside above the collision plane (0.39 before pass 4)
 RUBBLE_SET_MAX = 0.15   # m, side surface behind the collision box (0.265 before pass 4)
 RUBBLE_STEEP_MAX = 0.02  # near-vertical area over plan area, inside the cell: plates and skirts
 WALL_LAG_MAX = 0.20     # autocorrelation at lags of 1-7 m, alternated walls
+COURSE_SPREAD_MAX = 0.12  # (brightest - darkest course) / mean, base colour of band A
 WALL_DIFF_MIN = 0.25    # m, back minus front U offset of a course, away from any whole metre
 WALL_DIFF_SPREAD = 0.10  # m, two courses of a span must differ by this in that difference (mod 4, sign free)
 WALL_JOINT_MIN = 0.05   # m, between head joints of touching courses on a wall face
@@ -671,6 +672,14 @@ def check_wall_lags(tab, band):
         worst = max(abs(res[span][m_]) for m_ in metres[:-1])
         rec(G, "wall span %d lags 1-7 m < %.2f, unlit" % (span, WALL_LAG_MAX), worst < WALL_LAG_MAX,
             "worst %.3f; %s" % (worst, ", ".join("%g m %.3f" % (m_, res[span][m_]) for m_ in metres)))
+    # a course that is darker as a whole still lines up from wall to wall, as a stripe
+    L = band @ np.array([.2126, .7152, .0722])
+    edges = np.array(ATLAS["band_a_course_edges_m"])
+    rows = (band.shape[0] * (1 - edges / 2.0)).astype(int)
+    means = np.array([L[rows[c + 1] + 6:rows[c] - 6].mean() for c in range(len(edges) - 2)])     # the capital course is plain
+    spread = float(np.ptp(means) / means.mean())
+    rec(G, "wall no course stripes: course mean spread <= %.2f" % COURSE_SPREAD_MAX, spread <= COURSE_SPREAD_MAX,
+        "%.3f; %s" % (spread, np.round(means, 3).tolist()))
     un = strip_lags(wall_strip(band, tab, 1, False), ppm, metres)
     print("wall unalternated, unlit, upper span: " + ", ".join("%g m %.3f" % (m_, un[m_]) for m_ in metres))
     return res

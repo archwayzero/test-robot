@@ -61,6 +61,40 @@ def edit_positions(js, bin_, mesh, fn):
         a["min"], a["max"] = lo, hi
 
 
+def view(js, b, accessor_id):
+    """Writable array over an accessor's data."""
+    a = js["accessors"][accessor_id]
+    bv = js["bufferViews"][a["bufferView"]]
+    n = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4}[a["type"]]
+    dt = {5126: "<f4", 5123: "<u2", 5125: "<u4", 5121: "u1"}[a["componentType"]]
+    return np.frombuffer(b, dt, a["count"] * n, bv.get("byteOffset", 0) + a.get("byteOffset", 0)).reshape(-1, n) if n > 1 else \
+        np.frombuffer(b, dt, a["count"], bv.get("byteOffset", 0) + a.get("byteOffset", 0))
+
+
+def mesh_arrays(js, b, name):
+    p = js["meshes"][node(js, name)["mesh"]]["primitives"][0]
+    return p, view(js, b, p["attributes"]["POSITION"]), view(js, b, p["indices"]).reshape(-1, 3)
+
+
+def wall_courses(js, b):
+    """{(face, y0): vertex ids} of the wall's long faces; face f at z=+0.3. Plus the U array."""
+    p, pos, tris = mesh_arrays(js, b, "wall")
+    uv = view(js, b, p["attributes"]["TEXCOORD_0"])
+    out = {}
+    for t in tris:
+        q = pos[t]
+        if np.ptp(q[:, 2]) < 1e-4 and abs(abs(q[0, 2]) - 0.3) < 1e-4:
+            key = ("f" if q[0, 2] > 0 else "b", round(float(q[:, 1].min()), 3))
+            out.setdefault(key, set()).update(int(i) for i in t)
+    return out, uv
+
+
+def set_course_u(uv, ids, o):
+    """Move a course to U offset o, tiles."""
+    ids = sorted(ids)
+    uv[ids, 0] += o - 0.5 * (uv[ids, 0].min() + uv[ids, 0].max())
+
+
 def replace_image(js, b, name, fn):
     """Decode a GLB image, apply fn to its h x w x 3 array (row 0 = top), put the re-encoded PNG at the end of the buffer."""
     im = next(i for i in js["images"] if i["name"] == name)
@@ -188,6 +222,100 @@ def main():
     js, b = read()   # pier collision follows the 2 mm proud shaft: it must stay exactly 0.6, or capsules catch on wall lines
     edit_positions(js, b, node(js, "pier-colonly")["mesh"], lambda x, y, z: (x * 1.0067, y, z * 1.0067))
     write(OUT / "pier_collision_wide.glb", js, b)
+
+    atl = json.loads((SRC.parents[4] / "blender/models/crypt_kit/atlas.json").read_text())
+    edges = atl["band_a_course_edges_m"]
+    rows = [round(e, 3) for e in edges[:-1]]
+    table = atl["wall_course_u_offsets"]
+
+    js, b = read()   # one bed joint split 10 cm off its course line
+    p, pos, _ = mesh_arrays(js, b, "wall")
+    pos[np.abs(pos[:, 1] - edges[3]) < 1e-4, 1] += 0.10
+    write(OUT / "wall_split_moved.glb", js, b)
+
+    js, b = read()   # V slid along the band: the splits no longer fall on bed joints
+    courses, uv = wall_courses(js, b)
+    for ids in courses.values():
+        uv[sorted(ids), 1] += 0.01
+    write(OUT / "wall_v_off_course.glb", js, b)
+
+    js, b = read()   # layout no longer what atlas.json tells map authors
+    courses, uv = wall_courses(js, b)
+    for ids in courses.values():
+        uv[sorted(ids), 0] += 0.1
+    write(OUT / "wall_u_not_atlas.glb", js, b)
+
+    js, b = read()   # one course repeats at a whole metre
+    courses, uv = wall_courses(js, b)
+    set_course_u(uv, courses[("b", rows[0])], table["f"][0][0] + 0.25)
+    write(OUT / "wall_diff_whole_metre.glb", js, b)
+
+    js, b = read()   # every course has the same difference: they all line up at one lag
+    courses, uv = wall_courses(js, b)
+    for span in (0, 1):
+        for c, y in enumerate(rows):
+            set_course_u(uv, courses[("b", round(y + 2.0 * span, 3))], table["f"][span][c] + 0.125)
+    write(OUT / "wall_diff_same.glb", js, b)
+
+    js, b = read()   # the pass 3 layout: one offset for the whole span, faces half a tile apart
+    courses, uv = wall_courses(js, b)
+    for span in (0, 1):
+        for y in rows:
+            set_course_u(uv, courses[("f", round(y + 2.0 * span, 3))], 0.5 + 0.37 * span)
+            set_course_u(uv, courses[("b", round(y + 2.0 * span, 3))], 0.37 * span)
+    write(OUT / "wall_two_metre_repeat.glb", js, b)
+
+    js, b = read()   # a head joint brought exactly over the one below
+    courses, uv = wall_courses(js, b)
+    st = atl["band_a_stones_m"]
+    below = next(s[0] for s in st if abs(s[2] - edges[2]) < 1e-3)
+    above = next(s[0] for s in st if abs(s[2] - edges[3]) < 1e-3)
+    set_course_u(uv, courses[("f", rows[3])], table["f"][0][2] + (above - below) / 4.0)
+    write(OUT / "wall_joints_aligned.glb", js, b)
+
+    js, b = read()   # one course darker on the whole: a stripe along every wall
+    r0, r1 = atl["band_a_rows"]
+
+    def dark(a):
+        a[int(r1 - edges[3] * 512):int(r1 - edges[2] * 512)] *= 0.72
+        return a
+    replace_image(js, b, "stone_ashlar_color", dark)
+    write(OUT / "ashlar_course_dark.glb", js, b)
+
+    js, b = read()   # rubble painted black again
+    p, pos, _ = mesh_arrays(js, b, "ceiling_crouch")
+    col = view(js, b, p["attributes"]["COLOR_0"])
+    col[:, :3] = (col[:, :3] * 0.5).astype(col.dtype)
+    write(OUT / "ceiling_dark_crevice.glb", js, b)
+
+    js, b = read()   # one facet spread over a metre and more
+    p, pos, tris = mesh_arrays(js, b, "ceiling_crouch")
+    t = next(q for q in tris if pos[q, 1].max() < 1.5)
+    pos[t[0], [0, 2]] = (-1.0, -1.0)
+    pos[t[1], [0, 2]] = (1.0, -1.0)
+    pos[t[2], [0, 2]] = (0.0, 1.0)
+    write(OUT / "ceiling_big_facet.glb", js, b)
+
+    js, b = read()   # recesses deeper, lowest point unchanged: the head stops far below the visible rock
+    edit_positions(js, b, node(js, "ceiling_crouch")["mesh"],
+                   lambda x, y, z: (x, 1.3 + (y - 1.3) * 1.6 if abs(x) < 2.0 and abs(z) < 2.0 and y < 1.8 else y, z))
+    write(OUT / "ceiling_gap.glb", js, b)
+
+    js, b = read()   # side blocks set far back from the collision box
+    edit_positions(js, b, node(js, "ceiling_crouch")["mesh"],
+                   lambda x, y, z: (x * 0.88 if y > 2.0 and abs(y - 4.15) > 0.01 else x, y, z * 0.88 if y > 2.0 and abs(y - 4.15) > 0.01 else z))
+    write(OUT / "ceiling_side_deep.glb", js, b)
+
+    js, b = read()   # plan snapped to a grid: flat steps and upright skirts, the old stacked plates
+    edit_positions(js, b, node(js, "ceiling_crouch")["mesh"],
+                   lambda x, y, z: (round(x / 0.5) * 0.5, y, round(z / 0.5) * 0.5) if abs(x) < 1.9 and abs(z) < 1.9 and y < 1.75 else (x, y, z))
+    write(OUT / "ceiling_plates.glb", js, b)
+
+    js, b = read()   # a block corner lifted 3 cm: a crack in the surface
+    p, pos, tris = mesh_arrays(js, b, "ceiling_crouch")
+    t = next(q for q in tris if pos[q, 1].max() < 1.5)
+    pos[t, 1] += 0.03
+    write(OUT / "ceiling_crack.glb", js, b)
 
     js, b = read()   # non-tileable image where a tile belongs (also pushes texture memory over budget)
     imgs = {i["name"]: i for i in js["images"]}

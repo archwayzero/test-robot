@@ -100,7 +100,7 @@ B_V0, B_V1 = v_of_row(B_ROWS[1]), v_of_row(B_ROWS[0])
 C_V0, C_V1 = v_of_row(C_ROWS[1]), v_of_row(C_ROWS[0])
 
 CAP_JOINTS = [0.35, 1.20, 1.55, 2.40, 2.90, 3.35]   # top course: 0.35-1.20 and 1.55-2.40 are the capital stones
-STONE_LEN = (0.35, 1.10)
+STONE_LEN = (0.35, 1.00)
 CAP_U = (0.775 / 4, 1.975 / 4)
 ASHLAR_COURSES = [0.32, 0.24, 0.30, 0.22, 0.33, 0.25, 0.34]  # bottom to top, sum 2.0 (last one: capital course)
 BOND_GAPS = []  # smallest head joint offset, m, per course of the generated band A, over the touching pairs on the wall
@@ -389,6 +389,13 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
 
     tone = rng.uniform(-1, 1, n)
     warm_s = rng.uniform(-1, 1, n)
+    if force:
+        # Every course slides on its own along a wall, so a course that is darker on the whole is the one thing that still lines
+        # up from wall to wall, as a stripe. Stones differ inside a course, the courses do not differ from each other.
+        for z0 in {st[2] for st in STONES}:
+            ids_c = [i for i, st in enumerate(STONES) if st[2] == z0]
+            lens = np.array([STONES[i][1] - STONES[i][0] for i in ids_c])
+            tone[ids_c] -= float((tone[ids_c] * lens).sum() / lens.sum())
     if force:                                            # the capital stones are plain: neither pale nor dark, nor orange
         tone[n - len(force[max(force)]):] = 0.2
         warm_s[n - len(force[max(force)]):] = 0.0
@@ -473,9 +480,9 @@ def ao_from_height(h, ppm, scale):
     return np.clip(1.0 - 0.75 * np.clip(small, 0, 1) - 0.35 * np.clip(large, 0, 1), 0.25, 1.0)
 
 
-PLASTER = (0.900, 0.862, 0.780)
-PLASTER_MID = 0.075
-PLASTER_FINE = 0.06
+PLASTER = (0.925, 0.885, 0.800)
+PLASTER_MID = 0.088
+PLASTER_FINE = 0.016
 
 
 def plaster_maps(h, w, ppm, seed):
@@ -491,9 +498,11 @@ def plaster_maps(h, w, ppm, seed):
     blotch = sstep(-0.4, 2.2, n_lo + 0.25 * n_mid)
     crack = 1 - sstep(0.0, 0.035, np.abs(noise(h, w, 3.0, seed + 3)))
     crack = crack * sstep(0.7, 1.6, noise(h, w, 3.2, seed + 4))
-    n_trowel = noise(h, w, 1.8, seed + 5, low=14)            # 0.1-0.4 m: trowel passes and damp patches
+    n_trowel = noise(h, w, 2.4, seed + 5, low=3.5)           # 0.2-0.5 m: trowel passes and damp patches
+    n_trowel = blur(n_trowel, 0.035 * ppm)
+    n_trowel = n_trowel / n_trowel.std()
     n_grain = noise(h, w, 1.0, seed + 6, low=120)            # under 4 cm: lime grain
-    height = 0.0045 * n_lo + 0.0010 * n_mid + 0.00012 * n_hi - 0.0010 * crack + 0.0005 * n_trowel + 0.00012 * n_grain
+    height = 0.0045 * n_lo + 0.0010 * n_mid + 0.00012 * n_hi - 0.0010 * crack + 0.0003 * n_trowel + 0.00005 * n_grain
     pal = np.array(PLASTER)
     # the blotch is mapped to all four webs of every bay, so at low frequency it is what shows bays repeating: keep it faint.
     # Contrast sits at 0.1-0.4 m and finer, which reads as worn lime and does not make a landmark.
@@ -1314,13 +1323,14 @@ def block_centre(poly):
     return sum(p[0] for p in poly) / len(poly), sum(p[1] for p in poly) / len(poly)
 
 
-def build_ceiling(name, underside, seed, mat, n_under=(5, 4), n_side=(4, 3)):
+def build_ceiling(name, underside, seed, mat, four_ring, n_under=(5, 4), n_side=(4, 3)):
     """One closed surface from the underside up the four sides: rounded, faceted blocks that meet in V valleys. No skirts,
     no stacked plates: depth changes across a block's own sloped rim. The surface is periodic over 4 m, so low cells of
     one kind join, and the side patches start exactly on the underside's outline."""
     b = Builder()
     h = CELL / 2
     rng = np.random.RandomState(seed)
+    uv_rng = np.random.RandomState(seed + 1000)     # apart from the shape's stream: the rock must not change with the stone list
     VCOL.setdefault(name, {})
     vcol = VCOL[name]
     box = (-h, -h, h, h)
@@ -1365,26 +1375,82 @@ def build_ceiling(name, underside, seed, mat, n_under=(5, 4), n_side=(4, 3)):
         return (x, y, underside + d)
 
     tone = {i: rng.uniform(*RUBBLE_TONE) for i in range(len(sites))}
+    z_base = round(underside + UNDER_RANGE + UNDER_VALLEY[1] + 0.02, 2)      # the side patches are laid out above this line ...
+
+    def snap(p):
+        """Points next to a patch border go on it, and to the cm, so that neighbours keep sharing them."""
+        x, z = round(p[0], 2), round(p[1], 2)
+        if z - z_base < 0.05:
+            z = z_base
+        if TOP - z < 0.05:
+            z = TOP
+        if h - abs(x) < 0.05:
+            x = math.copysign(h, x)
+        return (x, z)
+
+    sides = []
+    for k in range(4):
+        ss = jitter_sites(n_side[0], n_side[1], (-h, z_base, h, TOP), rng, 0.42)
+        ps = []
+        for bi, o, poly in voronoi(ss, (-h, z_base, h, TOP), (0, 0), 1.9):
+            out = []
+            for p in map(snap, poly):
+                if not out or math.hypot(out[-1][0] - p[0], out[-1][1] - p[1]) > 1e-6:
+                    out.append(p)
+            if len(out) > 1 and math.hypot(out[-1][0] - out[0][0], out[-1][1] - out[0][1]) < 1e-6:
+                out.pop()
+            if len(out) >= 3:
+                ps.append((bi, o, out))
+        sides.append((ss, ps))
+
+    # Each surface gets the border points of its neighbour, so no vertex of one lands on an edge of the other (no cracks).
+    bottom = [{p[0] for bi, o, poly in ps for p in poly if p[1] == z_base} for ss, ps in sides]
+    column = {k: set() for k in range(4)}       # corner k: right end of side k, left end of side k + 1
+    for k, (ss, ps) in enumerate(sides):
+        for bi, o, poly in ps:
+            for p in poly:
+                if p[0] == h:
+                    column[k].add(p[1])
+                if p[0] == -h:
+                    column[(k - 1) % 4].add(p[1])
+
+    def plan_side(p):
+        """(side, s) for each side whose plane the plan point lies on."""
+        out = []
+        for k, (on, sv) in enumerate(((p[1] == -h, p[0]), (p[0] == h, p[1]), (p[1] == h, -p[0]), (p[0] == -h, -p[1]))):
+            if on:
+                out.append((k, sv))
+        return out
+
+    def plan_of(k, sv):
+        return ((sv, -h), (h, sv), (-sv, h), (-h, -sv))[k]
+
     outline = {0: {}, 1: {}, 2: {}, 3: {}}
     for pi, (bi, o, poly) in enumerate(pieces):
         c = block_centre(poly)
-        uv = stone_map(poly, rng)[0]
-        rim = [valley[wrap(p)] for p in poly]
+        uv = stone_map(poly, uv_rng)[0]
+        full, rim = [], []
+        for i, p in enumerate(poly):
+            q = poly[(i + 1) % len(poly)]
+            rp, rq = valley[wrap(p)], valley[wrap(q)]
+            full.append(p)
+            rim.append(rp)
+            on_q = dict(plan_side(q))
+            for k, sp in plan_side(p):
+                if k in on_q:
+                    sq = on_q[k]
+                    for sv in sorted((v for v in bottom[k] if min(sp, sq) + 1e-4 < v < max(sp, sq) - 1e-4), reverse=sp > sq):
+                        full.append(plan_of(k, sv))
+                        rim.append(rp + (rq - rp) * (sv - sp) / (sq - sp))
         d0 = dep[bi]
-        ring = [(rng.uniform(0.52, 0.72), d0 + rng.uniform(0.012, 0.035)) for _ in poly]
-        rubble_block(b, "%s_u%d" % (name, pi), name, poly, c, rim, ring, d0, len(poly), place_u, -1, uv, tone[bi], vcol)
-        for p, r in zip(poly, rim):
-            if abs(p[1] + h) < 1e-6:
-                outline[0][round(p[0], 5)] = underside + r
-            if abs(p[0] - h) < 1e-6:
-                outline[1][round(p[1], 5)] = underside + r
-            if abs(p[1] - h) < 1e-6:
-                outline[2][round(-p[0], 5)] = underside + r
-            if abs(p[0] + h) < 1e-6:
-                outline[3][round(-p[1], 5)] = underside + r
+        m = max(4, len(poly) - 1)
+        ring = [(rng.uniform(0.52, 0.72), d0 + rng.uniform(0.012, 0.035)) for _ in range(m)]
+        rubble_block(b, "%s_u%d" % (name, pi), name, full, c, rim, ring, d0, m, place_u, -1, uv, tone[bi], vcol)
+        for p, r in zip(full, rim):
+            for k, sv in plan_side(p):
+                outline[k][sv] = underside + r
 
-    z_base = underside + UNDER_RANGE + UNDER_VALLEY[1] + 0.02        # the side patches are laid out above this line ...
-    for k in range(4):
+    for k, (ss, ps) in enumerate(sides):
         ca, sa = [(1, 0), (0, 1), (-1, 0), (0, -1)][k]
         line = sorted(outline[k].items())
         ls, lz = [q[0] for q in line], [q[1] for q in line]
@@ -1398,32 +1464,6 @@ def build_ceiling(name, underside, seed, mat, n_under=(5, 4), n_side=(4, 3)):
             x, y = s, -h + d
             return (ca * x - sa * y, sa * x + ca * y, z_of(s, z))
 
-        box_s = (-h, z_base, h, TOP)
-        ss = jitter_sites(n_side[0], n_side[1], box_s, rng, 0.42)
-        grid = [z_base + (TOP - z_base) * i / 3.0 for i in range(4)]
-
-        def snap(p, ls=ls, grid=grid):
-            """Border points move onto points the neighbouring surface already has: the underside's outline along the bottom,
-            a shared height grid at the cell corners. No T-junctions, so no cracks between surfaces."""
-            x, z = p
-            if z - z_base < 0.05:
-                return (min(ls, key=lambda q: abs(q - x)), z_base)
-            if TOP - z < 0.05:
-                z = TOP
-            if h - abs(x) < 0.05:
-                return (math.copysign(h, x), min(grid, key=lambda q: abs(q - z)))
-            return (x, z)
-
-        ps = []
-        for bi, o, poly in voronoi(ss, box_s, (0, 0), 1.9):
-            out = []
-            for p in map(snap, poly):
-                if not out or math.hypot(out[-1][0] - p[0], out[-1][1] - p[1]) > 1e-6:
-                    out.append(p)
-            if len(out) > 1 and math.hypot(out[-1][0] - out[0][0], out[-1][1] - out[0][1]) < 1e-6:
-                out.pop()
-            if len(out) >= 3:
-                ps.append((bi, o, out))
         set_b = {i: rng.uniform(*SIDE_SET) for i in range(len(ss))}
         tone_s = {i: rng.uniform(*RUBBLE_TONE) for i in range(len(ss))}
         # long valleys get a midpoint, so that no facet spans a whole block. Both blocks of an edge get the same point.
@@ -1460,7 +1500,7 @@ def build_ceiling(name, underside, seed, mat, n_under=(5, 4), n_side=(4, 3)):
         rims = {key: rim_set(key) for key in sorted(cor)}
         for pi, (bi, o, poly) in enumerate(ps):
             c = block_centre(poly)
-            uv = stone_map(poly, rng)[0]
+            uv = stone_map(poly, uv_rng)[0]
             full = []                    # the outline's points go into the bottom edge, or the two surfaces would crack
             for i, p in enumerate(poly):
                 q = poly[(i + 1) % len(poly)]
@@ -1469,10 +1509,11 @@ def build_ceiling(name, underside, seed, mat, n_under=(5, 4), n_side=(4, 3)):
                     between = sorted((s for s in ls if min(p[0], q[0]) + 1e-4 < s < max(p[0], q[0]) - 1e-4), reverse=p[0] > q[0])
                     full.extend((s, z_base) for s in between)
                 if abs(abs(p[0]) - h) < 1e-6 and abs(p[0] - q[0]) < 1e-6:
-                    between = sorted((z for z in grid if min(p[1], q[1]) + 1e-4 < z < max(p[1], q[1]) - 1e-4), reverse=p[1] > q[1])
+                    col = column[k] if p[0] > 0 else column[(k - 1) % 4]
+                    between = sorted((z for z in col if min(p[1], q[1]) + 1e-4 < z < max(p[1], q[1]) - 1e-4), reverse=p[1] > q[1])
                     full.extend((p[0], z) for z in between)
             rim = [0.0 if abs(p[1] - z_base) < 1e-6 or abs(abs(p[0]) - h) < 1e-6 else rims[(round(p[0], 3), round(p[1], 3))] for p in full]
-            m = 4 if 0.5 * abs(sum(p[0] * q[1] - q[0] * p[1] for p, q in zip(full, full[1:] + full[:1]))) > 0.56 else 3
+            m = 4 if 0.5 * abs(sum(p[0] * q[1] - q[0] * p[1] for p, q in zip(full, full[1:] + full[:1]))) > four_ring else 3
             ring = [(rng.uniform(0.55, 0.72), set_b[bi] + rng.uniform(0.01, 0.03)) for _ in range(m)]
             rubble_block(b, "%s_s%d_%d" % (name, k, pi), name, full, c, rim, ring, set_b[bi], m, place_s, 1, uv, tone_s[bi], vcol)
     ob = b.to_object(name, mat)
@@ -1514,7 +1555,7 @@ def main():
     ashlar = make_material("stone_ashlar", imgs["ashlar_color"], imgs["ashlar_normal"], imgs["ashlar_orm"], vcol=True)
     flr = make_material("stone_floor", imgs["floor_color"], imgs["floor_normal"], imgs["floor_orm"])
     pieces = [build_floor(flr), build_wall(ashlar), build_pier(ashlar), build_arch(ashlar), build_vault(ashlar),
-              build_ceiling("ceiling_crouch", CROUCH_Y, 77, ashlar), build_ceiling("ceiling_crawl", CRAWL_Y, 91, ashlar)]
+              build_ceiling("ceiling_crouch", CROUCH_Y, 77, ashlar, 0.5), build_ceiling("ceiling_crawl", CRAWL_Y, 105, ashlar, 0.7)]
     for ob in pieces:
         add_uv2(ob)
         if ob.name != "floor":
