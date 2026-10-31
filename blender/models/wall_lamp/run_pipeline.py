@@ -6,9 +6,9 @@
 --import deletes the gitignored godot/.godot only, imports (writes the extracted textures with default settings), applies VRAM
 compression (import_settings.py), imports again (compresses them) and verifies ASTC from the .ctex headers.
 
-The import scans the whole project, and an unimported GLB of another asset left in the tree (T015's crypt_kit.glb, untracked on
-this branch) gets .import files and extracted textures beside it. Files under godot/assets/crypt_kit that did not exist before
-the run are removed afterwards, so the import leaves that folder exactly as it found it.
+The import scans the whole project, godot/assets/crypt_kit included. T015's crypt_kit is on main with its .import files committed
+(on a branch cut before that merge the folder holds only an untracked GLB). Files and directories under it that did not exist
+before the run are removed afterwards; files that were already there are not restored (see remove_new).
 Stops at the first failing step.
 """
 import shutil
@@ -46,9 +46,21 @@ def main():
             for step in IMPORT:
                 run(step)
         finally:
-            for f in sorted(set(OTHERS.rglob("*")) - before):
-                print("== remove import by-product", f.relative_to(ROOT), flush=True)
-                f.unlink()
+            remove_new(OTHERS, before)
+
+
+def remove_new(top, before):
+    """Delete what appeared under top since before was listed, deepest first so a new directory is empty when its turn comes.
+
+    Only removes additions. A file that existed and was changed, such as a tracked crypt_kit .import rewritten by the import,
+    stays as rewritten: it shows up in git status and needs a git restore before committing.
+    """
+    for f in sorted(set(top.rglob("*")) - before, reverse=True):
+        print("== remove import by-product", f.relative_to(ROOT), flush=True)
+        if f.is_dir() and not f.is_symlink():
+            f.rmdir()
+        else:
+            f.unlink()
 
 
 def run(step):
@@ -59,4 +71,5 @@ def run(step):
         sys.exit(r.returncode)
 
 
-main()
+if __name__ == "__main__":
+    main()
