@@ -23,11 +23,12 @@ Last updated: 2026-10-30, session 4 (2026-10-31).
 7. M3: T021 export preset (exclude `res://tests/*`, incl. the T014 preview scenes, and automation), T022, T023 (Mac).
 
 ## Active task
-T015, modeler, branch `task/modeler/T015-crypt-kit-modular-pieces`, HEAD 3905db7 (pass 4), not pushed.
-Look decision (human, 2026-10-30): the kit look is accepted after viewing pass 3 renders; no replacement stone maps;
-proceed to T017 and T018. Last independent look score 7.6 (pass 3), structure 10/10. The 8.5 look bar no longer applies
-to T015; structure and regressions from pass 4 still do. Next: reviewer close-out, `task.py finish`, push, PR, merge.
-Reviewer checks: pass 4 changes (wall UV, webs, rubble, tooling), crawl rubble seed fragility.
+T015 review PASS at 3905db7 (structure 10/10, 178/178 checks, 33/33 failure demos). Being finished and pushed.
+Look decision (human, 2026-10-31): keep pass 4 as is, knowing plaster is blotchier and the first reviewed stone looked
+crisper; no replacement stone maps and no revert. 8.5 no longer applies to T015.
+T017 notes from close-out: re-check `vertex_color_is_srgb`; top course 1.66-2.00 m is brighter (0.614 vs about 0.55);
+consider a rubble winding or first-hit backface check; judge webs and piers in the Mobile scene under real lamp levels.
+Do not run `run_pipeline.py --import` during a Godot job: it deletes `godot/.godot`. A rebuild changes the .blend md5.
 
 ## Process notes that worked in session 3
 - Quality loops: reviewer measures independently and scores out of 10 against the reference; send back with numbered,
