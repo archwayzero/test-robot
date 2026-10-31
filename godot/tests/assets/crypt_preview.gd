@@ -207,6 +207,14 @@ func _make_views() -> void:
 	# The low cell's flips at the game's field of view, from the eye of the fan rays that hit them.
 	_add("crawl_flip_game_fov_room", Vector3(37.3, 0.45, 30.7), Vector3(39.98, 0.946, 28.34))
 	_add("crawl_flip_game_fov_full", Vector3(34.7, 0.8, 30.7), Vector3(36.04, 1.108, 28.48))
+	# The lamp at 1-4 m horizontal distance, game height, looking at the emitter (T017 rerun).
+	for d: float in [1.0, 2.0, 3.0, 4.0]:
+		_add("lamp_%dm" % int(d), e - wall_dir * 0.7 - along * sqrt(d * d - 0.49) + Vector3(0, CAM_H - e.y, 0), e)
+	# Far views down the longest straight run of the seed: 8 cells from (19, 0) going south.
+	var far := layout.cell_to_world(Vector2i(19, 0)) + Vector3(0, 0, -1.0)
+	_add("far_corridor_game", far + Vector3(0, CAM_H, 0), far + Vector3(0, 0.9, 8.0))
+	_add("far_corridor_level", far + Vector3(0, 1.6, 0), far + Vector3(0, 1.6, 32.0))
+	_add("far_corridor_zoom", far + Vector3(0, 1.6, 0), far + Vector3(0, 1.4, 24.0), 20.0)
 
 
 ## World position of a corner with arches on all four sides (capital ledge on every side); the first found.

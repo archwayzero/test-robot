@@ -1,196 +1,202 @@
 # T017 QA: crypt_kit and wall_lamp, assembled in the seed maze
 
-**Overall: FAIL.** 5 tests fail on 3 known asset defects. None is player-visible enough to block T018; see "Blocks T018".
-The accepted look (pass 4), the kept lamps and the lamp's 8.5 were not reopened, and nothing was scored against crypt.jpg.
+**Overall: PASS.** Rerun on the T039 kit. Supersedes the FAIL at 1ee652c: its 3 defects are fixed and proved fixed.
+All 59 tests pass and the budget check exits 0. Nothing here blocks T018. What remains is T018 settings and low look notes, listed below.
+The accepted look, the kept lamps and the lamp's 8.5 were not reopened, and nothing was scored against crypt.jpg.
 
-Build under test: `crypt_kit.glb` md5 fff6162c, `wall_lamp.glb` md5 0c0bbca3, seed 20261025, Godot 4.7.2.
-Captures: `capture.py --mode accurate`, Forward Mobile on llvmpipe. `cpu_rendered: true`, `accurate_fell_back_to_opengl: false`, no errors.
+Build under test: `crypt_kit.glb` sha256 97ae6f9bcaec05ee (md5 3eb64a50), `wall_lamp.glb` md5 0c0bbca3 (unchanged), seed 20261025, Godot 4.7.2.
+Tests on the clean import of this build: `godot/.godot` deleted, imported twice.
+Captures: `capture.py --mode accurate`, Forward Mobile on llvmpipe, 1280x590. `cpu_rendered: true`, `accurate_fell_back_to_opengl: false`, no errors in any run.
 All frame numbers below are counts. Nothing here measures device performance.
 
-## Results
+## Results by test group
 
-| Check | Result | Numbers |
+| Group | Result | Numbers |
 |---|---|---|
-| Static budgets (`T017-budgets.md`) | PASS | score 100.0; crypt_kit 4550/21000 tris, 14/14 primitives, 64.0/64 MB upper bound; wall_lamp 880/1000, 2/2, 4.02/16 MB |
-| Full test run | **FAIL** | 53 passed, 5 failed, 8 files |
-| ASTC headers | PASS | every kit and lamp texture is ASTC 4x4 |
+| Static budgets (`T017-budgets.md`) | PASS | score 100.0; crypt_kit 4552/21000 tris, 14/14 primitives, 64.0/64 MB upper bound; wall_lamp 880/1000, 2/2, 4.02/16 MB |
+| Full test run | PASS | 59 passed, 0 failed, 8 files |
+| `crypt_geometry_test.gd` | PASS | 28 of 28 |
+| `crypt_kit_test.gd` | PASS | 11 of 11 |
+| Hero, maze, minimap, movement, save, touch | PASS | 20 of 20 |
+| ASTC headers | PASS | all 10 kit and lamp textures: format 35 (ASTC_4x4), data_format 0, full mips |
 | Collision planes | PASS | floor 0.000, wall face 0.300 from the edge, ceilings 0.750 and 1.300 |
-| Stances in low cells, real player | PASS | CROUCH refuses standing, CRAWL refuses crouching; a standing player stops at z=27.698 at the edge z=28.0 |
+| Arch collision winding | PASS (was FAIL) | all 96 faces outward; 24 of 24 soffit faces |
+| Arch crown by ray | PASS (was FAIL) | collision 3.900, render 3.900, vault 4.148 |
+| Rays under an arch | PASS (was printed only) | of 720: 0 end in masonry (was 86), 0 pass the soffit (was 88) |
+| Camera and jump under an arch | PASS | 720 sphere casts 0 in masonry; 24 real camera samples 0 in masonry; capsule top 2.600 m, soffit 3.295 m |
+| Stances in low cells, real player | PASS | a standing player stops at z=27.698 at the edge z=28.0 |
+| Free height under arches | PASS | 3.209 m at +-1.35 m over 427 arches (the 4.150 before was the reversed top face, not a clearance) |
+| Pier top face | PASS (was FAIL) | 2 top triangles at y 2.2 |
+| Room fan first-hit back faces | PASS (was FAIL) | 0 of 573120 (was 42) |
+| Rubble flipped edge pairs | PASS (was pinned) | crouch 0, crawl 0 (was 3 and 10) |
+| Rubble first-hit back faces | PASS (was FAIL) | 0/351100 room, 0/702200 neighbour (was 75 and 33) |
+| Back-face render diff | PASS | 0-3 pixels in each of 10 views (pier was 46-1151, rubble 1-222) |
 | Assembly rules | PASS | floor 400, vault_bay 394, wall 401, arch 439, ceiling_crawl 4, ceiling_crouch 2, pier 441, lamps 89 |
 | No holes, ray fan | PASS | 0 of 573120 rays escape |
-| No holes, rendered on magenta | PASS | 0 void pixels in 12 aimed views; control view 755200 of 755200 |
+| No holes, rendered on magenta | PASS | 0 void pixels in 38 views, including every seam, far and lamp view; control view 755200 of 755200 |
 | Lamps on the wall face | PASS | 89 of 89 |
 | Omni lights per mesh | PASS for one piece | worst piece 5, worst 4x4-cell chunk 14, Mobile limit 8 (T018 note) |
-| Arch collision winding | **FAIL** | defect A |
-| Arch crown by ray | **FAIL** | 4.15, expected 3.9 (defect A) |
-| Pier top face | **FAIL** | 0 top triangles (defect B) |
-| Room fan first-hit back faces | **FAIL** | 42 of 573120, all pier (defect B) |
-| Rubble first-hit back faces | **FAIL** | 75/351100 room, 33/702200 neighbour (defect C) |
-| New: camera arm fan under an arch | PASS | 720 sphere casts, 0 end in masonry, closest centre 0.154 m from the soffit |
-| New: real camera under an arch | PASS | 24 samples, 0 in masonry, highest camera 2.432 m |
-| New: real jump at the arch leg | PASS | capsule top 2.600 m, soffit there 3.295 m |
 
-The 5 failing tests stay failing and were not weakened:
-`test_crowns_collision_and_render`, `test_arch_collision_winding`, `test_no_first_hit_backfaces_in_rooms`,
-`test_pier_capital_has_a_top_face`, `test_rubble_visible_underside_has_no_first_hit_backfaces`.
+## What changed since 1ee652c
 
-## Findings by severity
+Kit (T039):
+- Arch collision wound outward: all 96 faces.
+- Pier: top cap added (120 -> 122 tris), first ring moved from 0.35 to 0.32 m (read from the GLB).
+- Crouch and crawl ceilings: flipped pairs removed.
+- Stone restored, new textures.
 
-### A. Arch collision is inside out. Medium, latent. A player cannot see or feel it.
-The defect is wider than reported at ec6e651: all 96 arch collision faces are reversed, not only the 24 soffit faces.
-By group: 24 soffit, 48 on the two depth faces, 20 top, 4 end faces. Wall, floor and ceiling boxes are all outward. Pier reads 22 of 24 on a rough centroid measure, not examined further.
+Tests:
 
-- Player: not felt. The jump's capsule top is 2.600 m; the soffit is 3.295 m at lateral 1.3 m (measured jump) and 3.16 m at the
-  1.4 m limit of a capsule against the wall line (computed). The contract's FULL >= 2.2 holds: the soffit at +-1.35 m is 3.23 m (computed).
-- Camera: not seen. The arm is a sphere cast, and sphere casts stop on the reversed faces (720 casts, 0 in masonry; 24 real
-  camera samples, 0 in masonry). Going up the crown, the sphere stops at 3.742 on both collision and render meshes.
-- Rays: wrong. One-sided rays pass the soffit. 88 of 720 rays went more than 5 cm past the render surface and 86 ended in
-  masonry. The game's rays do not reach it today: `player.gd` `_ceiling_above` stops at 1.8 m, and the arm and shoulder rays are
-  horizontal below 2.2 m. E7 casts at y=0.4. Any future ray above 2.2 m under an arch will be wrong.
-- This also means the existing log line "min free height at +-1.35 m 4.150" is the reversed top face, not a clearance.
+| Pin or change | Old | New | Why the new value is correct |
+|---|---|---|---|
+| `test_kit_counted_vs_rendered_primitives` | 4550 | 4552 | The pier's 2 cap triangles. `check_budgets.py` independently reports 4552, and the per-piece print shows pier 122 |
+| `test_rubble_flipped_edge_pairs_match_the_known_count`, renamed `test_rubble_has_no_flipped_edge_pairs` | 3 and 10 | 0 and 0 | The contract expects consistent winding, and the mesh now measures 0 and 0. Any pair's location is in the failure message. `_check_flips_at_boundary` removed: with an expected 0 it could never run |
+| `crypt_assembly.gd` `vertex_color_srgb` | true | false | Contract: keep it false |
+| `crypt_preview.gd` `vertex_color_srgb` (not in the brief) | true | false | Its own export overrode the assembler default, so the captures would still have used true |
 
-Fix (modeler), `blender/models/crypt_kit/build.py:1050`:
-```python
-collision(ob, tris=[pts[::-1] for pts in tris])
-```
-Not tried here. Afterwards the crown must read 3.9 by ray.
+No test hard-coded the old pier ring, the pier's triangle count or any top-course handling, so those needed no change. 4550 was the only stale number.
+The full maze figure in this report moves from 909,396 to 910,278 tris (441 piers x 2 = 882).
 
-### B. Pier has no top face. Low, cosmetic.
-Visible from reachable cameras only as a thin strip on the 0.075 m capital ledge, and it never shows void.
-| View (1280x590, hand-placed camera) | Void pixels | Pixels changed by drawing back faces |
-|---|---|---|
-| game height 2.43 m, fov 70 | 0 | 46 (0.006%) |
-| orbit high, 3.3 m | 0 | 94 (0.012%) |
-| orbit mid, 2.8 m | 0 | 168 (0.022%) |
-| zoomed along the ledge, fov 25 | 0 | 742 (0.098%) |
-| 0.65 m from the ledge, fov 40 | 0 | 1151 (0.152%) |
+Added, all stricter than before:
+- `test_arch_collision_all_faces_outward`: the first report's "all 96 reversed" claim was only measured with a throwaway script.
+- `ray_in_masonry` and `ray_past_soffit` are now asserted in the arm fan. They were printed only.
+- `test_assembly_rules` asserts `vertex_color_is_srgb` is false.
 
-The strip shows neighbouring stone, so it reads as a ledge in shadow. Fan rate: 42 of 573120.
+## Proof that changed tests can fail
 
-Fix (modeler), `build.py`, in `build_pier` before line 977:
-```python
-w = cap - 0.006
-b.face("cap_top", [(-w, -w, SPRING), (w, -w, SPRING), (w, w, SPRING), (-w, w, SPRING)], <band_a UVs in the capital course>, False)
-```
-Adds 2 tris per pier, 882 on this seed. Not tried here.
+Run in a throwaway copy of the project under `.captures/t017/oldkit/`, deleted afterwards. The kit path was not touched.
 
-### C. Flipped triangles at the rubble's edges. Low, cosmetic.
-10 flipped edge pairs on `ceiling_crawl`, 3 on `ceiling_crouch`, all with |x| or |z| > 1.7, at y 0.9-1.6.
-Only 3 of 6 low cells show them (13,0), (9,7), (8,19), each 25 room rays and 11 neighbour rays.
-| View | Void pixels | Pixels changed by drawing back faces |
-|---|---|---|
-| inside the crawl cell | 0 | 3 |
-| mixed edge from FULL | 0 | 38 |
-| mixed edge, oblique | 0 | 1 |
-| aimed at the flip from the room, fov 25 | 0 | 18 |
-| aimed at the flip from FULL, fov 25 | 0 | 222 (0.029%) |
-| aimed at the flip, fov 70, room and FULL | 0 | 1 and 16 |
+Pre-T039 GLB (md5 fff6162c) against the final tests: **50 passed, 9 failed**.
+| Test | Result on the old GLB |
+|---|---|
+| `test_kit_counted_vs_rendered_primitives` | expected 4552, got 4550 |
+| `test_rubble_has_no_flipped_edge_pairs` | expected 0, got 3; expected 0, got 10 |
+| `test_arch_collision_all_faces_outward` | 96 reversed of 96 |
+| `test_camera_arm_fan_stays_out_of_arch_masonry` | 86 in masonry, 88 past the soffit |
+| `test_arch_collision_winding` | 24 reversed |
+| `test_crowns_collision_and_render` | 4.15, expected 3.9 |
+| `test_no_first_hit_backfaces_in_rooms` | 42 |
+| `test_pier_capital_has_a_top_face` | 0 top triangles |
+| `test_rubble_visible_underside_has_no_first_hit_backfaces` | 75 and 33 |
 
-The golden wedges on the crawl ceiling are NOT the flips: they do not change when back faces are drawn. They are ordinary facets
-catching lamp light, and the lamps cast no shadow in this scene, so light through rock is a likely cause (not proved).
+Mutation `vertex_color_srgb := true` in the same copy: `test_assembly_rules` fails on "contract: vertex colour is linear" (10 failed in total, the 9 above plus this one).
+The tests were also run unchanged on the T039 kit first: 56 passed, 2 failed, and those 2 were the pins above. So no other test needed changing.
 
-Fix (modeler), `build.py` around line 1519 in `build_ceiling`: make the winding consistent before `b.to_object(name, mat)`, for example
-`bmesh.ops.recalc_face_normals`, and make check_kit assert 0 flipped pairs. If a pair is a true fold from `z_of` stretching the side patch,
-that needs the corner vertices moved instead. Not tried here. Then `test_rubble_flipped_edge_pairs_match_the_known_count`, pinned at
-3 and 10, must change to 0 (qa).
+## Defects A, B, C: closed
+A (arch collision), B (pier top) and C (rubble flips) are fixed, with the numbers in the table above. The rule from the first report that rays above 2.2 m under arches are wrong no longer applies.
 
-### D. Draw calls over the 200 budget. A requirement on T018, not an asset defect.
-This QA assembler draws one node per piece, nothing merged. See "Counts".
+## Open findings
 
-### E. Top course is brighter. Low, look note.
-Course 6 (1.66-2.00 m, repeats at 3.66-4.00 m) in the base colour: linear luma 0.350 against 0.266-0.291 for the others.
-Rendered on an unlit wall: 0.0428, against 0.0305 below and 0.0329 above. Vertex colour is 1.0 there, so it is not soiling.
-check_kit's course test skips this course ("the capital course is plain"): 0.043 spread on 6 courses, 0.291 on all 7, limit 0.12.
-MAPS.md asks that it be "neither pale nor dark". It sits at lamp height. No action required under the accepted look; the gap in the check is worth knowing.
+### D. Draw calls. A requirement on T018, not an asset defect.
+See "Counts". Raw counts are unchanged; the occluder conclusion is corrected.
 
-### F. Lit hairline at pier and wall. Low, cosmetic.
-Confirmed: not z-fighting. It is the 2 mm step (`PIER_PROUD`, build.py:75, deliberate), lit along its edge. It renders as a pale hairline, dashed when under a
-pixel wide, at 0.9-3 m. No flicker pattern between frames 3 cm apart at close range or at 16 m. Motion was not filmed.
+### F. Hairline at pier and wall. Low, cosmetic. Worse than first reported, not a T039 regression.
+It is the deliberate 2 mm step (`PIER_PROUD`), not z-fighting and not a hole: 0 magenta pixels.
+In the 16 m view (`seam_far_16m_a`, fov 12) it reaches pure white, 255,255,255, as dashes along the pier edge. The first report called it pale and did not note the white.
+**Cause proved: lamp specular.** Pixels with all channels above 170 in the left 440 columns:
+| Build | Pixels |
+|---|---|
+| 1ee652c | 359 |
+| T039 | 339 |
+| T039, `light_specular = 0` | 0 (brightest 129) |
+
+The zoomed fov overstates it. At fov 60-70 it is a faint pale line (`wall_frontal_lit`, `lamp_1m`). T018's specular setting should handle it together with G. Lamps here cast no shadows, so light through walls may add to it; not proved.
 
 ### G. White cap on the lamp font. Low, T018 setting.
-Cause proved: it vanishes with `light_specular = 0`. The emitter sits 3.6 cm above the iron's top (0.25 against 0.214). Seen as a bright band on the font top at 0.5 m; the off-specular run was not repeated at 1.4 m.
-T018 should lower the omni's specular rather than change the lamp.
+Still there at 0.5 and 1 m, small by 2 m. Gone with `light_specular = 0` (`run2_nospec/f0006.png`), which also makes the iron read darker and more matte.
 
 ### H. Speckled dark dots under grazing light. Look note, no action.
-Cause proved: all from the normal map; they vanish with the normal map off (`crops/speckle.png`). Strongest on the wall right beside the camera under a lamp. The albedo's own fine dark
-specks are much weaker. Stone realism, so not a failure.
+Not re-measured. Same appearance at grazing angles.
 
-## Other looks
-- Webs: 181,161,143 lit in Mobile against 180,162,136 in the Cycles flat render; 149,127,112 in a typical corridor. Cooler than the walls at low lamp light. Fine.
-- Piers, capitals: match the walls, crisp undersides, no artefact.
-- ASTC: mip 0 of each texture decoded offline. PSNR against the source: ashlar colour 52.1 dB, floor colour 53.5, ashlar ORM 50.2, floor ORM 48.6, floor normal 49.0, ashlar normal 37.9.
-  The ashlar normal is the low one, on high-frequency grain; side by side at 3x no block pattern shows. No artefact found.
-- Z-fighting: none seen. Gaps: none.
+### I. New note: a stone changes tone at the pier/wall seam. Low, look note.
+Where a block crosses the pier/wall line, one half can be noticeably paler than the other (`collinear_pier_seam`, 0.9 m, fov 30). The 1ee652c crop `crops/seam.png` shows the same, so it is not new, but it was not reported. It reads as a vertical cut through a stone at close range, and as slightly mismatched blocks in `wall_frontal_lit`. Likely the different U of the pier and wall faces; not proved. No action required under the accepted look (modeler, if ever revisited).
 
-## vertex_color_is_srgb: use false
-Wall luma relative to the 0.88-1.39 m band:
-| Height m | 0.08-0.30 | 0.34-0.54 | 0.58-0.84 | 2.60-2.82 | 3.10-3.30 |
-|---|---|---|---|---|---|
-| Cycles flat render (reference) | 0.639 | 0.757 | 0.836 | 0.961 | 0.928 |
-| COLOR_0 alone | 0.693 | 0.781 | 0.916 | 0.993 | 0.922 |
-| Godot false | 0.402 | 0.700 | 0.736 | 1.035 | 0.799 |
-| Godot true | 0.227 | 0.470 | 0.627 | 0.984 | 0.681 |
+### Golden wedges on the crawl ceiling
+Still visible. Not flips: the back-face diff in those views is 0 and 1 pixels. They are facets catching lamp light, and with no lamp shadows, light through rock remains a likely cause (not proved). Check in T018's real lighting.
 
-`false` is closer in 4 of 5 bands, including all three soiled floor bands; in 2.60-2.82 m, where the soiling is slight, `true` is closer (0.984 against 1.035, reference 0.961).
-`true` applies the soiling too strongly: true/false at 0.08-0.30 m measures 0.557, predicted 0.610. The values are linear by design
-(`build.py` `grime`). The remaining gap to Cycles is probably lighting (unlit Godot wall against even Cycles light); not proved. `crypt_assembly.gd` still defaults to true, so all `srgb_true_*` figures use it.
+### E. Top course brighter: resolved
+Mean grey by height on the unlit frontal wall, same view and `srgb` false:
+| Height m | 1.30-1.66 | 1.66-2.00 | 2.00-2.40 |
+|---|---|---|---|
+| 1ee652c | 34.6 | **45.5** | 35.5 |
+| T039 | 42.1 | 43.2 | 42.0 |
+
+## What Mobile shows that the Cycles review did not
+Crops below compare different views and different light rigs, so they are indicative. QA lamp values are assumptions, not T018's.
+
+| Surface | Cycles flat | Cycles lit | Mobile |
+|---|---|---|---|
+| Stone, luma (sRGB 0-255) | 111.6 | 135.9 | near lamp 173.3; 1 m below 88.4; unlit 51.0 |
+| Stone, R/B | 2.01 | 2.51 | near lamp 1.86; 1 m below 2.12; unlit 1.73 |
+| Plaster, R/B | 1.31 | 1.36 | lit 1.30; away from the lamp 1.11 |
+| Floor, R/B | 1.43 | 1.72 | under a lamp 1.56; away 1.26 |
+
+1. **Brighter near lamps, by a lot.** Up to 197.5 luma at 0.5 m, against 135.9 in lit Cycles, with 5.8-8.6% of those crops clipped. Cycles clips 0%.
+2. **Not warmer by measure.** Near the lamps stone looks like warm cream, but R/B is lower than Cycles (1.73-1.86 against 2.51), because the highlight washes it out. So it reads paler, not more saturated.
+3. **Far dimmer away from lamps.** Mobile has real falloff where the Cycles rig is even: 51.0 on an unlit wall. Corridors end in near-black.
+4. **Cool ambient, unseen in Cycles.** Away from lamps the plaster turns lilac (R/B 1.11) and the floor violet-grey (1.26). Mobile plaster also reads white near lamps, where Cycles shows cream.
+5. **Specular on lamps and edges.** G and F do not appear in the Cycles review.
+
+Against the first Mobile run with `srgb` false, T039 stone is about 9-11% brighter (unlit 46.7 -> 51.0, lit 79.3 -> 88.4). R/B is unchanged (1.73 -> 1.73, 2.18 -> 2.12), so it did not get warmer in Mobile.
+
+## Lamp at 1-4 m
+Mounted correctly at every distance, flame legible, no floating and no gap at the wall.
+- 1 m: font sheen visible, stone behind is washed pale.
+- 2 m: sheen small, hot patch on the wall reads as lamp glow.
+- 3-4 m: clean silhouette, warm pool on the wall.
+Stills only.
+
+## Far views and seams
+`far_corridor_game`, `far_corridor_level`, `far_corridor_zoom`, down the seed's longest run (32 m): no holes, no z-fighting seen, courses and arches stay coherent. The far end goes to black. Gaps: none.
+Pier ledge: filled, no void. Its top reads slightly mauve against the stone at very close range (`pier_top_close`); not visible at game distance.
 
 ## Counts against 300k triangles and 200 draw calls
-Full maze: **909,396** tris, 3.03 x 300k (kit 831,076 + 89 lamps 78,320). The contract's 730k is out of date.
-vault_bay 378,240, arch 351,200, pier 52,920, wall 37,694, ceilings 7,022, floor 4,000.
+Full maze: **910,278** tris, 3.03 x 300k (kit 831,958 + 89 lamps 78,320).
+vault_bay 378,240, arch 351,200, pier 53,802, wall 37,694, ceilings 7,022, floor 4,000.
 
-Engine counters, CPU renderer, 1280x590, unmerged assembler, hold 3:
+`check_budgets` counts 14 primitives because it includes the 7 colonly meshes. The imported scene renders 7 (measured by test). So 14/14 is at the limit on paper with real headroom: 7 of 14.
+
+Textures: 64.0/64 MB is exactly at the limit, but it is the uncompressed RGBA + mips upper bound (48 MB x 4/3). The ASTC_4x4 import products are 16.0 MiB on disk for the kit and 1.05 MB for the lamp, including mips. Device memory is not measured.
+
+Engine counters, CPU renderer, 1280x590, unmerged assembler. Raw at hold 3; occluders at hold 8, after 3 warm-up views:
 | View | Draw calls | Tris | With box occluders: draw calls | Tris |
 |---|---|---|---|---|
-| corridor centre | 239 | 50,333 | 204 | 44,049 |
-| corridor wall-hug | 294 | 59,681 | 259 | 53,397 |
-| pier close | 1225 | 203,704 | 168 | 35,850 |
-| mixed edge | 925 | 144,360 | 128 | 30,912 |
-| long view, wall face | 1831 | 281,880 | 249 | 46,282 |
+| corridor centre | 239 | 50,425 | 90 | 23,768 |
+| corridor wall-hug | 294 | 59,797 | 97 | 25,378 |
+| pier close | 1225 | 204,156 | 46 | 17,726 |
+| mixed edge | 925 | 144,714 | 135 | 32,648 |
+| long view, wall face | 1831 | 282,568 | 153 | 34,224 |
+| far corridor (new) | 1554 | 213,317 | **236** | 42,104 |
 
-Typical corridor estimate: about 50-60k tris, under 300k. Rays actually seeing surfaces: 14-19k tris from 41-51 instances. Triangles are not the problem; draw calls are.
-Wall-only box occluders are required: draw calls still exceed 200 in 3 of 5 views. Merging or instancing must close that.
-The first view after load gets no occluder benefit even after 8 frames (`top_course` reads 1375 in both columns), so it is left out above. Cause unknown; first-frame counts with occluders are not reliable.
+**Correction to the first report.** Its occluder column (204, 259, 168, 128, 249) was read at hold 3, before occlusion had settled. The first report's "exceed 200 in 3 of 5 views" does not hold: 5 of 5 of those views are under 200 once settled. The long corridor is still over, at 236.
+Occluders do nothing in the first frames: at hold 3 the first 3 views read raw counts, and at hold 8 the first view still does. So expect a raw-count spike after load or teleport. Cause unknown.
 
 ## Notes for T018
 1. `vertex_color_is_srgb = false`, `vertex_color_use_as_albedo = true`, texture filter 5.
-2. Merge or MultiMesh by chunk and add occluders; 1831 raw draw calls against 200.
-3. Omni per mesh: a 4x4-cell chunk reaches 14 against a limit of 8, single pieces 5. Pick chunks so no chunk passes 8.
-4. Lower `light_specular` on lamp omnis.
-5. Lamps here have shadows off, so light may pass through walls. Check it in the real scene.
-6. Rays above 2.2 m under arches are wrong until defect A is fixed.
+2. Merge or MultiMesh by chunk and add occluders: 1831 raw draw calls against 200. Box occluders alone settle at 46-236, still 236 in the long corridor.
+3. New: occluders lag after load or a teleport (see "Counts"). Plan for raw counts in those frames.
+4. Omni per mesh: a 4x4-cell chunk reaches 14 against a limit of 8, single pieces 5. Pick chunks so no chunk passes 8.
+5. Lower `light_specular` on lamp omnis. New: that handles both the font cap (G) and the white hairlines (F). 0 is proved to remove both; no value between was tried.
+6. Lamps here have shadows off, so light may pass through walls. Check it in the real scene, including the crawl ceiling wedges.
+7. New: tune the lighting in Mobile, not from the Cycles review. Near lamps it clips and desaturates, and away from them the ambient is cool (lilac plaster, violet floor).
+8. Removed: the old note on rays above 2.2 m under arches.
 
-## Blocks T018?
-| Defect | Severity | Player sees or feels it | Blocks T018 |
-|---|---|---|---|
-| A arch collision reversed | Medium, latent | No | No, but fix it with T018: one line, and it removes a trap for any new ray |
-| B pier top | Low | Barely, a stone-coloured strip | No |
-| C rubble flips | Low | Barely, at most 222 pixels when aimed at | No |
-| D draw calls | T018 design | Device cost, unmeasured | It is a T018 requirement |
-| E, F, G, H | Low | Yes, small | No |
-
-## Evidence each new check can fail
-- `_in_arch_masonry`: `test_self_masonry_check_can_fail` (crown masonry true, opening false, outside depth false).
-- Arm fan: same helper, and the same fan with rays landed 86 in masonry on the shipped asset.
-- Real camera, jump: no broken-asset self-test. They use the helper above and plain numeric asserts; a run where the jump does not happen fails on `rise > 0.3`.
-- Void count: control view 755200/755200 magenta.
-- Back-face diff: 0 in the control, non-zero in every aimed view.
-- pass-1 checks: self-tests in `crypt_geometry_test.gd`, `crypt_kit_test.gd`.
-- Cause checks are before/after pairs: `crops/speckle.png`, `crops/fontcap.png`.
-
-## Images (not committed, under `.captures/t017/`)
-Mobile, 2.43 m unless noted: `srgb_true_a/` and `srgb_false/` (corridor centre, wall-hug, grazing, top course, lamp at 1.4 and 0.5 m); `srgb_true_a/f0012-14`, `srgb_false_low/` (low-passage cells);
-`srgb_true_b/` (mixed edges, flips, capital, vault, pier); `srgb_true_c/`, `srgb_false_c/` (frontal walls, pier seam); `srgb_true_d/` (wall faces); `hole2/` magenta, `hole3/` back faces drawn;
-`exp_base/`, `exp_nonormal/`, `exp_nospec/` cause checks; `crops/` (`speckle`, `fontcap`, `seam`, `seamfar`, `astc_compare`). Reference: `.captures/t015/arcade_flat.png`.
-
-Variant scenes are gone: `crypt_preview.tscn` takes env `T017_PREVIEW`, for example `srgb=0,only=wall_hug+lamp_0_5m,tag=x`.
+## vertex_color_is_srgb
+`false` is now the assembler default and is asserted by a test. The evidence is the 1ee652c table: closer to Cycles in 4 of 5 wall bands. That table was not repeated on T039.
 
 ## Not verified
 - Device frame rate, GPU cost, memory: not measurable here. M3.
-- ASTC on a real GPU: decoded offline only. The captures themselves most likely used the desktop BPTC import; I did not confirm which file loaded.
-- Motion: stills only, so hairline crawl, normal-map shimmer and flicker are unseen. No video made; T017 did not ask for one.
-- The pier and rubble views use hand-placed cameras near what the arm can reach, not a driven orbit. Only the 24 arch samples use the real camera.
-- Fixes in A, B, C are proposals, none built.
-- Other seeds. Lamp energy, range and colour are QA's assumptions, not T018's.
-- Physics engine is `DEFAULT`; a move to Jolt would need the sphere-cast evidence in A repeated.
+- ASTC on a real GPU: headers only in this run. The PSNR decode from the first run was not repeated on the T039 textures. The captures most likely used the desktop BPTC import; not confirmed.
+- Motion: stills only, so hairline crawl, normal-map shimmer and flicker are unseen. The 2-frame flicker comparison at 16 m was not repeated. No video made; not requested.
+- F, I and the wedges: causes as marked. H not re-measured.
+- Other seeds. Lamp energy, range and colour are QA's assumptions.
+- Physics engine is `DEFAULT`; the arch collision is now right for rays too, but Jolt was not tried.
 - TEST_PLAN camera points P1-P4 are for the M2 frame-count pass with the real maze.
+- The real camera covers only the 24 arch samples; pier and rubble views use hand-placed cameras.
+
+## Images (not committed, under `.captures/t017/`)
+`run2_a/`, `run2_b/`, `run2_c/`: all 39 views, hold 3, each with `contact_sheet.png`; view order in `run2_<x>_counters.json`.
+`run2_mag1/`, `run2_mag2/`: magenta holes. `run2_cull0/`, `run2_cull1/`: back-face diff. `run2_nospec/`: specular off. `run2_occ/`: occluders.
+Logs: `run2_tests_final.log`, `run2_tests_oldkit.log`, `run2_tests_mut_srgb.log`, `run2_baseline_tests.log`.
+Older captures in the same folder are the pre-T039 build, kept for comparison. Cycles review: `.captures/t039/pass4/`.
+`crypt_preview.tscn` takes env `T017_PREVIEW`, for example `hold=3,only=lamp_1m+lamp_4m,tag=x`.
