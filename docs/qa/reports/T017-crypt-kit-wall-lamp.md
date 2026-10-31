@@ -183,11 +183,21 @@ Occlusion needs more than 8 frames after a camera cut or load, and is stable by 
 Limits of this evidence:
 - **Coverage.** 11 of 39 views have occluder counts. They include the 4 heaviest raw views. The other 28 are unmeasured, the heaviest being `top_course` at 1375 raw.
 - **The spike.** The load case is direct: the first view of a run. The teleport case is weaker, because it comes from camera cuts between preview views. No real teleport or respawn was measured.
-- **Resolution.** Settled counts depend on it. A first attempt at the same 11 views ran at `capture.py`'s default `--resolution 960x540` by mistake, and read lower: far corridor 128 against 186, level camera 164 against 167, range 16-164. Hold 16 equalled hold 32 there too. Those numbers are not used above. So 186 is a 1280x590 number, not an iPhone one.
+- **Aspect and resolution.** A first attempt at the same 11 views ran at `capture.py`'s default `--resolution 960x540` by mistake, and read lower: far corridor 128 against 186, level camera 164 against 167, range 16-164. Hold 16 equalled hold 32 there too. Those numbers are not used above. That run differed in both aspect (1.78:1 against 2.17:1) and pixels, and its saved frames are stretched back to 1280x590 (`cmp144.png`). The narrower view is the difference that matters to draw calls: the same-aspect runs below, at fewer and at more pixels than 960x540, keep the table's draw calls.
+
+Measured by the reviewer, not by this QA pass: the same 11 views at hold 16, on the CPU renderer. CPU preview, not device performance. Nothing was measured on a device.
+| Resolution | Aspect | Draw calls against the table | Draw call range | Occluder tris against the table | Far corridor |
+|---|---|---|---|---|---|
+| 640x295 | same | identical on 11 of 11 | 20-186 | lower on 11 of 11 | 186 draw calls, 27,980 tris |
+| 1280x590 (the table) | 2.17:1 | n/a | 20-186 | n/a | 186 draw calls, 34,210 tris |
+| 2532x1170 | about the same | identical on 10 of 11 (pier 19 against 20) | 19-186 | higher on 10 of 11; pier close lower, 9,680 against 9,774 | 186 draw calls, 43,220 tris, the highest of the 11 and well under 300k |
+
+Sources: `.captures/t017_review2/rev2_640_counters.json`, `rev2_2532_counters.json`, frames in `occ_640/`, `occ_2532/`.
+The occluder Tris column in the table above is valid at 1280x590 only: occluded tris rise with pixel count, while settled draw calls follow aspect. 2532x1170 is cited as the iPhone 12 size from general knowledge; `docs/specs/PLATFORM.md` does not state it.
 
 ## Notes for T018
 1. `vertex_color_is_srgb = false`, `vertex_color_use_as_albedo = true`, texture filter 5.
-2. Merge or MultiMesh by chunk and add occluders: 1831 raw draw calls against 200. Box occluders alone settle at 20-186 in the 8 views of "Counts", under 200 in all 11 sampled views of 39, at 1280x590. Merging is still what covers the frames before they settle.
+2. Merge or MultiMesh by chunk and add occluders: 1831 raw draw calls against 200. Box occluders alone settle at 20-186 in the 8 views of "Counts", under 200 in all 11 sampled views of 39, at this aspect (about 2.17:1). Merging is still what covers the frames before they settle. Warning: a narrower aspect, or `capture.py`'s 960x540 default, gives different counts, so pass `--resolution` explicitly.
 3. New: occluders need more than 8 frames after a load or camera cut, stable by 16 in the sampled views (see "Counts"). Plan for raw counts in those frames. Measure a real teleport in the game: the evidence here is camera cuts in a preview.
 4. Omni per mesh: a 4x4-cell chunk reaches 14 against a limit of 8, single pieces 5. Pick chunks so no chunk passes 8.
 5. Lower `light_specular` on lamp omnis. New: that handles both the font cap (G) and the white hairlines (F). 0 is proved to remove both; no value between was tried.
@@ -213,4 +223,5 @@ Limits of this evidence:
 `run2_mag1/`, `run2_mag2/`: magenta holes. `run2_cull0/`, `run2_cull1/`: back-face diff. `run2_nospec/`: specular off. `run2_occ/`: occluders, hold 8. `fix_occ16/`, `fix_occ32/`: occluders, 11 views. `fix_wrongres_960x540/`: the 960x540 attempt, not used for the table.
 Logs: `run2_tests_final.log`, `run2_tests_oldkit.log`, `run2_tests_mut_srgb.log`, `run2_baseline_tests.log`, `fix_tests_final.log`, `fix_tests_mut_helper.log`.
 Older captures in the same folder are the pre-T039 build, kept for comparison. Cycles review: `.captures/t039/pass4/`.
+Reviewer's aspect and resolution evidence, under `.captures/t017_review2/`: `rev2_640_counters.json`, `rev2_2532_counters.json`, `occ_640/`, `occ_2532/`, `cmp144.png` (1280x590 frame above the stretched 960x540 frame). Saved frames in `occ_640/` and `occ_2532/` are 1280x590 too, so the run's resolution cannot be read from the frame size.
 `crypt_preview.tscn` takes env `T017_PREVIEW`, for example `hold=3,only=lamp_1m+lamp_4m,tag=x`.
