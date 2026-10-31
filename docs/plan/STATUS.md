@@ -1,18 +1,16 @@
 # Run status (orchestrator-maintained; read this first in a new session)
 
-Last updated: 2026-10-30, end of session 3.
+Last updated: 2026-10-30, session 4.
 
 ## Where we are
 - Milestone: **M2 art**. M1 complete (T032 merged, #33).
 - Hero asset chain finished: T037/T038 references (#36, #38), T011 model (#37, 10/10 structure), T012 motion clips
   (#40), T013 rig + 8 clips (#41, all clips >= 8.5/10), T014 QA in Godot (PR #42).
-- No agent is running. Nothing is left in the background.
 
 ## Open PRs (human to review/merge)
 | PR | Branch | Task | State after merge |
 |---|---|---|---|
-| #42 | task/qa/T014-hero-budgets-animation-vs-refe | T014 hero QA (PASS, ready for T019) | `python3 tools/task.py done T014` |
-| (this) | arch/session-continuity-hero-lessons | contract/player notes, STATUS.md, continuity rules, retro | none |
+| (this) | arch/crypt-kit-arch-relief | crypt_kit crown 4.15, status | none |
 
 ## Next actions, in order
 1. After merges: `git switch main && git pull --ff-only origin main && dvc checkout`, then `task.py done T014`.
@@ -27,7 +25,24 @@ Last updated: 2026-10-30, end of session 3.
 7. M3: T021 export preset (exclude `res://tests/*`, incl. the T014 preview scenes, and automation), T022, T023 (Mac).
 
 ## Active task
-None. When a task starts, record here: id, agent, branch, the brief (paste it), last commit, review verdict.
+T015, modeler, branch `task/modeler/T015-crypt-kit-modular-pieces`, started 2026-10-30 (session 4). T014 is done.
+Bar (human): reviewer scores against the reference; loop until met, then report. No turnaround: crypt.jpg is a real
+photo, so an orbit would only add AI invention. Bar set: structure 10/10, look >= 8.5/10.
+Pass 1 result (last commit 7590125): all measured targets pass, modeler look 8.2, orchestrator look ~7.5. Arch relief
+impossible under the shared 3.9 crown, so this branch raises vault/wall top to 4.15. Pass 2 builds to that contract.
+Pass 2 review (HEAD a6d7e65): FAIL, look 7.4, structure 9.5; modeler self-score was 8.2. Seam metric p90 confirmed
+justified. COLOR_0 is dropped in Godot without the material flag. Pass 3 applies the reviewer's targets; the review
+scene applies the T018 assembler rules and neutral light. Reviewer estimate: about 8.3 from the kit alone.
+Pass 3 review (HEAD 96e3e55): FAIL, look 7.6, structure 10/10, kit-only 7.2, Godot stand-in about 6.9. Ceilings
+(reviewer judgement): scripted 8.0-8.1, with wall_b about 8.3, with real stone maps about 8.6. ComfyUI has only the
+reference-to-video workflow, so stone maps need a human decision on source. Pass 4 covers source-independent work only:
+per-course wall UV, rubble, webs, metrics, clean import. Ashlar and floor texture tuning waits for that decision.
+Open: push T015 branch before any fresh clone needs DVC data; check_budgets counts -colonly primitives as draw calls.
+Brief: contract exact (7 pieces, one GLB, -colonly, UV2, <= 2 materials, baked tileable, 64 MB, 21,000 tris, 14 draw
+calls), tri guides floor 200, wall 400, pier 300, arch 800, vault_bay 1500, ceilings 1200; check_kit.py must be shown
+able to fail; arcade render at the crypt.jpg camera, side by side. Scope: blender/models/crypt_kit/**,
+godot/assets/crypt_kit/model/**. No wall_lamp (T016). Reviewer must examine: the seam metric denominator change
+(mean -> p90 after ashlar ORM V failed at 1.61) and texture memory at 64.0/64 with no margin.
 
 ## Process notes that worked in session 3
 - Quality loops: reviewer measures independently and scores out of 10 against the reference; send back with numbered,
