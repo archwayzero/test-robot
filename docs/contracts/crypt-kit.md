@@ -81,10 +81,17 @@ lands at 2.90-3.05 above the capital.
 - Review renders use 96 lights in Cycles. Judge the shipped look in a Mobile scene, not from those renders.
 - Keep `vertex_color_is_srgb = false` (T017: closer to the reference render in 4 of 5 wall bands).
 - Lower omni `light_specular` near lamps: the white font cap is omni specular, with the emitter 3.6 cm above the iron.
-- T017 counts for a QA assembler, not device performance: worst raw view 1831 draw calls against 200, and 204-259 in 3
-  of 5 views with wall-box occluders, so merge or instance. A 4x4 chunk reaches 14 omni lights against the limit of 8.
-- Rely on culling: the full maze is 909,396 tris (seed 20261025); a typical corridor view is about 50-60k, against
-  300k per frame.
+- T017 counts for a QA assembler, not device performance: worst raw view 1831 draw calls against 200. Wall-box occluders
+  settle at 19-186 in the 11 of 39 views sampled, at about 2.17:1. They need more than 8 frames after a load or camera
+  cut (stable by 16), and raw counts show until then, so merging or instancing is still needed. Draw calls follow aspect,
+  occluded tris follow pixels: pass `--resolution` to capture.py, its 960x540 default gives different counts. A 4x4
+  chunk reaches 14 omni lights against the limit of 8.
+- Lower omni `light_specular`: it also causes the white pier hairlines at 16 m. 0 clears them in the sampled views; no
+  value between has been tried.
+- Tune lighting in Mobile. Compared with Cycles the stone is paler near lamps and dimmer away from them, with a cool
+  ambient cast that never appears in Cycles.
+- Rely on culling: the full maze is 910,278 tris (seed 20261025); a typical corridor view is about 50-60k before
+  occlusion, against 300k per frame.
 
 ## wall_lamp (separate asset `godot/assets/wall_lamp/model/wall_lamp.glb`)
 Wrought-iron bracket with an oil lamp/candle, origin at the wall mounting point, light emitter at local
