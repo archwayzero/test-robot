@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tests/assets/crypt_preview.gd" id="1"]
+
+[node name="CryptPreview" type="Node3D"]
+script = ExtResource("1")
+vertex_color_srgb = true
+use_occluders = false
+name_tag = "srgb_true"
