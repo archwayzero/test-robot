@@ -1244,24 +1244,31 @@ def rubble_block(b, g, name, poly, centre, rim_depth, inner_depth, centre_depth,
     n = len(poly)
     cx, cy = centre
     frame = _normal([place(0, 0, 0), place(1, 0, 0), place(0, 1, 0)])
+    plan = []
 
     def tri(p, q, r):
-        pts = [place(a[0], a[1], a[2]) for a in (p, q, r)]
-        uvs = [uv((a[0], a[1])) for a in (p, q, r)]
-        flat = [(a[0], a[1]) for a in (p, q, r)]
-        if sum(x * y for x, y in zip(_normal(pts), frame)) * up < 0:
-            pts, uvs, flat = pts[::-1], uvs[::-1], flat[::-1]
-        n0 = len(b.faces)
-        b.face(g, pts, uvs, False)
-        if len(b.faces) > n0:
-            UV2_FLAT.setdefault(name, []).append(flat)
+        # Winding comes from the flat layout, where the whole surface is consistent by construction. Testing the 3D normal instead
+        # hid folds by flipping them, which left inverted triangles (T017: 3 and 10 flipped edge pairs).
+        if (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]) < 0:
+            q, r = r, q
+        plan.append((p, q, r))
+
+    def emit():
+        unfold(plan, place, frame, name)
+        for t in plan:
+            t = t[::-1] if up < 0 else t
+            n0 = len(b.faces)
+            b.face(g, [place(a[0], a[1], a[2]) for a in t], [uv((a[0], a[1])) for a in t], False)
+            if len(b.faces) > n0:
+                UV2_FLAT.setdefault(name, []).append([(a[0], a[1]) for a in t])
 
     rim = [(poly[i][0], poly[i][1], rim_depth[i]) for i in range(n)]
     area = 0.5 * abs(sum(poly[i][0] * poly[(i + 1) % n][1] - poly[(i + 1) % n][0] * poly[i][1] for i in range(n)))
     if area < 0.05:                     # a sliver left by clipping: no room for a ring
-        mid = (cx, cy, sum(rim_depth) / n)
+        mid = [cx, cy, sum(rim_depth) / n]
         for i in range(n):
             tri(rim[i], rim[(i + 1) % n], mid)
+        emit()
         paint_block(b, g, rim, place, tone, vcol)
         return
     ang = [math.atan2(p[1] - cy, p[0] - cx) for p in poly]
@@ -1285,8 +1292,8 @@ def rubble_block(b, g, name, poly, centre, rim_depth, inner_depth, centre_depth,
                 if tt > 0 and -1e-6 <= uu <= 1 + 1e-6:
                     hit = min(hit, tt)
         f, d = inner_depth[j]
-        inner.append((cx + hit * f * math.cos(th), cy + hit * f * math.sin(th), d))
-    mid = (cx, cy, centre_depth)
+        inner.append([cx + hit * f * math.cos(th), cy + hit * f * math.sin(th), d])
+    mid = [cx, cy, centre_depth]
     # radial sweep: step whichever ring comes next in angle, so the band between the rings cannot fold
     run.append(2 * math.pi)
     i = j = 0
@@ -1299,7 +1306,47 @@ def rubble_block(b, g, name, poly, centre, rim_depth, inner_depth, centre_depth,
             j += 1
     for j in range(m):
         tri(inner[j], inner[(j + 1) % m], mid)
+    emit()
     paint_block(b, g, rim, place, tone, vcol)
+
+
+FOLD_STEP = 0.01    # m, per nudge of a vertex out of a fold
+FOLDS_FIXED = {}    # piece -> triangles that needed it
+
+
+def unfold(plan, place, frame, name):
+    """The bottom-edge warp of a side patch can drop a steep rim segment past a block's inner point: a true fold, a triangle turned
+    inside out. Move only the block's own inner points (lists; rim points are tuples, shared with the neighbours) across the
+    edge that fold them, until no triangle of the block is inverted. Depths stay, so the rest of the block keeps its shape."""
+    def add(a, b, s=1.0):
+        return [a[i] + s * b[i] for i in range(3)]
+
+    def cross(a, c):
+        return (a[1] * c[2] - a[2] * c[1], a[2] * c[0] - a[0] * c[2], a[0] * c[1] - a[1] * c[0])
+
+    o = place(0, 0, 0)
+    ex, ey = add(place(1, 0, 0), o, -1), add(place(0, 1, 0), o, -1)
+    fn = math.sqrt(sum(x * x for x in frame))
+    f = [x / fn for x in frame]
+    hit = set()
+    for _ in range(200):
+        bad = [t for t in plan if sum(x * y for x, y in zip(_normal([place(*a) for a in t]), frame)) <= 1e-4]
+        if not bad:
+            FOLDS_FIXED[name] = FOLDS_FIXED.get(name, 0) + len(hit)
+            return
+        for t in bad:
+            hit.add(id(t))
+            # of two inner points move the one further from the rim edge: the nearer is held by that edge's own triangle
+            mv = next((i for i in (2, 1, 0) if isinstance(t[i], list)), None)
+            if mv is None:
+                raise RuntimeError("%s: a fold with no inner point" % name)
+            a, c = place(*t[(mv + 1) % 3]), place(*t[(mv + 2) % 3])
+            n = cross(f, add(c, a, -1))         # in the patch plane, on the side of a-c where the triangle turns the right way
+            ln = math.sqrt(sum(x * x for x in n)) or 1.0
+            n = [x / ln for x in n]
+            t[mv][0] += FOLD_STEP * sum(x * y for x, y in zip(n, ex))
+            t[mv][1] += FOLD_STEP * sum(x * y for x, y in zip(n, ey))
+    raise RuntimeError("%s: fold not removed" % name)
 
 
 def paint_block(b, g, rim, place, tone, vcol):
@@ -1587,6 +1634,7 @@ def main():
     for ob in pieces:
         me = ob.data
         print("piece %-16s tris %5d" % (ob.name, sum(len(p.vertices) - 2 for p in me.polygons)))
+    print("rubble folds removed:", FOLDS_FIXED)
     bpy.ops.wm.save_as_mainfile(filepath=BLEND)
     print("saved", BLEND)
 
