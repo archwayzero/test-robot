@@ -8,9 +8,11 @@ const Kit := preload("res://modules/maze/internal/maze_kit.gd")
 ## 2x2 cells: with OMNI_RANGE below no chunk mesh meets more than 8 omni lights; 3x3 and 4x4 pass 8 at this range.
 const CHUNK_CELLS := 2
 const WORLD_LAYER := 1
-## Past the game's fog end (26 m) a chunk is flat fog colour. 32 m = fog end + half a chunk diagonal, measured to the
-## chunk centre. Bounds the frames before occlusion settles; settled views rarely reach it. Follow the fog if it moves.
-const CHUNK_DRAW_DISTANCE := 32.0
+## Measured to the chunk centre. Past the fog end (26 m) the surfaces are flat fog colour, but a culled chunk is not:
+## where the chunk holding a straight run's end wall drops out, the darker background shows as a rectangle. 34 m still
+## does; 36 m clears the game seed's longest runs. 38 m puts the raw worst view over the 300,000 triangle budget.
+## Follow the fog if it moves.
+const CHUNK_DRAW_DISTANCE := 36.0
 ## Boxes inside the masonry: T017 validated 0.5 m thick walls; the low ceilings stay clear of their 0.138 m rubble.
 const OCCLUDER_WALL_SIZE := Vector3(4.0, 4.15, 0.5)
 const OCCLUDER_CEILING_INSET := 0.2
