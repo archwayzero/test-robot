@@ -50,7 +50,7 @@ Tests:
 | Pin or change | Old | New | Why the new value is correct |
 |---|---|---|---|
 | `test_kit_counted_vs_rendered_primitives` | 4550 | 4552 | The pier's 2 cap triangles. `check_budgets.py` independently reports 4552, and the per-piece print shows pier 122 |
-| `test_rubble_flipped_edge_pairs_match_the_known_count`, renamed `test_rubble_has_no_flipped_edge_pairs` | 3 and 10 | 0 and 0 | The contract expects consistent winding, and the mesh now measures 0 and 0. Any pair's location is in the failure message. `_check_flips_at_boundary` removed: with an expected 0 it could never run |
+| `test_rubble_flipped_edge_pairs_match_the_known_count`, renamed `test_rubble_has_no_flipped_edge_pairs` | 3 and 10 | 0 and 0 | T039 set out to remove the flips, and the mesh now measures 0 and 0, confirmed by 0 first-hit back faces in the assembled rooms. Any pair's location is in the failure message. `_check_flips_at_boundary` removed: with an expected 0 it could never run |
 | `crypt_assembly.gd` `vertex_color_srgb` | true | false | Contract: keep it false |
 | `crypt_preview.gd` `vertex_color_srgb` (not in the brief) | true | false | Its own export overrode the assembler default, so the captures would still have used true |
 
