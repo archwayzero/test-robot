@@ -129,11 +129,12 @@ func _displacement_for(frames: int) -> Vector3:
 	return moved
 
 
-## The same input moves the body the same with the tree playing and with the tree off.
+## The same input moves the body the same with the tree playing and with the tree and its script off.
 func test_animation_does_not_affect_movement() -> void:
 	var with_tree: Vector3 = await _displacement_for(40)
 	await spawn(OPEN_SPOT)
 	_tree().active = false
+	_tree().set_process(false)
 	var without_tree: Vector3 = await _displacement_for(40)
 	_check_same_motion(with_tree, without_tree)
 
@@ -475,7 +476,8 @@ func test_height_check_can_fail() -> void:
 	player.get_node("Visual").position.y = 0.0
 	assert_almost_eq(float(raised["top"]) - float(low["top"]), 0.2, 1e-3, "measured top follows the mesh")
 	var bad: Array[Dictionary] = [raised]
-	assert_true(_heights_problem(bad, STAND_TOP, FLOOR_MIN, FLOOR_MAX) != "", "raised pose reported")
+	assert_true(_heights_problem(bad, STAND_TOP, FLOOR_MIN, FLOOR_MAX).begins_with("top"), "raised top reported")
+	assert_true(_heights_problem(bad, INF, FLOOR_MIN, FLOOR_MAX).begins_with("feet"), "raised feet reported")
 	var none: Array[Dictionary] = []
 	assert_true(_heights_problem(none, STAND_TOP, FLOOR_MIN, FLOOR_MAX) != "", "no samples reported")
 
