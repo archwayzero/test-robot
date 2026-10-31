@@ -35,8 +35,9 @@ Format: 8-bit PNG, RGB. Alpha is ignored. Do not enlarge the maps: at these size
   imports normals with `compress/normal_map=1`, so only R and G survive; Z is rebuilt.
 - ORM: R = ambient occlusion (1 = open), G = roughness (1 = rough), B = metallic (always 0). Occlusion and roughness share
   this one image. Roughness of the generated stone is about 0.86 on the ashlar and 0.70 on the floor.
-- Colour carries no baked light direction. Crevice darkening in colour is fine, up to about 10 % (the generated map adds that much
-  from its occlusion; a replacement band A is used as delivered). Height soiling is added by COLOR_0 and must not be painted in.
+- Colour carries no baked light direction. Crevice darkening in colour is fine. The generated map adds up to 7.5 % from its
+  occlusion, plus broken dark joint pockets of up to 55 % on the ashlar and 25 % on the voussoirs (`joint_dark` in
+  `material_params.json`); a replacement band A is used as delivered. Height soiling is added by COLOR_0 and must not be painted in.
 - Keep the colour near the generated mean: sRGB (177, 148, 100) for band A, (146, 133, 112) for the floor, or the review
   exposure and the ring-to-web balance no longer hold.
 
