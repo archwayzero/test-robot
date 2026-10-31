@@ -200,7 +200,7 @@ func test_orbit_drag_reclamps_shoulder() -> void:
 	assert_eq(bad, 0, "drag events leaving the shifted view inside a wall")
 
 
-## Review finding 4: the fade reaches meshes added under Visual later (T019 hero swap) without rescanning each frame.
+## Review finding 4: the fade reaches meshes added under Visual later (hero swaps) without rescanning each frame.
 func test_fade_reaches_visual_added_later() -> void:
 	arena.add_box(Vector3(Arena.TUNNEL_X1 + 0.3, 1.5, Arena.CROUCH_TUNNEL_Z), Vector3(0.6, 3.0, 4.0))
 	await auto.advance_frames(2)
@@ -211,7 +211,9 @@ func test_fade_reaches_visual_added_later() -> void:
 	player.get_node("Visual").add_child(holder)
 	await _spawn_low(Vector3(Arena.TUNNEL_X1 - 0.45, 0.0, Arena.CROUCH_TUNNEL_Z), PI / 2.0, PlayerController.Stance.CROUCH)
 	assert_true(_fade() >= 0.5, "faded against the wall (%.2f)" % _fade())
-	assert_almost_eq(extra.transparency, float(player.get("_visual_fade")), 1e-6, "added mesh gets the fade")
+	var extra_mat := extra.get_surface_override_material(0) as StandardMaterial3D
+	assert_true(extra_mat != null, "added mesh gets a fade material")
+	assert_almost_eq(extra_mat.albedo_color.a, 1.0 - float(player.get("_visual_fade")), 1e-3, "added mesh gets the fade")
 	holder.queue_free()
 	press_move(Vector2(0.0, -1.0))
 	await auto.advance_frames(60)
@@ -231,8 +233,8 @@ func test_close_camera_fades_player() -> void:
 	print("  backed against the end wall: camera %.3f m from the head, fade %.2f" % [dist, _fade()])
 	assert_true(dist < 0.6, "setup: camera close (%.3f m)" % dist)
 	assert_true(_fade() >= 0.5, "player visual faded/hidden when the camera is %.3f m away (fade %.2f)" % [dist, _fade()])
-	var capsule := player.get_node("Visual/Capsule") as GeometryInstance3D
-	assert_true(capsule.transparency >= 0.5 or not capsule.is_visible_in_tree(), "capsule transparent or hidden")
+	var hero := player.get_node("Visual/Hero/Armature/Skeleton3D/hero") as MeshInstance3D
+	_check_hero_faded(hero)
 	assert_true(ray_clear(cam_pivot(), cam), "pivot -> camera ray hits nothing")
 	assert_false(_in_body(cam), "camera not inside geometry")
 	assert_true(cam.y < Arena.CROUCH_CEILING - 0.1, "camera below the ceiling")
@@ -243,7 +245,23 @@ func test_close_camera_fades_player() -> void:
 	await auto.advance_frames(30)
 	assert_almost_eq(_fade(), 0.0, 1e-3, "visible again once the camera is far enough")
 	assert_true(player.get_node("Visual").visible, "visual node visible again")
-	assert_almost_eq(capsule.transparency, 0.0, 1e-3, "capsule opaque again")
+	_check_hero_opaque(hero)
+
+
+## Both hero materials, blending and with alpha at the fade value (hidden outright counts as faded).
+func _check_hero_faded(hero: MeshInstance3D) -> void:
+	assert_eq(hero.get_surface_override_material_count(), 2, "both hero surfaces")
+	for s in 2:
+		var mat := hero.get_surface_override_material(s) as StandardMaterial3D
+		assert_true(mat != null, "surface %d has a fade material" % s)
+		assert_true(mat != null and mat.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED, "surface %d blends" % s)
+		assert_true(mat != null and (mat.albedo_color.a <= 0.5 or not hero.is_visible_in_tree()), "surface %d alpha" % s)
+		assert_true(mat != null and mat.albedo_texture != null, "surface %d keeps its texture" % s)
+
+
+func _check_hero_opaque(hero: MeshInstance3D) -> void:
+	for s in 2:
+		assert_true(hero.get_surface_override_material(s) == null, "surface %d back on its own material" % s)
 
 
 ## Open floor: arm lengths 2.5/1.8/1.2, default pitch, pivot at 0.9 x height, visual opaque (unchanged by T030).

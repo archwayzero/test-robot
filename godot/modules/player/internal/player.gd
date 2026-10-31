@@ -1,4 +1,4 @@
-## Player implementation (T004): capsule placeholder, stances, walk/run/jump, third-person spring-arm camera.
+## Player implementation (T004, hero rig T019): stances, walk/run/jump, third-person spring-arm camera.
 ## Input only through GameActions. See godot/modules/player/CLAUDE.md for the contract.
 extends PlayerController
 
@@ -55,12 +55,12 @@ const CEILING_NORMAL_MAX_Y := -0.5
 ## reach this far past the end of a clear arm.
 const ARM_SAMPLE_WALL_PULL := 0.3
 const ARM_SAMPLE_END_EXTRA := 0.2
-## Player visual fades out when the camera gets closer to the head than FADE_START (m), hidden at FADE_END.
+## Player visual fades out when the camera gets closer to the body than FADE_START (m), hidden at FADE_END.
 const FADE_START := 0.8
 const FADE_END := 0.5
 const FADE_SMOOTHING := 12.0
 
-## Standing collision height (m). 1.75 until the conformed hero reports its height (T019).
+## Standing collision height (m): the hero height in docs/contracts/blender-godot-assets.md "Asset: hero" (1.75).
 @export var stand_height := 1.75
 
 var _stance: Stance = Stance.STAND
@@ -75,15 +75,16 @@ var _cam_yaw := 0.0
 var _cam_pitch := DEFAULT_PITCH
 var _arm_length := 2.5
 var _pivot_height := 1.5
+var _under_low_ceiling := false
 ## Smoothed lower bound on the camera pitch from low ceilings (PITCH_MIN = no constraint).
 var _pitch_limit := PITCH_MIN
 ## Smoothed fade of the player visual: 0 opaque .. 1 hidden.
 var _visual_fade := 0.0
 ## Smoothed sideways view offset (m) under low ceilings (target before the wall clamp in _place_rig()).
 var _shoulder := 0.0
-## GeometryInstance3D nodes under $Visual (rebuilt when its children change, e.g. the T019 hero swap) and the
-## transparency last applied to them (-1 = never / list rebuilt).
-var _fade_geoms: Array[GeometryInstance3D] = []
+## Meshes under $Visual (rebuilt when its children change) and the fade last applied to them (-1 = never / list
+## rebuilt).
+var _fade_geoms: Array[MeshInstance3D] = []
 var _fade_geoms_dirty := true
 var _applied_fade := -1.0
 var _orbit_finger := -1
@@ -96,6 +97,7 @@ var _clearance_shapes := {}
 @onready var _arm: SpringArm3D = $CameraRig/SpringArm3D
 @onready var _camera: Camera3D = $CameraRig/SpringArm3D/Camera3D
 @onready var _visual: Node3D = $Visual
+@onready var _animator: AnimationTree = $Visual/Animator
 
 
 func _ready() -> void:
@@ -125,6 +127,7 @@ func _ready() -> void:
 	_arm_length = ARM_LENGTHS[_stance]
 	_pivot_height = _height_of(_stance) * PIVOT_FRACTION
 	_update_rig(0.0)
+	_animator.setup(self)
 	_camera.make_current()
 
 
@@ -162,6 +165,7 @@ func spawn_at(spawn_position: Vector3, yaw: float = 0.0) -> void:
 		_arm_length = ARM_LENGTHS[_stance]
 		_pivot_height = _height_of(_stance) * PIVOT_FRACTION
 		_update_rig(0.0)
+		_animator.snap()
 	if is_inside_tree():
 		_write_state()
 
@@ -189,6 +193,7 @@ func restore_stance(stance: Stance) -> void:
 		_arm_length = ARM_LENGTHS[_stance]
 		_pivot_height = _height_of(_stance) * PIVOT_FRACTION
 		_update_rig(0.0)
+		_animator.snap()
 	if is_inside_tree():
 		_write_state()
 	if changed:
@@ -339,30 +344,6 @@ func has_clearance_for(target: Stance) -> bool:
 func _apply_shape() -> void:
 	_collision.shape = _shapes[_stance]
 	_collision.position = Vector3(0.0, _height_of(_stance) * 0.5, 0.0)
-	_update_visual()
-
-
-func _update_visual() -> void:
-	var h := _height_of(_stance)
-	var body := _visual.get_node_or_null("Capsule") as MeshInstance3D
-	if body != null:
-		var mat := body.material_override
-		if h < RADIUS * 2.0:
-			var cyl := CylinderMesh.new()
-			cyl.top_radius = RADIUS
-			cyl.bottom_radius = RADIUS
-			cyl.height = h
-			body.mesh = cyl
-		else:
-			var cap := CapsuleMesh.new()
-			cap.radius = RADIUS
-			cap.height = h
-			body.mesh = cap
-		body.material_override = mat
-		body.position = Vector3(0.0, h * 0.5, 0.0)
-	var nose := _visual.get_node_or_null("Nose") as Node3D
-	if nose != null:
-		nose.position = Vector3(0.0, h * 0.8, -RADIUS)
 
 
 # --- Camera -------------------------------------------------------------------------------------------
@@ -392,6 +373,7 @@ func _update_rig(delta: float) -> void:
 	var target_shoulder := 0.0
 	if is_inside_tree():
 		var above := _ceiling_above(global_position)
+		_under_low_ceiling = above < LOW_CEILING_MAX
 		if above < LOW_CEILING_MAX:
 			target_pivot = maxf(minf(stance_pivot + LOW_PIVOT_RAISE, above - CEILING_MARGIN), LOW_PIVOT_MIN)
 		# Lowest ceiling over the part of the arm path that is reachable (up to the first wall behind).
@@ -475,16 +457,15 @@ func _ray_distance(from: Vector3, to: Vector3, full: float) -> float:
 	return from.distance_to(hit["position"])
 
 
-## Fades (GeometryInstance3D.transparency) and finally hides the player visual when the camera is close to the
-## head, so the view ahead stays visible. Generic over whatever meshes live under $Visual (capsule, hero rig).
+## Fades (alpha copies of the materials) and finally hides the player visual when the camera is close to the
+## body, so the view ahead stays visible. Generic over whatever meshes live under $Visual.
 func _update_fade(delta: float) -> void:
 	if delta <= 0.0:
 		# Snap (spawn/load): the spring arm has not placed the camera yet, so its position is stale. Start opaque;
 		# the next physics frames fade in from the real camera distance.
 		_visual_fade = 0.0
 	else:
-		var head := global_position + Vector3(0.0, _height_of(_stance) * PIVOT_FRACTION, 0.0)
-		var d := _camera.global_position.distance_to(head)
+		var d := get_body_distance(_camera.global_position)
 		var target := clampf((FADE_START - d) / (FADE_START - FADE_END), 0.0, 1.0)
 		_visual_fade = lerpf(_visual_fade, target, 1.0 - exp(-FADE_SMOOTHING * delta))
 		if target == 0.0 and _visual_fade < 0.01:
@@ -497,7 +478,14 @@ func _update_fade(delta: float) -> void:
 		_visual.visible = show
 
 
-## Sets the transparency of the cached GeometryInstance3D list, only when the value (or the list) changed.
+## Distance (m) from `point` to the body's axis, feet to camera pivot height. The mesh is not consulted: the blades
+## reach back past the capsule toward the lens (crawl 0.74 m) and must not trigger the fade.
+func get_body_distance(point: Vector3) -> float:
+	var y := clampf(point.y, global_position.y, global_position.y + _height_of(_stance) * PIVOT_FRACTION)
+	return point.distance_to(Vector3(global_position.x, y, global_position.z))
+
+
+## Applies the fade to the cached mesh list, only when the value (or the list) changed.
 func _apply_fade(fade: float) -> void:
 	if _fade_geoms_dirty:
 		_fade_geoms.clear()
@@ -509,12 +497,32 @@ func _apply_fade(fade: float) -> void:
 	_applied_fade = fade
 	for g in _fade_geoms:
 		if is_instance_valid(g):
-			g.transparency = fade
+			_fade_mesh(g, fade)
+
+
+## GeometryInstance3D.transparency left the hero opaque at 0.9 (Mobile renderer, render checked in T019), so the fade
+## swaps in alpha copies of its materials, and removes them at 0 so the opaque materials stay in use normally.
+func _fade_mesh(mesh: MeshInstance3D, fade: float) -> void:
+	for s in mesh.get_surface_override_material_count():
+		if fade <= 0.0:
+			mesh.set_surface_override_material(s, null)
+			continue
+		var faded := mesh.get_surface_override_material(s) as StandardMaterial3D
+		if faded == null:
+			faded = _faded_copy(mesh.mesh.surface_get_material(s))
+			mesh.set_surface_override_material(s, faded)
+		faded.albedo_color.a = 1.0 - fade
+
+
+func _faded_copy(source: Material) -> StandardMaterial3D:
+	var copy := source.duplicate() as StandardMaterial3D if source is StandardMaterial3D else StandardMaterial3D.new()
+	copy.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
+	return copy
 
 
 func _collect_geoms(node: Node) -> void:
-	if node is GeometryInstance3D:
-		_fade_geoms.append(node as GeometryInstance3D)
+	if node is MeshInstance3D:
+		_fade_geoms.append(node as MeshInstance3D)
 	for c in node.get_children():
 		_collect_geoms(c)
 
@@ -536,6 +544,11 @@ func get_camera_shoulder() -> float:
 ## Fade of the player visual (0 opaque .. 1 hidden). Exposed for tests.
 func get_visual_fade() -> float:
 	return _visual_fade if _visual.visible else 1.0
+
+
+## A ceiling under LOW_CEILING_MAX over the body, as of the last rig update. Read by the hero animator.
+func is_under_low_ceiling() -> bool:
+	return _under_low_ceiling
 
 
 ## Camera yaw (radians); movement input is relative to it. Exposed for tests and the preview.
