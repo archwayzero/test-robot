@@ -74,3 +74,16 @@ save a metric baseline, name which aspects are locked, and require a human decis
 The goal was never simply v2: it had the right spectrum shape with too little contrast (`mid` 0.0236 vs 0.0364 clean
 stone). Disputed between reviewer and modeler: which cause ranks first depends on the metric, and "would have flagged"
 is hindsight unless those metrics were in the gate.
+
+## Outcome (T039)
+The human chose to restore the stone. T039 ran on a frozen rig (hash printed on each run, stone-only boxes, per-pass
+before/after sheets, material parameters in a versioned file, one parameter per commit). What that showed:
+- Stone-only boxes changed the answer. Clean stone is `mid` 0.0364 and `span` 0.308; the audit found three more
+  contaminated boxes beyond the statue box.
+- The best numbers were the wrong pick again: pass 2 scored best on the stone box by keeping the clouds T039 removed.
+  Spectrum stayed at 0.549 (guide 0.40) and was reported, not chased.
+- A parameter restore must list every material band. The first review failed because the voussoir band still held
+  v4's rim, patch and stain, which the ashlar-focused targets did not cover.
+- Reviewer scores are not comparable between reviewers: v2 got 6.4 from one and 5.5 from another. Keep one reference
+  table across reviews, and pass the earlier scores in the brief.
+Human accepted pass 4 of T039 with no further texture or colour work. The soffit stays flecked stone, not limewash.
