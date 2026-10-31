@@ -5,6 +5,7 @@
 ## One scene for every capture: set env T017_PREVIEW="key=value,..." (keys below) before capture.py, for example
 ## T017_PREVIEW="srgb=0,first=6,max=3,tag=srgb_false_low". Reading the env var is the only outside input.
 ## only=a+b picks views by name; magenta=1 paints the background magenta, so any pixel through a hole counts.
+## nonormal=1 turns the normal maps off and omnispec=0 turns lamp specular off (cause checks); only= keeps its own order.
 ## nocull=1 draws back faces: the difference from a normal run is exactly the pixels a missing or flipped face changes.
 extends Node3D
 
@@ -24,6 +25,8 @@ const CAM_H := 2.43
 var only := PackedStringArray()
 var magenta := false
 var no_cull := false
+var no_normal := false
+var omni_specular := 1.0
 var layout: MazeLayout
 var asm: Assembly
 var views: Array[Dictionary] = []
@@ -43,6 +46,11 @@ func _ready() -> void:
 	if no_cull:
 		for m: StandardMaterial3D in asm.all_materials():
 			m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	for m: StandardMaterial3D in asm.all_materials():
+		if no_normal:
+			m.normal_enabled = false
+	for l in asm.lamps:
+		(l.omni as OmniLight3D).light_specular = omni_specular
 	get_viewport().use_occlusion_culling = use_occluders
 	var env := _game_environment()
 	if env:
@@ -63,7 +71,10 @@ func _ready() -> void:
 	_make_views()
 	views = views.slice(first_view, first_view + max_views if max_views > 0 else views.size())
 	if not only.is_empty():
-		views = views.filter(func(v: Dictionary) -> bool: return v.name in only)
+		var picked: Array[Dictionary] = []
+		for wanted in only:
+			picked.append_array(views.filter(func(v: Dictionary) -> bool: return v.name == wanted))
+		views = picked
 	_show(0)
 
 
@@ -90,6 +101,10 @@ func _read_env() -> void:
 				magenta = kv[1] == "1"
 			"nocull":
 				no_cull = kv[1] == "1"
+			"nonormal":
+				no_normal = kv[1] == "1"
+			"omnispec":
+				omni_specular = float(kv[1])
 
 
 func _game_environment() -> Environment:
@@ -179,6 +194,8 @@ func _make_views() -> void:
 	for parity: int in [0, 1]:  # seen from the same side, parity selects the wall's face
 		var w := _unlit_wall(parity, true)
 		_add("wall_face_%d_unlit" % parity, w.at - w.n * 3.2 + Vector3(0, 2.0, 0), w.at + Vector3(0, 2.0, 0), 60.0)
+	_add("seam_far_16m_a", seam - along * 16.0 - wall_dir * 1.4 + Vector3(0, CAM_H, 0), seam + Vector3(0, 1.2, 0), 12.0)
+	_add("seam_far_16m_b", seam - along * 16.03 - wall_dir * 1.4 + Vector3(0, CAM_H, 0), seam + Vector3(0, 1.2, 0), 12.0)
 	# Reachable cameras over the open capital top: the arm reaches 1.575 + 2.5 sin(1.2) = 3.9 m at the lowest orbit pitch.
 	var free := _free_pier()
 	var top := free + Vector3(0.3, 2.2, 0.3)
