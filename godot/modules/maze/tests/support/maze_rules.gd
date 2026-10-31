@@ -11,6 +11,7 @@ const CROUCH_HEIGHT := 1.0
 const CRAWL_HEIGHT := 0.5
 const FLOOR_GAP := 0.03  # the body stands this far above the floor in the query, so the floor itself never counts
 const PASSAGE_LATERAL := 1.35  # 0.05 m short of a pier face for a 0.3 m body: openings are 3.4 m between piers
+const UV_TOLERANCE := 0.005
 const OCCLUDER_TOP := 4.15
 const OCCLUDER_WALL_REACH := 0.25
 const OCCLUDER_EPS := 0.001
@@ -369,16 +370,18 @@ static func digest(root: Node) -> String:
 	return ctx.finish().hex_encode()
 
 
-## Plan items that do not appear in the merged geometry of `chunk`: every vertex of the piece must exist there.
-static func missing_items(items: Array, positions: Dictionary, kit_mesh_vertices: Dictionary, chunk_origin: Vector3) -> PackedStringArray:
+## Plan items that do not appear in the merged geometry of a chunk. `merged` maps snap_key(position) to the UVs seen
+## there, and each piece's sampled vertices must exist with their own UV, so a piece turned onto its own outline fails.
+static func missing_items(items: Array, merged: Dictionary, kit_mesh: Dictionary, chunk_origin: Vector3) -> PackedStringArray:
 	var errors := PackedStringArray()
 	for item in items:
 		var xform: Transform3D = item.xform
 		xform.origin -= chunk_origin
-		var vertices: PackedVector3Array = kit_mesh_vertices[item.piece]
+		var vertices: PackedVector3Array = kit_mesh[item.piece].vertices
+		var uvs: PackedVector2Array = kit_mesh[item.piece].uvs
 		for i in range(0, vertices.size(), 16):
-			if not _near_key(positions, snap_key(xform * vertices[i])):
-				errors.append("%s at %s: vertex %s absent" % [item.piece, item.xform.origin, vertices[i]])
+			if not _near_key(merged, snap_key(xform * vertices[i]), uvs[i]):
+				errors.append("%s at %s: vertex %s uv %s absent" % [item.piece, item.xform.origin, vertices[i], uvs[i]])
 				break
 	return errors
 
@@ -388,12 +391,11 @@ static func snap_key(p: Vector3) -> Vector3i:
 
 
 ## Merged positions are compressed, so a vertex may round into the neighbouring 5 mm key.
-static func _near_key(positions: Dictionary, key: Vector3i) -> bool:
-	if positions.has(key):
-		return true
+static func _near_key(merged: Dictionary, key: Vector3i, uv: Vector2) -> bool:
 	for x in range(-1, 2):
 		for y in range(-1, 2):
 			for z in range(-1, 2):
-				if positions.has(key + Vector3i(x, y, z)):
-					return true
+				for seen: Vector2 in merged.get(key + Vector3i(x, y, z), PackedVector2Array()):
+					if seen.distance_to(uv) < UV_TOLERANCE:
+						return true
 	return false

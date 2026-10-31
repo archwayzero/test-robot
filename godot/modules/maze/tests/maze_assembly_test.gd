@@ -177,9 +177,10 @@ func test_wall_checks_fail_on_instance_order_pattern() -> void:
 
 func test_built_meshes_hold_the_plan() -> void:
 	var kit := Kit.new()
-	var verts := {}
+	var kit_mesh := {}
 	for piece in Kit.PIECES:
-		verts[piece] = (kit.meshes[piece] as Mesh).surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+		var arrays: Array = (kit.meshes[piece] as Mesh).surface_get_arrays(0)
+		kit_mesh[piece] = {"vertices": arrays[Mesh.ARRAY_VERTEX], "uvs": arrays[Mesh.ARRAY_TEX_UV]}
 	var by_chunk := {}
 	for item in items:
 		var key: Vector2i = (item.cell as Vector2i) / 2
@@ -188,25 +189,41 @@ func test_built_meshes_hold_the_plan() -> void:
 		by_chunk[key].append(item)
 	var tris := 0
 	var checked := 0
-	var one_broken := false
+	var moved_seen := 0
+	var flips := 0
+	var flips_seen := 0
 	for chunk in _chunks():
 		var mi := chunk.get_node("Mesh") as MeshInstance3D
-		var positions := {}
+		var merged := {}
 		for s in mi.mesh.get_surface_count():
 			var arrays: Array = mi.mesh.surface_get_arrays(s)
 			tris += (arrays[Mesh.ARRAY_INDEX] as PackedInt32Array).size() / 3
-			for v: Vector3 in arrays[Mesh.ARRAY_VERTEX]:
-				positions[Rules.snap_key(v)] = true
+			var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+			for i in vertices.size():
+				var at := Rules.snap_key(vertices[i])
+				if not merged.has(at):
+					merged[at] = PackedVector2Array()
+				merged[at].append(uvs[i])
 		var key: Vector2i = (chunk.get_meta(&"maze_chunk").position as Vector2i) / 2
 		var chunk_items: Array = by_chunk[key]
-		assert_eq(Rules.missing_items(chunk_items, positions, verts, (chunk as Node3D).position), PackedStringArray())
+		var origin := (chunk as Node3D).position
+		assert_eq(Rules.missing_items(chunk_items, merged, kit_mesh, origin), PackedStringArray())
 		checked += chunk_items.size()
-		if not one_broken:
-			# Proof: a piece planned elsewhere is reported missing from this chunk.
-			var moved: Dictionary = chunk_items[0].duplicate(true)
-			moved.xform.origin += Vector3(100, 0, 0)
-			assert_eq(Rules.missing_items([moved], positions, verts, (chunk as Node3D).position).size(), 1, "moved piece")
-			one_broken = true
+		# Proofs: a piece planned elsewhere, and each wall turned half a circle onto its own outline, are reported.
+		var moved: Dictionary = chunk_items[0].duplicate(true)
+		moved.xform.origin += Vector3(100, 0, 0)
+		moved_seen += Rules.missing_items([moved], merged, kit_mesh, origin).size()
+		for item: Dictionary in chunk_items:
+			if item.piece == &"wall":
+				var turned := item.duplicate(true)
+				turned.xform.basis = item.xform.basis * Assembly.YAW_180
+				flips += 1
+				flips_seen += Rules.missing_items([turned], merged, kit_mesh, origin).size()
+	assert_eq(moved_seen, _chunks().size(), "moved piece reported in every chunk")
+	assert_eq(flips, 401, "every wall tried turned")
+	print("T018 walls turned 180 and reported: %d of %d" % [flips_seen, flips])
+	assert_eq(flips_seen, flips, "every turned wall reported")
 	assert_eq(checked, items.size())
 	assert_eq(tris, 910278, "full maze triangles, same as the T017 measurement")
 
