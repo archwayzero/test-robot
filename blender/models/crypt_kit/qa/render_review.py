@@ -1,11 +1,21 @@
 """Assemble the kit from the exported GLB and render review images (T015).
 
   python3 tools/qa/memguard.py --expect-peak-mb 2000 -- blender -b --factory-startup --python-exit-code 1 \
-      -P blender/models/crypt_kit/qa/render_review.py -- [--only arcade,joins,pieces,low] [--samples N] [--scale 1.0]
+      -P blender/models/crypt_kit/qa/render_review.py -- [--only arcade,flat,joins,pieces,low,tiles] [--samples N] [--scale 1.0]
 
 Layout: a 9-cell aisle (A, along +X) with a walled side at -Y (right of frame looking +X). The open side at +Y (left of
 frame) gives onto a second aisle (B) through arches on the piers, and B is walled beyond. End of the aisle: wall. Only
 -colonly children are dropped; pieces are the exported meshes, placed like the maze would.
+
+What this scene adds beyond the kit (the same things the game must add; see "Rules for the assembler" in the contract):
+  1. `wall` alternated by 180 degrees by cell parity.
+  2. A world-space tint: base colour x (0.90-1.08, noise of about 7 m). In Godot: a shader or per-instance colour.
+  3. Soiling on: base colour x COLOR_0, as Godot does with vertex_color_use_as_albedo.
+  4. An arch on every open edge, a pier on every corner.
+  5. Light. `arcade_crypt_camera`: neutral floods on the floor, both sides of each arch, plus fills at the game's lamp height
+     (y = 2.0 in Godot). `arcade_flat`: no cast shadows, even light from six directions, Standard view, so the kit can be
+     judged apart from lighting. Neither is the game's Mobile renderer: Cycles has bounces, the game has lamps and a
+     possible lightmap, so these renders only judge the kit's shapes and maps.
 
 Camera for crypt.jpg, level, verticals parallel (lens shift, as in the photo). Fit from the photo: vanishing point at
 (0.645, 0.56) of the frame; arch feet left/right of the VP in ratio 1.35 (camera off the aisle axis); feet spans of the
@@ -30,17 +40,57 @@ def arg(name, default):
     return argv[argv.index(name) + 1] if name in argv else default
 
 
-ONLY = arg("--only", "arcade,joins,pieces,low").split(",")
+ONLY = arg("--only", "arcade,flat,joins,pieces,low,tiles").split(",")
 SAMPLES = int(arg("--samples", "96"))
 SCALE = float(arg("--scale", "1.0"))
 S = 4.0
 LEN = 9
 NAMES = [n for n in arg("--names", "").split(",") if n]
+ALT = "--no-alt" not in argv
+
+
+def game_material(m):
+    """Base colour x COLOR_0 (when the mesh has it) x world-space tint: what the game applies, see the module docstring."""
+    nt = m.node_tree
+    bsdf = next(n for n in nt.nodes if n.type == "BSDF_PRINCIPLED")
+    link = bsdf.inputs["Base Color"].links[0]
+    src = link.from_socket
+    while src.node.type == "MIX":                       # the importer may have wired COLOR_0 already; rebuild from the image
+        src = src.node.inputs["A"].links[0].from_socket
+    if src.node.type != "TEX_IMAGE":
+        src = next(n for n in nt.nodes if n.type == "TEX_IMAGE" and "color" in n.image.name).outputs["Color"]
+    nt.links.remove(link)
+    if m.name == "stone_ashlar":
+        col = nt.nodes.new("ShaderNodeVertexColor")
+        mx = nt.nodes.new("ShaderNodeMix")
+        mx.data_type, mx.blend_type = "RGBA", "MULTIPLY"
+        mx.inputs["Factor"].default_value = 1.0
+        nt.links.new(src, mx.inputs["A"])
+        nt.links.new(col.outputs["Color"], mx.inputs["B"])
+        src = mx.outputs["Result"]
+    geo = nt.nodes.new("ShaderNodeNewGeometry")
+    nz = nt.nodes.new("ShaderNodeTexNoise")
+    nz.inputs["Scale"].default_value = 0.42
+    nz.inputs["Detail"].default_value = 1.0
+    ramp = nt.nodes.new("ShaderNodeMapRange")
+    ramp.inputs[1].default_value, ramp.inputs[2].default_value = 0.35, 0.65
+    ramp.inputs[3].default_value, ramp.inputs[4].default_value = 0.90, 1.08
+    nt.links.new(geo.outputs["Position"], nz.inputs["Vector"])
+    nt.links.new(nz.outputs[0], ramp.inputs[0])
+    mx2 = nt.nodes.new("ShaderNodeMix")
+    mx2.data_type, mx2.blend_type = "RGBA", "MULTIPLY"
+    mx2.inputs["Factor"].default_value = 1.0
+    nt.links.new(src, mx2.inputs["A"])
+    nt.links.new(ramp.outputs[0], mx2.inputs["B"])
+    nt.links.new(mx2.outputs["Result"], bsdf.inputs["Base Color"])
 
 
 def load():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.gltf(filepath=GLB)
+    for m in bpy.data.materials:
+        if m.use_nodes and m.node_tree:
+            game_material(m)
     src = {}
     for ob in list(bpy.data.objects):
         if ob.name.endswith("-colonly"):
@@ -55,6 +105,10 @@ def load():
 class Scene:
     def __init__(self, src):
         self.src, self.n = src, 0
+
+    def wall(self, x, y, rot=0.0, flip=False):
+        """Assembler rule: alternate `wall` by 180 degrees."""
+        return self.put("wall", x, y, rot + (math.pi if flip else 0.0))
 
     def put(self, name, x, y, rot=0.0):
         self.n += 1
@@ -74,13 +128,13 @@ def assemble(s, low=None):
             s.put("floor", cx, cy)
             s.put(low.get((i, j), "vault_bay"), cx, cy)
     for i in range(LEN):
-        s.put("wall", (i + 0.5) * S, 0)                    # walled side
-        s.put("wall", (i + 0.5) * S, rows * S)             # far side of aisle B
+        s.wall((i + 0.5) * S, 0, flip=i % 2 == 1)          # walled side
+        s.wall((i + 0.5) * S, rows * S, flip=i % 2 == 0)   # far side of aisle B
         for j in range(1, rows):
             s.put("arch", (i + 0.5) * S, j * S)            # open bays between the aisles
     for j in range(rows):
-        s.put("wall", 0, (j + 0.5) * S, math.pi / 2)        # ends
-        s.put("wall", LEN * S, (j + 0.5) * S, math.pi / 2)
+        s.wall(0, (j + 0.5) * S, math.pi / 2, j % 2 == 1)   # ends
+        s.wall(LEN * S, (j + 0.5) * S, math.pi / 2, j % 2 == 0)
         for i in range(1, LEN):
             s.put("arch", i * S, (j + 0.5) * S, math.pi / 2)  # transverse arches
     for i in range(LEN + 1):
@@ -89,7 +143,7 @@ def assemble(s, low=None):
 
 
 def lights(strength=1.0):
-    col = (1.0, 0.86, 0.56)
+    col = (1.0, 0.96, 0.91)     # neutral: the warmth must come from the kit's albedo
 
     def up(x, y, z, e, r=0.12, angle=3.14, tilt=(0.0, 0.0)):
         l = bpy.data.lights.new("l", "SPOT")
@@ -110,11 +164,29 @@ def lights(strength=1.0):
     # The photo is lit by small floods on the floor, aimed up: bright webs and walls, a dim floor, and hard pointed
     # shadows thrown up the walls by the piers. Same thing here: one per bay and aisle, tucked against the piers.
     for i in range(LEN):
-        for y, e in ((0.95, 24), (2.7, 40), (5.0, 12), (6.9, 18)):
-            up((i + 0.16) * S, y, 0.06, e)
-        fill((i + 0.5) * S, 2.0, 0.9, 0.5)        # stands in for the bounce off the photo's water
-        fill((i + 0.5) * S, 6.0, 0.9, 0.5)
-    fill(LEN * S - 1.6, 2.0, 2.0, 22)                     # far end wall glow
+        for y, e in ((1.5, 3.5), (2.7, 6), (5.0, 2), (6.5, 3)):     # either side of each transverse arch
+            up((i + 0.27) * S, y, 0.06, e)
+            if i < LEN - 1:
+                up((i + 0.73) * S, y, 0.06, e)
+        fill((i + 0.5) * S, 0.7, 2.0, 13)         # wall lamps at the game's lamp height, y = 2.0
+        fill((i + 0.5) * S, 3.3, 2.0, 13)
+        fill((i + 0.5) * S, 6.0, 2.0, 12)
+    fill(LEN * S - 1.2, 1.2, 0.5, 26)                     # far end wall: a flood in the corner, as in the photo
+
+
+def flat_lights():
+    """Even light with no cast shadows: six soft suns, so only the kit's maps and shapes show."""
+    for ob in [o for o in bpy.context.scene.collection.objects if o.type == "LIGHT"]:
+        bpy.data.objects.remove(ob)
+    for rot in ((0, 0, 0), (math.pi, 0, 0), (math.pi / 2, 0, 0), (-math.pi / 2, 0, 0), (0, math.pi / 2, 0), (0, -math.pi / 2, 0)):
+        l = bpy.data.lights.new("flat", "SUN")
+        l.energy, l.color, l.use_shadow = 0.95, (1, 1, 1), False
+        ob = bpy.data.objects.new("flat", l)
+        ob.rotation_euler = rot
+        bpy.context.scene.collection.objects.link(ob)
+    sc = bpy.context.scene
+    sc.view_settings.view_transform, sc.view_settings.look = "Standard", "None"
+    sc.view_settings.exposure = 0.0
 
 
 def setup(w=1500, h=1000):
@@ -133,7 +205,7 @@ def setup(w=1500, h=1000):
             break
         except TypeError:
             pass
-    sc.view_settings.exposure = 0.42
+    sc.view_settings.exposure = 0.55
     if sc.world is None:
         sc.world = bpy.data.worlds.new("w")
     sc.world.use_nodes = True
@@ -166,6 +238,10 @@ def arcade():
     cy = float(arg("--cam-y", "1.75"))
     lens = float(arg("--lens", "60"))
     cam = camera((x0, cy, eye), (x0 + 10, cy, eye), lens=lens, shift=(-0.145, 0.04))
+    if "flat" in ONLY:
+        flat_lights()
+        shot("arcade_flat")
+        return
     if not NAMES or "crypt" in NAMES:
         shot("arcade_crypt_camera")
     if NAMES and "along" not in NAMES:
@@ -235,7 +311,7 @@ def wall_tiles(src):
         bpy.data.objects.remove(ob)
     s = Scene(src)
     for i in range(3):
-        s.put("wall", (i + 0.5) * S, 0)
+        s.wall((i + 0.5) * S, 0, flip=ALT and i % 2 == 1)
         s.put("floor", (i + 0.5) * S, -2.0)
     for i in range(4):
         s.put("pier", i * S, 0)
@@ -247,7 +323,7 @@ def wall_tiles(src):
     cam.data.type = "ORTHO"
     cam.data.ortho_scale = 12.4
     sc.render.resolution_y = int(sc.render.resolution_x * 0.45)
-    shot("wall_3_tiles")
+    shot("wall_3_tiles" if ALT else "wall_3_tiles_unalternated")
     sc.render.resolution_y = int(1000 * SCALE)
     bg[0].default_value, bg[1].default_value = keep
 
@@ -269,12 +345,14 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     src = load()
     setup()
-    if "arcade" in ONLY or "joins" in ONLY:
+    if "arcade" in ONLY or "joins" in ONLY or "flat" in ONLY:
         assemble(Scene(src))
         lights()
-        if "arcade" in ONLY:
+        if "arcade" in ONLY or "flat" in ONLY:
             arcade()
         if "joins" in ONLY:
+            if "flat" in ONLY:
+                raise SystemExit("flat removes the lights: render joins in a separate run")
             joins()
     if "tiles" in ONLY:
         wall_tiles(src)

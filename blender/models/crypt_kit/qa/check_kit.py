@@ -35,7 +35,9 @@ GUIDE = {"floor": 200, "wall": 400, "pier": 300, "arch": 800, "vault_bay": 1500,
 TOTAL_TRIS = 21000
 MAX_TEX = 2048
 MAX_MEM_MB = 64.0
-SEAM_MAX = 1.5    # edge-seam ratio, see seam()
+SEAM_MAX = 1.5    # floor edge-seam ratio, see seam()
+BAND_SEAM_MAX = 1.2   # band A seam ratio, see band_seams(). Wrap and as-built pairs must look like an interior bed joint
+RUBBLE_MIN_STEP = 0.25  # m, range of the underside depth of a low ceiling
 LM_RES = 1024
 
 TOP = 4.15        # vault crown, wall top, arch block top, ceiling insert tops (contract, PR #44)
@@ -179,6 +181,8 @@ def check_dims(vis, col):
         p = vis["pier"]["pos"]
         lo, hi = bbox(p)
         shaft = p[p[:, 1] < 1.85]
+        rec(G, "pier shaft 1-3 mm proud of the wall faces (covers the wall butt joint)",
+            0.001 <= np.ptp(shaft[:, 2]) / 2 - 0.3 <= 0.003, "%.4f m" % (np.ptp(shaft[:, 2]) / 2 - 0.3))
         near(G, "pier shaft width x", np.ptp(shaft[:, 0]), 0.6)
         near(G, "pier shaft width z", np.ptp(shaft[:, 2]), 0.6)
         near(G, "pier bottom", lo[1], 0.0)
@@ -214,7 +218,10 @@ def check_dims(vis, col):
             near(G, "vault crown at cell centre", c[:, 1].max(), TOP)
         cor = p[(np.abs(p[:, 0]) > 1.69) & (np.abs(p[:, 2]) > 1.69)]
         if len(cor):
-            near(G, "groin lands at springing at the corner", cor[:, 1].min(), 2.2)
+            near(G, "hidden web foot at springing (behind wall/arch)", cor[:, 1].min(), 2.2)
+        land = [surface_y(vis["vault_bay"], sx * 1.7, sz * 1.7) for sx in (-1, 1) for sz in (-1, 1)]
+        rec(G, "visible groin landing at the room corner in 2.90-3.05", min(land) >= 2.90 and max(land) <= 3.05,
+            "y %.3f..%.3f at plan (+-1.7, +-1.7)" % (min(land), max(land)))
         rec(G, "vault covers the clear span", min(hi[0], -lo[0], hi[2], -lo[2]) >= 1.7 - TOL,
             "%.4f" % min(hi[0], -lo[0], hi[2], -lo[2]))
     for nm, under in (("ceiling_crouch", 1.3), ("ceiling_crawl", 0.75)):
@@ -224,11 +231,29 @@ def check_dims(vis, col):
             near(G, "%s top" % nm, hi[1], TOP)
             near(G, "%s size x" % nm, hi[0] - lo[0], 4.0)
             near(G, "%s size z" % nm, hi[2] - lo[2], 4.0)
+            q = vis[nm]["pos"]
+            q = q[(np.abs(q[:, 0]) < 1.6) & (np.abs(q[:, 2]) < 1.6) & (q[:, 1] < under + 0.45)]
+            rec(G, "%s underside has depth steps >= %.2f m" % (nm, RUBBLE_MIN_STEP), np.ptp(q[:, 1]) >= RUBBLE_MIN_STEP,
+                "%.3f m over %d vertices" % (np.ptp(q[:, 1]), len(q)))
         if nm in col:
             lo, hi = bbox(col[nm]["pos"])
             rec(G, "%s collision underside exact" % nm, abs(lo[1] - under) <= EXACT, "%.7f" % lo[1])
             near(G, "%s collision top" % nm, hi[1], TOP)
     return d
+
+
+def surface_y(m, x, z):
+    """Highest y of the mesh over a plan point, from the triangles."""
+    t = m["pos"][m["tris"]]
+    a, b, c = t[:, 0], t[:, 1], t[:, 2]
+    d = (b[:, 0] - a[:, 0]) * (c[:, 2] - a[:, 2]) - (b[:, 2] - a[:, 2]) * (c[:, 0] - a[:, 0])
+    ok = np.abs(d) > 1e-12
+    w1 = np.zeros(len(t))
+    w2 = np.zeros(len(t))
+    w1[ok] = ((x - a[ok, 0]) * (c[ok, 2] - a[ok, 2]) - (z - a[ok, 2]) * (c[ok, 0] - a[ok, 0])) / d[ok]
+    w2[ok] = ((b[ok, 0] - a[ok, 0]) * (z - a[ok, 2]) - (b[ok, 2] - a[ok, 2]) * (x - a[ok, 0])) / d[ok]
+    hit = ok & (w1 >= -1e-6) & (w2 >= -1e-6) & (w1 + w2 <= 1 + 1e-6)
+    return float((a[hit, 1] + w1[hit] * (b[hit, 1] - a[hit, 1]) + w2[hit] * (c[hit, 1] - a[hit, 1])).max()) if hit.any() else -9.0
 
 
 def section_at_face(m, face=1.7, step=0.01):
@@ -412,7 +437,52 @@ def seam(a, axis):
     return float(wrap / (np.percentile(inner, 90) + 1e-9)), float(wrap / (inner.mean() + 1e-9))
 
 
-def check_materials(g, b):
+def wall_u_offsets(vis):
+    """As-built U offsets where the wall restarts band A: (height, du) of each restart, from the GLB's wall vertices."""
+    m = vis["wall"]
+    p, uv = m["pos"], m["uv1"]
+    out = {}
+    for y0 in (2.0, 4.0):
+        tz = p[m["tris"]][:, :, 2]
+        face = m["tris"][(np.abs(np.abs(tz[:, 0]) - 0.3) < 1e-4) & (np.ptp(tz, axis=1) < 1e-4)]      # long faces, not the ends
+        on = np.intersect1d(face.ravel(), np.flatnonzero((np.abs(p[:, 1] - y0) < 1e-4) & (np.abs(p[:, 0]) > 1.9)))
+        keys = {}
+        for i in on:
+            keys.setdefault((round(float(p[i, 0]), 3), round(float(p[i, 2]), 3)), []).append(i)
+        ds = []
+        for ids in keys.values():
+            if len(ids) >= 2:
+                u = uv[ids, 0]
+                ds.append(float(np.ptp(u)) * np.sign(uv[ids[np.argmax(uv[ids, 1])], 0] - uv[ids[np.argmin(uv[ids, 1])], 0]))
+        out[y0] = ds[0] % 1.0 if ds else None
+    return out
+
+
+def band_seams(G, nm, band, du):
+    """Old test: wrap against the p90 of interior row pairs. That let a real step through, because p90 sits well below a joint.
+    New test (printed with the old one): wrap, and the pairs the wall really shows at z=2 and z=4, against the MEDIAN INTERIOR BED
+    JOINT, i.e. the peak row difference at each interior course line. 1 means the seam looks like an ordinary bed joint."""
+    h, w = band.shape[:2]
+    inner = np.abs(band[1:] - band[:-1]).mean((1, 2))
+    edges = np.cumsum(ATLAS["band_a_courses_m"])[:-1]
+    win = max(int(0.03 * h), 2)
+    pos = [int(round(h * (1 - e / 2.0))) for e in edges]
+    joint = float(np.median([inner[max(q - win, 0):q + win].max() for q in pos]))
+    wrap_v = float(np.abs(band[0] - band[-1]).mean())
+    wrap_u = float(np.abs(band[:, 0] - band[:, -1]).mean())
+    old = wrap_v / (np.percentile(inner, 90) + 1e-9)
+    rec(G, "%s band A wrap V / bed joint" % nm, wrap_v / joint <= BAND_SEAM_MAX,
+        "%.3f (limit %.1f); old p90 ratio %.3f (limit 1.5); median bed joint %.5f" % (wrap_v / joint, BAND_SEAM_MAX, old, joint))
+    rec(G, "%s band A wrap U / bed joint" % nm, wrap_u / joint <= BAND_SEAM_MAX, "%.3f" % (wrap_u / joint))
+    for y0, off in du.items():
+        if off is None:
+            rec(G, "%s as-built wall pair at z=%g" % (nm, y0), False, "no vertices")
+            continue
+        r = float(np.abs(band[0] - np.roll(band[-1], int(round(off * w)), axis=0)).mean()) / joint
+        rec(G, "%s as-built wall pair at z=%g / bed joint" % (nm, y0), r <= BAND_SEAM_MAX, "%.3f at U offset %.2f" % (r, off))
+
+
+def check_materials(g, b, vis):
     G = "4 materials"
     mats = g.get("materials", [])
     names = [m.get("name") for m in mats]
@@ -454,14 +524,13 @@ def check_materials(g, b):
                 r, old = seam(imgs[nm], ax)
                 rec(G, "%s edge seam %s" % (nm, lab), r <= SEAM_MAX, "p90 ratio %.3f, old mean ratio %.3f" % (r, old))
     r0, r1 = ATLAS["band_a_rows"]
+    du = wall_u_offsets(vis)
     for nm in ("stone_ashlar_color", "stone_ashlar_normal", "stone_ashlar_orm"):
         if nm in imgs:
             a = imgs[nm]
             f = a.shape[0] / ATLAS["atlas_size"]
             band = a[int(r0 * f):int(r1 * f)]
-            for ax, lab in ((0, "V"), (1, "U")):
-                r, old = seam(band, ax)
-                rec(G, "%s band A edge seam %s" % (nm, lab), r <= SEAM_MAX, "p90 ratio %.3f, old mean ratio %.3f" % (r, old))
+            band_seams(G, nm, band, du)
     return sizes, mb
 
 
@@ -485,7 +554,7 @@ def main():
         rec("3 tris", "%s within guide" % nm, 0 < n <= GUIDE[nm], "%d / %d (+%d collision)" % (n, GUIDE[nm], c))
     rec("3 tris", "total <= 21,000 (all meshes incl. collision)", all_meshes <= TOTAL_TRIS, all_meshes)
     check_uv2(vis)
-    sizes, mb = check_materials(g, b)
+    sizes, mb = check_materials(g, b, vis)
     fails = [r for r in results if not r["ok"]]
     for r in results:
         print("%-4s %-13s %-52s %s" % ("ok" if r["ok"] else "FAIL", r["group"], r["check"], r["detail"]))

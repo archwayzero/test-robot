@@ -1,13 +1,17 @@
-#!/usr/bin/env python3
 """Failure demonstration for check_kit.py: writes deliberately altered GLB copies under .captures/t015/bad/.
 
-  python3 blender/models/crypt_kit/qa/make_bad_copies.py
+  python3 tools/qa/memguard.py -- blender -b --factory-startup -P blender/models/crypt_kit/qa/make_bad_copies.py
 
-Each copy changes exactly one thing; check_kit.py must fail on each, on the matching check.
+Each copy changes exactly one thing; check_kit.py must fail on each, on the matching check. Runs in Blender because one copy
+re-encodes a texture.
 """
 import json
+import os
 import struct
 from pathlib import Path
+
+import bpy
+import numpy as np
 
 ROOT = Path(__file__).resolve().parents[4]
 SRC = ROOT / "godot/assets/crypt_kit/model/crypt_kit.glb"
@@ -55,6 +59,34 @@ def edit_positions(js, bin_, mesh, fn):
             lo = [min(q, w) for q, w in zip(lo, v)]
             hi = [max(q, w) for q, w in zip(hi, v)]
         a["min"], a["max"] = lo, hi
+
+
+def replace_image(js, b, name, fn):
+    """Decode a GLB image, apply fn to its h x w x 3 array (row 0 = top), put the re-encoded PNG at the end of the buffer."""
+    im = next(i for i in js["images"] if i["name"] == name)
+    bv = js["bufferViews"][im["bufferView"]]
+    tmp = str(OUT / "_tmp.png")
+    Path(tmp).write_bytes(bytes(b[bv.get("byteOffset", 0):bv.get("byteOffset", 0) + bv["byteLength"]]))
+    src = bpy.data.images.load(tmp)
+    src.colorspace_settings.name = "Non-Color"
+    w, h = src.size
+    px = np.empty(w * h * 4, "f4")
+    src.pixels.foreach_get(px)
+    bpy.data.images.remove(src)
+    a = np.flipud(px.reshape(h, w, 4)).copy()
+    a[..., :3] = fn(a[..., :3])
+    out = bpy.data.images.new("o", w, h, alpha=False)
+    out.colorspace_settings.name = "Non-Color"
+    out.pixels.foreach_set(np.flipud(np.clip(a, 0, 1)).ravel())
+    out.filepath_raw, out.file_format = tmp, "PNG"
+    out.save()
+    bpy.data.images.remove(out)
+    data = Path(tmp).read_bytes()
+    os.remove(tmp)
+    b.extend(b"\0" * (-len(b) % 4))
+    bv["byteOffset"], bv["byteLength"] = len(b), len(data)
+    b.extend(data)
+    js["buffers"][0]["byteLength"] = len(b) + (-len(b) % 4)
 
 
 def main():
@@ -127,6 +159,31 @@ def main():
         u, v = struct.unpack_from("<2f", b, o + 8 * (i - a["count"] // 2))
         struct.pack_into("<2f", b, o + 8 * i, u + 0.002, v + 0.002)
     write(OUT / "uv2_overlap.glb", js, b)
+
+    js, b = read()   # ashlar seam broken: band A brightens by 16/255 towards its bottom, a step at the wrap that the old p90 test missed
+    atl = json.loads((SRC.parents[4] / "blender/models/crypt_kit/atlas.json").read_text())
+    r0, r1 = atl["band_a_rows"]
+
+    def ramp(a):
+        n = (r1 - r0) // 8
+        a[r1 - n:r1] += (16 / 255) * np.linspace(0, 1, n)[:, None, None]
+        return a
+    replace_image(js, b, "stone_ashlar_color", ramp)
+    write(OUT / "ashlar_seam_broken.glb", js, b)
+
+    js, b = read()   # the groin no longer lands where the assembler rules say: webs dropped 0.3 m at the corners
+    edit_positions(js, b, node(js, "vault_bay")["mesh"],
+                   lambda x, y, z: (x, y - 0.3 * (abs(x) > 1.6 and abs(z) > 1.6 and y > 2.3), z))
+    write(OUT / "groin_landing_low.glb", js, b)
+
+    js, b = read()   # rubble flattened to one plane: the old warped surface failing again
+    edit_positions(js, b, node(js, "ceiling_crouch")["mesh"], lambda x, y, z: (x, 1.3 if y < 1.8 else y, z))
+    write(OUT / "rubble_flat.glb", js, b)
+
+    js, b = read()   # pier sunk back behind the wall
+    edit_positions(js, b, node(js, "pier")["mesh"],
+                   lambda x, y, z: (x * 0.995 if y < 1.89 else x, y, z * 0.995 if y < 1.89 else z))
+    write(OUT / "pier_behind_wall.glb", js, b)
 
     js, b = read()   # non-tileable image where a tile belongs (also pushes texture memory over budget)
     imgs = {i["name"]: i for i in js["images"]}

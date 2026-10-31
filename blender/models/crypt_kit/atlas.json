@@ -12,5 +12,20 @@
  "band_c_rows": [
   1428,
   2048
- ]
+ ],
+ "band_a_courses_m": [
+  0.32,
+  0.24,
+  0.3,
+  0.22,
+  0.33,
+  0.25,
+  0.34
+ ],
+ "band_a_stone_len_m": [
+  0.35,
+  1.0
+ ],
+ "floor_longest_straight_joint_m": 1.2,
+ "band_a_mortar_width_cm": 1.25
 }
