@@ -37,7 +37,7 @@ Format: 8-bit PNG, RGB. Alpha is ignored. Do not enlarge the maps: at these size
   this one image. Roughness of the generated stone is about 0.86 on the ashlar and 0.70 on the floor.
 - Colour carries no baked light direction. Crevice darkening in colour is fine, up to about 10 % (the generated map adds that much
   from its occlusion; a replacement band A is used as delivered). Height soiling is added by COLOR_0 and must not be painted in.
-- Keep the colour near the generated mean: sRGB (165, 139, 94) for band A, (146, 133, 112) for the floor, or the review
+- Keep the colour near the generated mean: sRGB (177, 148, 100) for band A, (146, 133, 112) for the floor, or the review
   exposure and the ring-to-web balance no longer hold.
 
 ## Atlas layout (2048 x 2048, rows from the top)
@@ -81,7 +81,7 @@ The bottom of course 0 is the last row of the band (band-file row 1023, atlas ro
   every bed joint, because the two sides of a split come from different stones.
 - **Top course**: stones spanning 0.35-1.20 m and 1.55-2.40 m along U must be plain: the capitals map onto them, and no joint may
   cross them. They also need to be neither pale nor dark landmarks.
-- **No course stripes**: every course must have about the same mean tone (check_kit: brightest minus darkest under 12 % of the
+- **No course stripes**: every course must have about the same mean tone (check_kit: all seven courses, linear luma, brightest minus darkest under 12 % of the
   mean). Each course slides on its own, so a darker course is the one thing that lines up from wall to wall.
 - A pale or dark landmark stone repeats every 8 m at worst along a wall, and every 4 m without the assembler's alternation.
 
