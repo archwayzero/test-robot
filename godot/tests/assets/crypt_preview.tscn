@@ -4,6 +4,3 @@
 
 [node name="CryptPreview" type="Node3D"]
 script = ExtResource("1")
-vertex_color_srgb = true
-use_occluders = false
-name_tag = "srgb_true"

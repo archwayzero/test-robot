@@ -1,18 +1,22 @@
 ## T017 (qa): review scene for capture.py: the whole seed maze assembled by crypt_assembly.gd under the game's own
-## Environment (taken from the main scene through GameMain.MAIN_SCENE), Mobile renderer. Switches view every HOLD frames;
-## `capture.py --every 3` keeps one frame of each. Camera: game height 2.43 m, pitch -0.35 rad, fov 70, unless noted.
+## Environment (taken from the main scene through GameMain.MAIN_SCENE), Mobile renderer. Switches view every `hold` frames;
+## `capture.py --every 2` keeps one frame of each. Camera: game height 2.43 m, pitch -0.35 rad, fov 70, unless noted.
 ## Writes the engine's per-view counters to .captures/t017/<name>_counters.json (counts, not device performance).
+## One scene for every capture: set env T017_PREVIEW="key=value,..." (keys below) before capture.py, for example
+## T017_PREVIEW="srgb=0,first=6,max=3,tag=srgb_false_low". Reading the env var is the only outside input.
 extends Node3D
 
 const Assembly := preload("res://tests/assets/crypt_assembly.gd")
-const HOLD := 3
 const PITCH := -0.35
 const CAM_H := 2.43
 
 @export var vertex_color_srgb := true
 @export var use_occluders := false
 @export var name_tag := "srgb_true"
-## Limit of the view list (0 = all). Variant scenes only need the wall/lamp views.
+## Frames per view. The first view of a run needs 3: the counters read 0 until a frame has been drawn.
+@export var hold := 2
+## Slice of the view list (max_views 0 = to the end): CPU rendering takes about 6 s per frame, so runs stay short.
+@export var first_view := 0
 @export var max_views := 0
 
 var layout: MazeLayout
@@ -25,6 +29,7 @@ var _shown := -1
 
 
 func _ready() -> void:
+	_read_env()
 	layout = MazeFactory.create().make_layout()
 	asm = Assembly.new(layout, self)
 	asm.vertex_color_srgb = vertex_color_srgb
@@ -42,7 +47,27 @@ func _ready() -> void:
 	add_child(_cam)
 	_cam.make_current()
 	_make_views()
+	views = views.slice(first_view, first_view + max_views if max_views > 0 else views.size())
 	_show(0)
+
+
+## srgb and occ are 0/1; hold, first and max are integers; tag names the counters file.
+func _read_env() -> void:
+	for pair in OS.get_environment("T017_PREVIEW").split(",", false):
+		var kv := pair.split("=")
+		match kv[0]:
+			"srgb":
+				vertex_color_srgb = kv[1] == "1"
+			"occ":
+				use_occluders = kv[1] == "1"
+			"tag":
+				name_tag = kv[1]
+			"hold":
+				hold = int(kv[1])
+			"first":
+				first_view = int(kv[1])
+			"max":
+				max_views = int(kv[1])
 
 
 func _game_environment() -> Environment:
@@ -56,8 +81,8 @@ func _game_environment() -> Environment:
 
 func _process(_delta: float) -> void:
 	_frame += 1
-	var i := _frame / HOLD
-	if _frame % HOLD == HOLD - 1 and _shown >= 0:
+	var i := _frame / hold
+	if _frame % hold == hold - 1 and _shown >= 0:
 		counters[views[_shown].name] = {
 			"draw_calls": Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
 			"primitives": Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME),
@@ -80,8 +105,6 @@ func _show(i: int) -> void:
 
 
 func _add(view_name: String, eye: Vector3, look: Vector3, fov := 70.0) -> void:
-	if max_views > 0 and views.size() >= max_views:
-		return
 	views.append({"name": view_name, "eye": eye, "look": look, "fov": fov})
 
 
@@ -121,6 +144,19 @@ func _make_views() -> void:
 	_add("capital_top_strip", pier_eye, Vector3(23.625, 2.159, 3.758), 25.0)
 	_add("arch_vault_up", c - along * 1.5 + Vector3(0, 1.5, 0), c + along * 2.0 + Vector3(0, 3.6, 0))
 	_add("pier_capital", c + along * 1.2 - wall_dir * 0.6 + Vector3(0, 1.6, 0), c + along * 2.0 + wall_dir * 1.8 + Vector3(0, 2.1, 0), 55.0)
+	# Square-on walls, for the height profile of the courses (tools side: mean luminance per image row).
+	var face := c + wall_dir * 1.7
+	_add("wall_frontal_lit", face - wall_dir * 3.2 + Vector3(0, 2.0, 0), face + Vector3(0, 2.0, 0), 60.0)
+	var dark := _unlit_wall(0)
+	_add("wall_frontal_unlit", dark.at - dark.n * 3.2 + Vector3(0, 2.0, 0), dark.at + Vector3(0, 2.0, 0), 60.0)
+	# Collinear pier faces and wall faces are coplanar (both 0.3 m from the wall line): look at one edge on, close.
+	var seam := c + wall_dir * 1.7 + along * 1.7
+	_add("collinear_pier_seam", seam - wall_dir * 0.9 - along * 0.2 + Vector3(0, 1.1, 0), seam + Vector3(0, 1.0, 0), 30.0)
+	_add("collinear_pier_seam_shift", seam - wall_dir * 0.9 - along * 0.17 + Vector3(0, 1.12, 0), seam + Vector3(0, 1.0, 0), 30.0)
+	_add("collinear_pier_far", seam - wall_dir * 3.0 - along * 1.0 + Vector3(0, 1.6, 0), seam + Vector3(0, 1.0, 0), 30.0)
+	for parity: int in [0, 1]:  # seen from the same side, parity selects the wall's face
+		var w := _unlit_wall(parity, true)
+		_add("wall_face_%d_unlit" % parity, w.at - w.n * 3.2 + Vector3(0, 2.0, 0), w.at + Vector3(0, 2.0, 0), 60.0)
 
 
 ## A lamp slot in the middle of the longest straight run of FULL cells that holds one; falls back to the first slot.
@@ -136,6 +172,32 @@ func _corridor_lamp() -> Dictionary:
 		if _run(slot.cell, d_fwd) >= 2 and _run(slot.cell, d_back) >= 2 and run > best_run:
 			best_run = run
 			best = slot
+	return best
+
+
+## The wall of world parity `parity` farthest from any lamp: {at (world point on the wall face at floor level), n (from the cell to the wall)}.
+func _unlit_wall(parity: int, north_only := false) -> Dictionary:
+	var best := {"at": Vector3.ZERO, "n": Vector3.FORWARD}
+	var best_d := -1.0
+	for y in layout.size().y:
+		for x in layout.size().x:
+			var cell := Vector2i(x, y)
+			if layout.clearance(cell) != MazeLayout.Clearance.FULL:
+				continue
+			for d in Assembly.DIRS:
+				if not layout.has_wall(cell, d) or (north_only and d != MazeLayout.Dir.NORTH):
+					continue
+				var along_x := d == MazeLayout.Dir.NORTH or d == MazeLayout.Dir.SOUTH
+				if posmod(x if along_x else y, 2) != parity:
+					continue
+				var n := Assembly.dir_vector(d)
+				var at := layout.cell_to_world(cell) + n * 1.7
+				var nearest := INF
+				for l in asm.lamps:
+					nearest = minf(nearest, (l.omni as OmniLight3D).position.distance_to(at))
+				if nearest > best_d:
+					best_d = nearest
+					best = {"at": at, "n": n}
 	return best
 
 
