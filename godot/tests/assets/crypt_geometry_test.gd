@@ -172,6 +172,126 @@ func _check_probe() -> void:
 	assert_true(reached_y + 0.15 <= 3.95, "camera probe must stop at the 3.9 soffit, its top reached %.3f" % [reached_y + 0.15])
 
 
+## Defect (a), does it reach a player? The camera's arm is a sphere cast, not a ray (SpringArm3D + player.gd probe radius
+## 0.15). Fan from arm pivots under one arch, over the whole orbit pitch range. A sphere must not end in the arch masonry.
+## The ray count is printed only: it is what a ray-based consumer would do on the reversed soffit.
+func test_camera_arm_fan_stays_out_of_arch_masonry() -> void:
+	_check_arm_fan()
+	checkpoint("end")
+
+
+func _arch_at_open_edge() -> Dictionary:
+	var e := _open_edge_of_start()
+	for inst: Dictionary in asm.instances:
+		if inst.piece == "arch" and (inst.at as Vector3).distance_to(e) < 0.01:
+			return inst
+	return {}
+
+
+## True if a world point is inside the render masonry of this arch instance: in its 0.6 m depth, beyond the r=1.7 soffit.
+func _in_arch_masonry(arch: Dictionary, world: Vector3) -> bool:
+	var p := Transform3D(Basis(Vector3.UP, arch.yaw), arch.at).affine_inverse() * world
+	var above := p.y - 2.2
+	return absf(p.z) <= 0.3 and above >= 0.0 and p.y <= 4.15 and absf(p.x) <= 2.0 and Vector2(p.x, above).length() > 1.7
+
+
+func _check_arm_fan() -> void:
+	var arch := _arch_at_open_edge()
+	assert_false(arch.is_empty(), "arch at the start cell's open edge")
+	var arch_x := Basis(Vector3.UP, arch.yaw) * Vector3.RIGHT
+	var arch_z := Basis(Vector3.UP, arch.yaw) * Vector3.BACK
+	var s := _space()
+	var arm := 2.5
+	var counts := {"casts": 0, "sphere_in_masonry": 0, "ray_in_masonry": 0, "ray_past_soffit": 0}
+	var worst := INF
+	for lateral: float in [-1.3, -0.65, 0.0, 0.65, 1.3]:
+		for through: float in [-0.8, 0.0, 0.8]:
+			var pivot: Vector3 = arch.at + arch_x * lateral + arch_z * through + Vector3(0, 1.575, 0)
+			for pitch: float in [0.35, 0.8, 1.2]:
+				for k in 16:
+					var yaw := TAU * k / 16.0
+					var dir := Basis(Vector3.UP, yaw) * Vector3(0, sin(pitch), cos(pitch))
+					var travel := Checks.sphere_travel(s, pivot, pivot + dir * arm, 0.15)
+					var end := pivot + dir * travel
+					counts.casts += 1
+					if _in_arch_masonry(arch, end):
+						counts.sphere_in_masonry += 1
+					var p := Transform3D(Basis(Vector3.UP, arch.yaw), arch.at).affine_inverse() * end
+					if absf(p.z) <= 0.3 and p.y > 2.2:
+						worst = minf(worst, 1.7 - Vector2(p.x, p.y - 2.2).length())
+					var ray_d := Checks.ray_distance(s, pivot, pivot + dir * arm, COLLISION)
+					var render_d := Checks.ray_distance(s, pivot, pivot + dir * arm, RENDER)
+					var ray_end := pivot + dir * minf(ray_d, arm)
+					if _in_arch_masonry(arch, ray_end):
+						counts.ray_in_masonry += 1
+					if ray_d > render_d + 0.05:
+						counts.ray_past_soffit += 1
+	print("T017 arm fan under arch: %s; sphere centre closest to the soffit %.3f m" % [counts, worst])
+	assert_eq(counts.sphere_in_masonry, 0, "camera probe ends inside the arch masonry")
+
+
+func test_self_masonry_check_can_fail() -> void:
+	var arch := {"yaw": 0.0, "at": Vector3(100, 0, 100)}
+	assert_true(_in_arch_masonry(arch, Vector3(100, 4.0, 100)), "above the crown is masonry")
+	assert_false(_in_arch_masonry(arch, Vector3(100, 3.8, 100)), "below the crown is the opening")
+	assert_false(_in_arch_masonry(arch, Vector3(100, 4.0, 100.4)), "outside the depth is not masonry")
+	checkpoint("end")
+
+
+## Real spring arm: the real player stands under the arch at 8 yaws, default pitch.
+func test_real_player_camera_under_arch() -> void:
+	var arch := _arch_at_open_edge()
+	var arch_x := Basis(Vector3.UP, arch.yaw) * Vector3.RIGHT
+	pc = PlayerFactory.create_player()
+	add_child(pc)
+	var inside := 0
+	var samples := 0
+	var top := 0.0
+	for lateral: float in [-1.3, 0.0, 1.3]:
+		for k in 8:
+			pc.spawn_at(arch.at + arch_x * lateral, TAU * k / 8.0)
+			await automation().advance_frames(3)
+			var cam := pc.get_camera().global_position
+			samples += 1
+			top = maxf(top, cam.y)
+			if _in_arch_masonry(arch, cam):
+				inside += 1
+	_check_real_camera(samples, inside, top)
+	checkpoint("end")
+
+
+func _check_real_camera(samples: int, inside: int, top: float) -> void:
+	print("T017 real camera under arch: %d samples, %d in masonry, highest camera %.3f" % [samples, inside, top])
+	assert_eq(samples, 24, "every sample ran")
+	assert_eq(inside, 0, "real camera inside arch masonry")
+
+
+## Real jump under the arch near its leg, where the soffit is lowest: can the capsule reach the soffit at all?
+func test_real_jump_under_arch_leg() -> void:
+	var arch := _arch_at_open_edge()
+	var arch_x := Basis(Vector3.UP, arch.yaw) * Vector3.RIGHT
+	pc = PlayerFactory.create_player()
+	add_child(pc)
+	var lateral := 1.3
+	pc.spawn_at(arch.at + arch_x * lateral, 0.0)
+	await automation().advance_frames(5)
+	var ground := pc.global_position.y
+	await tap(GameActions.JUMP)
+	var apex := ground
+	for i in 50:
+		await automation().advance_frames(1)
+		apex = maxf(apex, pc.global_position.y)
+	_check_jump(apex - ground, pc.get_collision_height(), lateral)
+	checkpoint("end")
+
+
+func _check_jump(rise: float, height: float, lateral: float) -> void:
+	var soffit := 2.2 + sqrt(1.7 * 1.7 - lateral * lateral)
+	print("T017 jump at lateral %.2f: rise %.3f, capsule top %.3f, soffit there %.3f" % [lateral, rise, height + rise, soffit])
+	assert_true(rise > 0.3, "the jump happened")
+	assert_true(height + rise < soffit, "capsule top stays below the soffit")
+
+
 ## Winding of the shipped colonly shapes that face the room. arch: soffit faces (between the pier faces, below y 3.95) must
 ## face the opening's axis. A one-sided trimesh ignores back faces for rays, so a reversed soffit is not there for them.
 func test_arch_collision_winding() -> void:

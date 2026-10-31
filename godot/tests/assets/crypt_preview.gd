@@ -4,6 +4,7 @@
 ## Writes the engine's per-view counters to .captures/t017/<name>_counters.json (counts, not device performance).
 ## One scene for every capture: set env T017_PREVIEW="key=value,..." (keys below) before capture.py, for example
 ## T017_PREVIEW="srgb=0,first=6,max=3,tag=srgb_false_low". Reading the env var is the only outside input.
+## only=a+b picks views by name; magenta=1 paints the background magenta, so any pixel through a hole counts.
 extends Node3D
 
 const Assembly := preload("res://tests/assets/crypt_assembly.gd")
@@ -19,6 +20,8 @@ const CAM_H := 2.43
 @export var first_view := 0
 @export var max_views := 0
 
+var only := PackedStringArray()
+var magenta := false
 var layout: MazeLayout
 var asm: Assembly
 var views: Array[Dictionary] = []
@@ -38,6 +41,12 @@ func _ready() -> void:
 	get_viewport().use_occlusion_culling = use_occluders
 	var env := _game_environment()
 	if env:
+		print("T017 environment: background mode %d colour %s ambient source %d" % [env.background_mode, env.background_color, env.ambient_light_source])
+		if magenta:
+			env = env.duplicate() as Environment
+			env.background_mode = Environment.BG_COLOR
+			env.background_color = Color.MAGENTA
+			env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 		var w := WorldEnvironment.new()
 		w.environment = env
 		add_child(w)
@@ -48,6 +57,8 @@ func _ready() -> void:
 	_cam.make_current()
 	_make_views()
 	views = views.slice(first_view, first_view + max_views if max_views > 0 else views.size())
+	if not only.is_empty():
+		views = views.filter(func(v: Dictionary) -> bool: return v.name in only)
 	_show(0)
 
 
@@ -68,6 +79,10 @@ func _read_env() -> void:
 				first_view = int(kv[1])
 			"max":
 				max_views = int(kv[1])
+			"only":
+				only = kv[1].split("+")
+			"magenta":
+				magenta = kv[1] == "1"
 
 
 func _game_environment() -> Environment:
@@ -157,6 +172,28 @@ func _make_views() -> void:
 	for parity: int in [0, 1]:  # seen from the same side, parity selects the wall's face
 		var w := _unlit_wall(parity, true)
 		_add("wall_face_%d_unlit" % parity, w.at - w.n * 3.2 + Vector3(0, 2.0, 0), w.at + Vector3(0, 2.0, 0), 60.0)
+	# Reachable cameras over the open capital top: the arm reaches 1.575 + 2.5 sin(1.2) = 3.9 m at the lowest orbit pitch.
+	var free := _free_pier()
+	var top := free + Vector3(0.3, 2.2, 0.3)
+	_add("pier_top_orbit_high", free + Vector3(1.2, 3.3, 1.2), top)
+	_add("pier_top_orbit_mid", free + Vector3(1.0, 2.8, 0.8), top)
+	_add("pier_top_game_height", free + Vector3(1.3, 2.43, 0.6), top)
+	_add("pier_top_close", free + Vector3(0.75, 2.5, 0.65), top, 40.0)
+	# The low cell's flips at the game's field of view, from the eye of the fan rays that hit them.
+	_add("crawl_flip_game_fov_room", Vector3(37.3, 0.45, 30.7), Vector3(39.98, 0.946, 28.34))
+	_add("crawl_flip_game_fov_full", Vector3(34.7, 0.8, 30.7), Vector3(36.04, 1.108, 28.48))
+
+
+## World position of a corner with arches on all four sides (capital ledge on every side); the first found.
+func _free_pier() -> Vector3:
+	for y in range(1, layout.size().y):
+		for x in range(1, layout.size().x):
+			var c := Vector2i(x, y)  # cell whose north-west corner this is
+			var nw := c - Vector2i(1, 1)
+			if not (layout.has_wall(c, MazeLayout.Dir.NORTH) or layout.has_wall(c, MazeLayout.Dir.WEST)
+					or layout.has_wall(nw, MazeLayout.Dir.SOUTH) or layout.has_wall(nw, MazeLayout.Dir.EAST)):
+				return Vector3(x * layout.cell_size_m(), 0, y * layout.cell_size_m())
+	return Vector3(4, 0, 4)
 
 
 ## A lamp slot in the middle of the longest straight run of FULL cells that holds one; falls back to the first slot.
