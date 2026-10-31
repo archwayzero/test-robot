@@ -73,7 +73,7 @@ lands at 2.90-3.05 above the capital.
 - Use anisotropic filtering on kit materials (`texture_filter` 5, linear mipmap anisotropic): the imported sampler is
   filter 3 and visibly blurs floors and walls at grazing angles.
 - Keep lights near neutral: the albedo is already warm, and warm lamps push walls past the reference colour.
-- `ceiling_crouch` and `ceiling_crawl` rely heavily on COLOR_0 and are not acceptable without the flag above.
+- `ceiling_crouch` and `ceiling_crawl` use the strongest COLOR_0 shading in the kit; check them under real game light.
 - Review renders use 96 lights in Cycles. Judge the shipped look in a Mobile scene, not from those renders.
 - Rely on culling: a full FULL-cell maze is about 730k tris (seed 20261025), against 300k per frame.
 
