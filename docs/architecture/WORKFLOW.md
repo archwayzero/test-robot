@@ -50,7 +50,8 @@ Measured peaks (dev machine: 28 GB RAM, 24 GB swap, 28 threads; each job run alo
 |---|---|---|
 | Godot capture, accurate, maze-sized test scene | ~0.5 GB / 0.7 GB | 6 s |
 | Godot recording, 20 s, accurate | ~0.3 GB / 0.5 GB | 16 s |
-| Godot `--import` | ~0.6 GB | ~10 s |
+| Godot `--import`, incremental | ~0.6 GB | ~10 s |
+| Godot `--import`, clean cache with crypt_kit + wall_lamp | ~2.1 GB / 1.5 GB | not measured |
 | Headless test suite (core) | < 0.1 GB | 1 s |
 | Blender 5.2.3 Cycles CPU still, 1024 px, 32 samples, provided hero.glb (9.7 MB) | ~1.0 GB / 1.15 GB | 5 s |
 | Blender 5.2.3 Cycles CPU bake, 3 passes at 2048x2048, 16 samples, procedural material | ~0.8 GB / 1.0 GB | 16 s |
