@@ -343,12 +343,13 @@ func test_lamp_meshes_merged_without_collision() -> void:
 # --- collision ----------------------------------------------------------------------------------------------
 
 func test_collision_matches_has_wall_on_every_edge() -> void:
-	assert_eq(Rules.collision_errors(_space(), layout, 0.4), PackedStringArray())
-	assert_eq(Rules.collision_errors(_space(), layout, 0.7), PackedStringArray())
+	for height in Rules.COLLISION_HEIGHTS:
+		assert_eq(Rules.collision_errors(_space(), layout, height), PackedStringArray(), "height %.1f" % height)
 
 
 func test_collision_check_fails_against_another_layout() -> void:
 	assert_true(Rules.collision_errors(_space(), other_worlds[0].get_layout(), 0.4).size() > 100, "seed 42 walls differ")
+	assert_true(Rules.collision_errors(_space(), other_worlds[0].get_layout(), 2.1).size() > 100, "at the top height too")
 
 
 func test_collision_layer_is_world_only() -> void:
@@ -361,6 +362,25 @@ func test_collision_layer_is_world_only() -> void:
 
 func test_player_passes_at_full_crouch_and_crawl() -> void:
 	assert_eq(Rules.passage_errors(_space(), layout), PackedStringArray())
+
+
+func test_passage_check_reaches_the_piers_at_a_wider_offset() -> void:
+	# 1.45 m to the side puts a 0.3 m body 0.05 m into a pier: the offset really moves the body.
+	assert_true(Rules.passage_errors(_space(), layout, 1.45).size() > 100, "piers block a body that wide")
+
+
+func test_body_has_the_real_shape_and_radius() -> void:
+	var crawl := Rules.body_shape(0.5) as CylinderShape3D
+	assert_not_null(crawl, "crawl body is a cylinder")
+	assert_almost_eq(crawl.radius, 0.3, 0.0001)
+	assert_almost_eq(crawl.height, 0.5, 0.0001)
+	var crouch := Rules.body_shape(1.0) as CapsuleShape3D
+	assert_not_null(crouch, "crouch body is a capsule")
+	assert_almost_eq(crouch.radius, 0.3, 0.0001)
+	# Cell (0, 0) has the boundary wall face at x = 0.3: the old 0.28 radius would pass at 0.59.
+	for height: float in [0.5, 1.0, 1.75]:
+		assert_true(Rules.body_blocked(_space(), Vector3(0.59, 0, 2.0), height), "radius 0.3 reaches the wall, height %.2f" % height)
+		assert_false(Rules.body_blocked(_space(), Vector3(0.61, 0, 2.0), height), "and stops short of it, height %.2f" % height)
 
 
 func test_low_cells_block_the_next_stance_up() -> void:
@@ -378,10 +398,10 @@ func test_passage_check_fails_for_a_standing_capsule_in_a_low_cell() -> void:
 	for y in layout.size().y:
 		for x in layout.size().x:
 			var c := Vector2i(x, y)
-			if layout.clearance(c) != MazeLayout.Clearance.FULL and Rules.capsule_blocked(_space(), layout.cell_to_world(c), 1.75):
+			if layout.clearance(c) != MazeLayout.Clearance.FULL and Rules.body_blocked(_space(), layout.cell_to_world(c), 1.75):
 				blocked += 1
 	assert_eq(blocked, 6, "stand capsule blocked in all 6 low cells")
-	assert_true(Rules.capsule_blocked(_space(), Vector3(0.4, 0, 2.0), 1.0), "and across a wall face")
+	assert_true(Rules.body_blocked(_space(), Vector3(0.4, 0, 2.0), 1.0), "and across a wall face")
 
 
 func test_boundary_is_closed() -> void:

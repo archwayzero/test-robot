@@ -5,6 +5,12 @@ extends RefCounted
 const Assembly := preload("res://modules/maze/internal/maze_assembly.gd")
 const OMNI_LIMIT := 8
 const WALL_RAY_DISTANCE := 1.7  # cell centre to wall face
+const BODY_RADIUS := 0.3
+const STAND_HEIGHT := 1.75
+const CROUCH_HEIGHT := 1.0
+const CRAWL_HEIGHT := 0.5
+const FLOOR_GAP := 0.03  # the body stands this far above the floor in the query, so the floor itself never counts
+const PASSAGE_LATERAL := 1.35  # 0.05 m short of a pier face for a 0.3 m body: openings are 3.4 m between piers
 const OCCLUDER_TOP := 4.15
 const OCCLUDER_WALL_REACH := 0.25
 const OCCLUDER_EPS := 0.001
@@ -183,33 +189,62 @@ static func lamp_errors(mount: Transform3D, slot: Dictionary, layout: MazeLayout
 	return errors
 
 
-## Rays from cell centres over every edge, at `height`: hit exactly where has_wall, at the wall face.
+## Below the groin springing (2.2): the ray stays off the vault, which is coarse by contract.
+const COLLISION_HEIGHTS: Array[float] = [0.1, 0.4, 0.7, 1.2, 1.7, 2.1]
+
+
+static func _underside(cl: MazeLayout.Clearance) -> float:
+	match cl:
+		MazeLayout.Clearance.CROUCH:
+			return 1.3
+		MazeLayout.Clearance.CRAWL:
+			return 0.75
+	return INF
+
+
+## Rays from cell centres over every edge, at `height`: hit exactly where has_wall, at the wall face. Rays that would
+## start inside a low ceiling, or run into the side of a low neighbour through an open edge, say nothing and are skipped.
 static func collision_errors(space: PhysicsDirectSpaceState3D, layout: MazeLayout, height: float) -> PackedStringArray:
 	var errors := PackedStringArray()
 	for y in layout.size().y:
 		for x in layout.size().x:
 			var c := Vector2i(x, y)
+			if height >= _underside(layout.clearance(c)):
+				continue
 			for d in Assembly.DIRS:
+				var wall := layout.has_wall(c, d)
+				if not wall and height >= _underside(layout.clearance(c + Assembly.dir_offset(d))):
+					continue
 				var from := layout.cell_to_world(c) + Vector3(0, height, 0)
 				var to := from + Assembly.dir_vector(d) * layout.cell_size_m()
 				var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, to, 1))
-				var wall := layout.has_wall(c, d)
 				if wall != (not hit.is_empty()):
-					errors.append("%s dir %d wall %s hit %s" % [c, d, wall, not hit.is_empty()])
+					errors.append("%s dir %d height %.1f wall %s hit %s" % [c, d, height, wall, not hit.is_empty()])
 				elif wall and absf(from.distance_to(hit.position) - WALL_RAY_DISTANCE) > 0.01:
-					errors.append("%s dir %d face at %.3f" % [c, d, from.distance_to(hit.position)])
+					errors.append("%s dir %d height %.1f face at %.3f" % [c, d, height, from.distance_to(hit.position)])
 	return errors
 
 
-## True if a capsule of `height` standing on the floor at `at` touches world geometry on layer 1.
-static func capsule_blocked(space: PhysicsDirectSpaceState3D, at: Vector3, height: float) -> bool:
-	var shape := CapsuleShape3D.new()
-	shape.radius = minf(0.28, height * 0.5 - 0.01)
-	shape.height = height
+## The player's body: capsule, or a cylinder when the height is under two radii (crawl). maze does not depend on player,
+## so these are test constants, equal to the values in the player module's CLAUDE.md.
+static func body_shape(height: float) -> Shape3D:
+	if height < BODY_RADIUS * 2.0:
+		var cylinder := CylinderShape3D.new()
+		cylinder.radius = BODY_RADIUS
+		cylinder.height = height
+		return cylinder
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = BODY_RADIUS
+	capsule.height = height
+	return capsule
+
+
+## True if the body of `height` standing on the floor at `at` touches world geometry on layer 1.
+static func body_blocked(space: PhysicsDirectSpaceState3D, at: Vector3, height: float) -> bool:
 	var q := PhysicsShapeQueryParameters3D.new()
-	q.shape = shape
+	q.shape = body_shape(height)
 	q.collision_mask = 1
-	q.transform = Transform3D(Basis.IDENTITY, at + Vector3(0, height * 0.5 + 0.03, 0))
+	q.transform = Transform3D(Basis.IDENTITY, at + Vector3(0, height * 0.5 + FLOOR_GAP, 0))
 	return not space.intersect_shape(q, 1).is_empty()
 
 
@@ -217,14 +252,15 @@ static func capsule_blocked(space: PhysicsDirectSpaceState3D, at: Vector3, heigh
 static func stance_height(cl: MazeLayout.Clearance) -> float:
 	match cl:
 		MazeLayout.Clearance.CROUCH:
-			return 1.0
+			return CROUCH_HEIGHT
 		MazeLayout.Clearance.CRAWL:
-			return 0.5
-	return 1.75
+			return CRAWL_HEIGHT
+	return STAND_HEIGHT
 
 
-## Each open edge, walked in 5 steps from centre to centre by the tallest stance both cells allow.
-static func passage_errors(space: PhysicsDirectSpaceState3D, layout: MazeLayout) -> PackedStringArray:
+## Each open edge, walked in 5 steps from centre to centre by the tallest stance both cells allow, on the centre line
+## and `lateral` metres to each side.
+static func passage_errors(space: PhysicsDirectSpaceState3D, layout: MazeLayout, lateral := PASSAGE_LATERAL) -> PackedStringArray:
 	var errors := PackedStringArray()
 	for y in layout.size().y:
 		for x in layout.size().x:
@@ -236,13 +272,17 @@ static func passage_errors(space: PhysicsDirectSpaceState3D, layout: MazeLayout)
 				var height := minf(stance_height(layout.clearance(c)), stance_height(layout.clearance(n)))
 				var a := layout.cell_to_world(c)
 				var b := layout.cell_to_world(n)
-				for i in 5:
-					if capsule_blocked(space, a.lerp(b, i / 4.0), height):
-						errors.append("%s to %s blocked at step %d for height %.2f" % [c, n, i, height])
+				var v := Assembly.dir_vector(d)
+				var side := Vector3(v.z, 0, v.x)
+				for off: float in [0.0, -lateral, lateral]:
+					for i in 5:
+						if body_blocked(space, a.lerp(b, i / 4.0) + side * off, height):
+							errors.append("%s to %s blocked at step %d, side %.2f, height %.2f" % [c, n, i, off, height])
 	return errors
 
 
-## A low cell must block the next stance up (player stand-up checks rely on it).
+## A low cell must block the next stance up (player stand-up checks rely on it), and let its own stance through,
+## at the centre and towards each corner.
 static func low_cell_errors(space: PhysicsDirectSpaceState3D, layout: MazeLayout) -> PackedStringArray:
 	var errors := PackedStringArray()
 	for y in layout.size().y:
@@ -251,11 +291,13 @@ static func low_cell_errors(space: PhysicsDirectSpaceState3D, layout: MazeLayout
 			var cl := layout.clearance(c)
 			if cl == MazeLayout.Clearance.FULL:
 				continue
-			var taller := 1.75 if cl == MazeLayout.Clearance.CROUCH else 1.0
-			if not capsule_blocked(space, layout.cell_to_world(c), taller):
-				errors.append("cell %s clearance %d lets height %.2f through" % [c, cl, taller])
-			if capsule_blocked(space, layout.cell_to_world(c), stance_height(cl)):
-				errors.append("cell %s clearance %d blocks its own stance" % [c, cl])
+			var taller := STAND_HEIGHT if cl == MazeLayout.Clearance.CROUCH else CROUCH_HEIGHT
+			for off: Vector3 in [Vector3.ZERO, Vector3(1, 0, 1), Vector3(1, 0, -1), Vector3(-1, 0, 1), Vector3(-1, 0, -1)]:
+				var at := layout.cell_to_world(c) + off * PASSAGE_LATERAL
+				if not body_blocked(space, at, taller):
+					errors.append("cell %s clearance %d lets height %.2f through at %s" % [c, cl, taller, off])
+				if body_blocked(space, at, stance_height(cl)):
+					errors.append("cell %s clearance %d blocks its own stance at %s" % [c, cl, off])
 	return errors
 
 
