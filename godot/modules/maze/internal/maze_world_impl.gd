@@ -14,7 +14,8 @@ const WORLD_LAYER := 1
 ## Real cameras reach it: the crawl default (y 0.862) shows 281 px, crouch and stand show it when orbited (up to about
 ## 441 px at real cameras, up to 1466 px at the lowest fixed eye tried). The colour change is at most 8 levels, a black
 ## slit in a dark zone. Removing it is the game module's job: match background output to fog output.
-## 38 m would close it but puts the raw worst view over the 300,000 triangle budget.
+## 38 m would close it but puts the raw worst view over the 300,000 triangle budget with the hero: 294,630 + 19,949
+## = 314,579.
 ## Follow the fog if it moves.
 const CHUNK_DRAW_DISTANCE := 36.0
 ## Boxes inside the masonry: T017 validated 0.5 m thick walls; the low ceilings stay clear of their 0.138 m rubble.
