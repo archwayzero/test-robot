@@ -256,10 +256,16 @@ func test_real_player_camera_under_arch() -> void:
 			var cam := pc.get_camera().global_position
 			samples += 1
 			top = maxf(top, cam.y)
-			if _in_arch_masonry(arch, cam):
-				inside += 1
+			inside += _masonry_hit(arch, cam)
 	_check_real_camera(samples, inside, top)
 	checkpoint("end")
+
+
+## 1 if the camera is in this arch's masonry, else 0. A plain helper: TEST_PLAN keeps the `if` out of code after an await.
+func _masonry_hit(arch: Dictionary, cam: Vector3) -> int:
+	if _in_arch_masonry(arch, cam):
+		return 1
+	return 0
 
 
 func _check_real_camera(samples: int, inside: int, top: float) -> void:
