@@ -11,7 +11,7 @@
    0.79,
    0.64
   ],
-  "tone": 0.1,
+  "tone": 0.14,
   "warm": 0.022,
   "patch": 0.055,
   "rim": 0.0,
@@ -29,7 +29,8 @@
   "pocket_w": 0.012,
   "pocket_lo": -0.4,
   "pocket_hi": 1.2,
-  "pocket_low": 6
+  "pocket_low": 6,
+  "tone_low": -0.75
  },
  "ashlar_maps": {
   "warp": 0.005,
