@@ -82,9 +82,9 @@ var _pitch_limit := PITCH_MIN
 var _visual_fade := 0.0
 ## Smoothed sideways view offset (m) under low ceilings (target before the wall clamp in _place_rig()).
 var _shoulder := 0.0
-## GeometryInstance3D nodes under $Visual (rebuilt when its children change) and the
-## transparency last applied to them (-1 = never / list rebuilt).
-var _fade_geoms: Array[GeometryInstance3D] = []
+## Meshes under $Visual (rebuilt when its children change) and the fade last applied to them (-1 = never / list
+## rebuilt).
+var _fade_geoms: Array[MeshInstance3D] = []
 var _fade_geoms_dirty := true
 var _applied_fade := -1.0
 var _orbit_finger := -1
@@ -457,7 +457,7 @@ func _ray_distance(from: Vector3, to: Vector3, full: float) -> float:
 	return from.distance_to(hit["position"])
 
 
-## Fades (GeometryInstance3D.transparency) and finally hides the player visual when the camera is close to the
+## Fades (alpha copies of the materials) and finally hides the player visual when the camera is close to the
 ## body, so the view ahead stays visible. Generic over whatever meshes live under $Visual.
 func _update_fade(delta: float) -> void:
 	if delta <= 0.0:
@@ -485,7 +485,7 @@ func get_body_distance(point: Vector3) -> float:
 	return point.distance_to(Vector3(global_position.x, y, global_position.z))
 
 
-## Sets the transparency of the cached GeometryInstance3D list, only when the value (or the list) changed.
+## Applies the fade to the cached mesh list, only when the value (or the list) changed.
 func _apply_fade(fade: float) -> void:
 	if _fade_geoms_dirty:
 		_fade_geoms.clear()
@@ -497,12 +497,32 @@ func _apply_fade(fade: float) -> void:
 	_applied_fade = fade
 	for g in _fade_geoms:
 		if is_instance_valid(g):
-			g.transparency = fade
+			_fade_mesh(g, fade)
+
+
+## GeometryInstance3D.transparency left the hero opaque at 0.9 (Mobile renderer, render checked in T019), so the fade
+## swaps in alpha copies of its materials, and removes them at 0 so the opaque materials stay in use normally.
+func _fade_mesh(mesh: MeshInstance3D, fade: float) -> void:
+	for s in mesh.get_surface_override_material_count():
+		if fade <= 0.0:
+			mesh.set_surface_override_material(s, null)
+			continue
+		var faded := mesh.get_surface_override_material(s) as StandardMaterial3D
+		if faded == null:
+			faded = _faded_copy(mesh.mesh.surface_get_material(s))
+			mesh.set_surface_override_material(s, faded)
+		faded.albedo_color.a = 1.0 - fade
+
+
+func _faded_copy(source: Material) -> StandardMaterial3D:
+	var copy := source.duplicate() as StandardMaterial3D if source is StandardMaterial3D else StandardMaterial3D.new()
+	copy.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
+	return copy
 
 
 func _collect_geoms(node: Node) -> void:
-	if node is GeometryInstance3D:
-		_fade_geoms.append(node as GeometryInstance3D)
+	if node is MeshInstance3D:
+		_fade_geoms.append(node as MeshInstance3D)
 	for c in node.get_children():
 		_collect_geoms(c)
 
