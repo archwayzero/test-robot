@@ -343,6 +343,17 @@ def main():
     replace_image(js, b, "stone_ashlar_color", bright)
     write(OUT / "ashlar_top_course_bright.glb", js, b)
 
+    js, b = read()   # the pier's course 0 back on the pale stones of the shaft's own U, as before T039 pass 4
+    p, pos, tris = mesh_arrays(js, b, "pier")
+    uv = view(js, b, p["attributes"]["TEXCOORD_0"])
+    t = pos[tris]
+    n = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+    new, old = (0.85, 0.41, 0.90, 0.26), (0.10, 0.41, 0.72, 1.03)   # faces 0-3 of build_pier: glTF normals +Z, +X, -Z, -X
+    for k, (axis, sign) in enumerate(((2, 1), (0, 1), (2, -1), (0, -1))):
+        low = (sign * n[:, axis] > 0.999 * np.linalg.norm(n, axis=1)) & (t[:, :, 1].max(1) <= 0.3201)
+        uv[np.unique(tris[low]), 0] += old[k] - new[k]
+    write(OUT / "pier_base_pale.glb", js, b)
+
     js, b = read()   # non-tileable image where a tile belongs (also pushes texture memory over budget)
     imgs = {i["name"]: i for i in js["images"]}
     imgs["stone_floor_color"]["bufferView"] = imgs["stone_ashlar_color"]["bufferView"]

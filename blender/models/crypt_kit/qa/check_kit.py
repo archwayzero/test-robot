@@ -735,6 +735,39 @@ def check_wall_lags(tab, band):
     return res
 
 
+def check_pier_base(vis, band):
+    """T039: a pale bottom course under the height soiling reads as an orange band. On each shaft face, from the GLB's own UVs: mean
+    base colour of course 0 no paler than the mean of courses 1 and 2, sRGB luma, no light or soiling."""
+    G = "3c pier base"
+    if "pier" not in vis or "band_a_course_edges_m" not in ATLAS:
+        return
+    edges = ATLAS["band_a_course_edges_m"]
+    m = vis["pier"]
+    t, n = tri_normals(m)
+    uv = m["uv1"][m["tris"]]
+    r0, r1 = ATLAS["band_a_rows"]
+    h, w = band.shape[:2]
+    luma = band[..., :3] @ np.array([.2126, .7152, .0722])
+    rng = np.random.RandomState(39)
+    bary = rng.dirichlet((1, 1, 1), 4000)
+    area = np.linalg.norm(n, axis=1)
+    for name, axis, sign in (("+X", 0, 1), ("-X", 0, -1), ("+Z", 2, 1), ("-Z", 2, -1)):
+        tot = np.zeros(3)
+        wt = np.zeros(3)
+        for k in np.flatnonzero((sign * n[:, axis] > 0.999 * area) & (t[:, :, 1].max(1) <= 1.9 + TOL) & (area > 0)):
+            y = bary @ t[k, :, 1]
+            q = bary @ uv[k]
+            cols = (np.mod(q[:, 0], 1.0) * w).astype(int) % w
+            rows = np.clip((q[:, 1] * ATLAS["atlas_size"] - r0) / (r1 - r0) * h, 0, h - 1).astype(int)
+            for c in range(3):
+                on = (y >= edges[c]) & (y < edges[c + 1])
+                tot[c] += area[k] * luma[rows[on], cols[on]].sum()
+                wt[c] += area[k] * on.sum()
+        c0, c1, c2 = tot / np.maximum(wt, 1e-9)
+        rec(G, "pier base %s course 0 not paler than courses 1-2" % name, c0 <= 0.5 * (c1 + c2),
+            "%.3f / %.3f (courses 1, 2: %.3f %.3f)" % (c0, 0.5 * (c1 + c2), c1, c2))
+
+
 def band_seams(G, nm, band, du):
     """Old test: wrap against the p90 of interior row pairs. That let a real step through, because p90 sits well below a joint.
     New test (printed with the old one): wrap, and the pairs the wall really shows at z=2 and z=4, against the MEDIAN INTERIOR BED
@@ -855,6 +888,8 @@ def main():
     check_uv2(vis)
     sizes, mb = check_materials(g, b, vis)
     lags = check_wall_lags(courses, ASHLAR_BAND[0]) if ASHLAR_BAND else {}
+    if ASHLAR_BAND:
+        check_pier_base(vis, ASHLAR_BAND[0])
     dims["wall_lags_unlit"] = {str(k): {str(m_): round(v, 3) for m_, v in d.items()} for k, d in lags.items()}
     fails = [r for r in results if not r["ok"]]
     for r in results:

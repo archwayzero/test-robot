@@ -53,6 +53,7 @@ INTENDED = {
     "pier_no_top": "pier capital has a top face",
     "ceiling_triangle_flipped": "ceiling_crawl winding consistent",
     "ashlar_top_course_bright": "wall no course stripes",
+    "pier_base_pale": "pier base",
 }
 
 

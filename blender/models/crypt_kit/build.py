@@ -104,6 +104,9 @@ C_V0, C_V1 = v_of_row(C_ROWS[1]), v_of_row(C_ROWS[0])
 CAP_JOINTS = [0.35, 1.20, 1.55, 2.40, 2.90, 3.35]   # top course: 0.35-1.20 and 1.55-2.40 are the capital stones
 STONE_LEN = (0.35, 1.00)
 CAP_U = (0.775 / 4, 1.975 / 4)
+# U of the pier's course 0, per face. Under the height soiling a pale bottom course reads as an orange band: each of these windows
+# is no paler than courses 1-2 of its own face. Faces 0 and 2 are opposite, so they may share stones (T039).
+PIER_BASE_U = (0.85, 0.41, 0.90, 0.26)
 ASHLAR_COURSES = [0.32, 0.24, 0.30, 0.22, 0.33, 0.25, 0.34]  # bottom to top, sum 2.0 (last one: capital course)
 BOND_GAPS = []  # smallest head joint offset, m, per course of the generated band A, over the touching pairs on the wall
 STONES = []     # band A stones as (u0, u1, z0, z1) in metres, filled by block_field; the rubble blocks map into these
@@ -945,13 +948,15 @@ def build_pier(mat):
     rng = np.random.RandomState(31)
     half = PIER / 2 + PIER_PROUD
     # shaft: square with a worn, slightly irregular chamfer. Rings at these heights:
-    levels = [0.0, 0.35, 0.8, 1.4, SHAFT_TOP]
+    levels = [0.0, COURSE_EDGES[1], 0.8, 1.4, SHAFT_TOP]     # first ring on the bed joint, so that course 0 can have its own U
     ch = [[0.012 + 0.016 * rng.uniform() for _ in levels] for _ in range(4)]
     for k in range(4):              # k = which side; rotate +90 deg each side
         ca, sa = [(1, 0), (0, 1), (-1, 0), (0, -1)][k]
         rot = lambda x, y: (ca * x - sa * y, sa * x + ca * y)
         uo = 0.31 * k + 0.1         # the four faces show different stones
+        shaft_u = uo
         for j in range(len(levels) - 1):
+            uo = PIER_BASE_U[k] if j == 0 else shaft_u
             z0, z1 = levels[j], levels[j + 1]
             c0r, c1r = ch[k][j], ch[k][j + 1]                  # chamfer at this side's +s end
             c0l, c1l = ch[(k + 3) % 4][j], ch[(k + 3) % 4][j + 1]
