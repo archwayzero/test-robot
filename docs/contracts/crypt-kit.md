@@ -86,3 +86,7 @@ lands at 2.90-3.05 above the capital.
 Wrought-iron bracket with an oil lamp/candle, origin at the wall mounting point, light emitter at local
 (0, 0.25, 0.35). <= 1,000 triangles, 1 material + emissive flame. The `maze` module places it at `lamp_slots()` at
 y = 2.0 and adds the light source; the GLB contains no lights.
+Orientation: this is the one exception to the asset contract's -Z forward. The wall face is local z = 0 and the lamp
+projects along local **+Z**, so the emitter stands 0.35 m out of the wall. `maze` rotates each lamp so local +Z points
+from the slot's wall into the cell. Scale the flame from its base node `wall_lamp_flame`; dim it with
+`emission_energy_multiplier` on its material. The lamp has no collision and its lowest point at y = 2.0 is 1.825 m.
