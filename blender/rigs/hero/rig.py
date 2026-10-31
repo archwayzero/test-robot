@@ -6,6 +6,9 @@ Build (reads blender/models/hero/hero_model.blend, writes the rig .blend):
 Export (GLB with skin + animations):
   python3 tools/qa/memguard.py -- blender -b blender/rigs/hero/hero_rig.blend -P tools/blender/export_gltf.py -- \
       --out godot/assets/hero/rig/hero.glb
+Texture import settings (ASTC 4x4, after the export and the Godot import; --verify reads the .ctex headers):
+  python3 blender/rigs/hero/import_settings.py
+  python3 blender/rigs/hero/import_settings.py --verify
 Checks (table) and review renders:
   python3 tools/qa/memguard.py -- blender -b blender/rigs/hero/hero_rig.blend -P blender/rigs/hero/qa/check_rig.py
   python3 tools/qa/memguard.py -- blender -b blender/rigs/hero/hero_rig.blend -P blender/rigs/hero/qa/render_strips.py
