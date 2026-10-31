@@ -193,6 +193,11 @@ def check_dims(vis, col):
         wide = p[np.abs(p[:, 0]) > 0.31]
         near(G, "capital bottom (shaft top 1.9)", p[p[:, 1] > 1.8][:, 1].min(), 1.9)
         rec(G, "capital only above 1.9", wide[:, 1].min() >= 1.9 - TOL, "%.4f" % wide[:, 1].min())
+    if "pier" in col:
+        c = col["pier"]["pos"]
+        c = c[c[:, 1] < 1.85]
+        for ax, lab in ((0, "x"), (2, "z")):
+            rec(G, "pier shaft collision exactly 0.6 in %s" % lab, abs(np.ptp(c[:, ax]) - 0.6) <= EXACT, "%.7f" % np.ptp(c[:, ax]))
     if "arch" in vis:
         p = vis["arch"]["pos"]
         lo, hi = bbox(p)

@@ -185,6 +185,10 @@ def main():
                    lambda x, y, z: (x * 0.995 if y < 1.89 else x, y, z * 0.995 if y < 1.89 else z))
     write(OUT / "pier_behind_wall.glb", js, b)
 
+    js, b = read()   # pier collision follows the 2 mm proud shaft: it must stay exactly 0.6, or capsules catch on wall lines
+    edit_positions(js, b, node(js, "pier-colonly")["mesh"], lambda x, y, z: (x * 1.0067, y, z * 1.0067))
+    write(OUT / "pier_collision_wide.glb", js, b)
+
     js, b = read()   # non-tileable image where a tile belongs (also pushes texture memory over budget)
     imgs = {i["name"]: i for i in js["images"]}
     imgs["stone_floor_color"]["bufferView"] = imgs["stone_ashlar_color"]["bufferView"]

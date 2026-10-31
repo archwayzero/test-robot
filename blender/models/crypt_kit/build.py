@@ -35,6 +35,7 @@ import numpy as np
 FLOOR_MAX_RUN = 1.5  # m, longest straight floor joint
 FLOOR_RUN_M = 0.0    # as built, set by rect_field
 MORTAR_CM = 0.0      # as built, set by stone_maps
+LAST_IDS = None      # stone id per pixel of the last stone_maps call
 HERE = os.path.dirname(os.path.abspath(__file__))
 TEX_DIR = os.path.join(HERE, "textures")
 BLEND = os.path.join(HERE, "crypt_kit_model.blend")
@@ -293,6 +294,8 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
         ids, d, n = rect_field(h, w, ppm, seed, rect_cells, warp)
     else:
         ids, d, n = block_field(h, w, ppm, courses, seed, len_range, warp, force)
+    global LAST_IDS
+    LAST_IDS = ids
     rng = np.random.RandomState(seed + 7)
     pu, pv = w / ppm, h / ppm
 
@@ -405,7 +408,7 @@ def plaster_maps(h, w, ppm, seed):
     crack = 1 - sstep(0.0, 0.035, np.abs(noise(h, w, 3.0, seed + 3)))
     crack = crack * sstep(0.7, 1.6, noise(h, w, 3.2, seed + 4))
     height = 0.0045 * n_lo + 0.0010 * n_mid + 0.00012 * n_hi - 0.0010 * crack
-    pal = np.array([0.860, 0.825, 0.745])
+    pal = np.array([0.822, 0.788, 0.712])
     # the blotch is mapped to all four webs of every bay, so at low frequency it is what shows bays repeating: keep it faint
     v = 1.0 + 0.012 * n_lo + 0.024 * n_mid + 0.010 * n_hi
     alb = pal * v[..., None]
@@ -439,6 +442,26 @@ def to_image(name, arr, srgb):
     return out
 
 
+def even_voussoirs(alb, ids, ppm):
+    """One strip serves every arch, so a pale or grey stone is a landmark at the same spot of every arch; at the strip's ends
+    (which meet in one stone) it is a pale band at both feet. Per stone: limit the brightness to +-6 %, +-2 % within 0.6 m of a
+    foot, and pull the hue to the strip's mean. Darker joints and the texture inside a stone are untouched."""
+    h, w = ids.shape
+    n = ids.max() + 1
+    flat = ids.ravel()
+    area = np.bincount(flat, minlength=n).astype(np.float64)
+    mean = np.stack([np.bincount(flat, alb[..., c].ravel(), n) for c in range(3)], 1) / np.maximum(area, 1)[:, None]
+    foot = np.full(n, 1e9)
+    x = (np.arange(w) + 0.5) / ppm
+    np.minimum.at(foot, flat, np.broadcast_to(np.minimum(x, w / ppm - x), (h, w)).ravel())
+    every = (alb.reshape(-1, 3).mean(0))
+    dev = mean.mean(1) / every.mean() - 1
+    lim = np.where(foot < 0.6, 0.02, 0.06)
+    want = every[None, :] * (1 + np.clip(dev, -lim, lim))[:, None]
+    gain = (want / np.maximum(mean, 1e-4)) ** 0.85
+    return alb * gain[ids]
+
+
 def half(a):
     return 0.25 * (a[0::2, 0::2] + a[1::2, 0::2] + a[0::2, 1::2] + a[1::2, 1::2])
 
@@ -457,12 +480,13 @@ def build_textures():
     # band B: voussoirs. One course across, irregular joints along the arc. Generated on a square-ish torus in metres.
     bh, bw = B_ROWS[1] - B_ROWS[0], ATLAS
     bppm = ATLAS / B_LEN
-    pal_b = dict(pal_a, tone=0.11, warm=0.02, stain=0.20, stone=[0.905, 0.825, 0.645], tone_hp=0, patch=0.04)
+    pal_b = dict(pal_a, tone=0.11, warm=0.02, stain=0.14, rim=0.09, stone=[0.965, 0.885, 0.695], tone_hp=0, patch=0.04)
     b_alb, b_h, b_r = stone_maps(bh, bw, bppm, [bh / bppm], 1604, (0.17, 0.27), pal_b, joint=0.003, wear=0.008,
                                  relief=0.008, warp=0.005)
     # one strip serves every arch: a metre-scale gradient along it would show at the same spot of every arch, so take it out
     lum_b = b_alb.mean(2)
     b_alb = b_alb * (lum_b.mean() / blur(lum_b, 0.7 * bppm))[..., None]
+    b_alb = even_voussoirs(b_alb, LAST_IDS, bppm)
     # the soffit carries the limewash of the crypt.jpg arches: paler and lower contrast than the ring on the arch face.
     # Its edge is brushed: it wanders over 0.20-0.35 m from the arch mid-plane, per side, along the arc.
     fold = np.abs(((np.arange(bh) + 0.5) / bh - 0.5) * B_DEPTH)[:, None]
@@ -673,12 +697,22 @@ def grime(z):
     return (1.0 - 0.34 * damp - 0.14 * soot, 1.0 - 0.38 * damp - 0.16 * soot, 1.0 - 0.46 * damp - 0.20 * soot)
 
 
+def arch_grime(z):
+    """Arch foot: settles into the shade of the capital, so that the ring does not end in a clean band on the impost."""
+    t = np.clip((z - SPRING) / 0.65, 0.0, 1.0)
+    f = 1.0 - 0.13 * (1.0 - t * t * (3 - 2 * t))
+    return (f, f * 0.985, f * 0.96)
+
+
 def add_grime(ob, height=True):
     me = ob.data
     att = me.color_attributes.new("Col", "FLOAT_COLOR", "POINT")
     data = []
     for v in me.vertices:
-        c = grime(v.co.z) if height else VCOL.get(ob.name, {}).get(v.index, (1.0, 1.0, 1.0))
+        if ob.name == "arch":
+            c = arch_grime(v.co.z)
+        else:
+            c = grime(v.co.z) if height else VCOL.get(ob.name, {}).get(v.index, (1.0, 1.0, 1.0))
         data.extend((c[0], c[1], c[2], 1.0))
     att.data.foreach_set("color", data)
     me.color_attributes.active_color = att
