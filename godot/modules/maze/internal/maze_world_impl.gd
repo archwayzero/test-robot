@@ -10,8 +10,10 @@ const CHUNK_CELLS := 2
 const WORLD_LAYER := 1
 ## Measured to the chunk centre. Past the fog end (26 m) the surfaces are flat fog colour, but a culled chunk is not:
 ## where the chunk holding a straight run's end wall drops out, the darker background shows as a rectangle. 34 m still
-## does; 36 m clears the game seed's longest runs from a standing camera. One gap stays on that seed: from 1.1 m eye
-## height or lower, the far end of the (0,6) south run still shows through the crawl slot of cell (0,9), 39 m off.
+## does. At 36 m one gap stays on the game seed: runs (0,6) and (0,7) looking south through the crawl slot of cell (0,9).
+## Real cameras reach it: the crawl default (y 0.862) shows 281 px, crouch and stand show it when orbited (up to about
+## 441 px at real cameras, up to 1466 px at the lowest fixed eye tried). The colour change is at most 8 levels, a black
+## slit in a dark zone. Removing it is the game module's job: match background output to fog output.
 ## 38 m would close it but puts the raw worst view over the 300,000 triangle budget.
 ## Follow the fog if it moves.
 const CHUNK_DRAW_DISTANCE := 36.0
