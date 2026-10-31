@@ -50,7 +50,7 @@ func test_kit_counted_vs_rendered_primitives() -> void:
 	print("T017 kit surfaces rendered=%d (tool counts 14 incl. colonly), render tris=%d, collision faces=%d, per piece %s"
 			% [rendered, tris, collision_faces, per_piece])
 	assert_eq(rendered, 7, "rendered primitives measured from the imported scene")
-	assert_eq(tris + collision_faces, 4550, "render + collision triangles equal check_budgets.py's 4550")
+	assert_eq(tris + collision_faces, 4552, "render + collision triangles equal check_budgets.py's 4552 (pier 120 -> 122, cap top, T039)")
 
 
 func test_self_structure_check_can_fail() -> void:
@@ -129,21 +129,13 @@ func test_kit_material_count_and_shipped_defaults() -> void:
 	assert_true(names.size() <= 2, "at most 2 kit materials: %s" % [names.keys()])
 
 
-## Check 6, mesh side. Reproduces the reviewer's numbers on the shipped mesh, so the assembled winding test
-## (crypt_geometry_test.gd) is known to run against the meshes that contain the flips.
-func test_rubble_flipped_edge_pairs_match_the_known_count() -> void:
+## Check 6, mesh side. T039 removed the 3 and 10 flipped edge pairs T015 shipped: none may come back.
+func test_rubble_has_no_flipped_edge_pairs() -> void:
 	var crouch := Checks.flipped_edge_pairs(_mesh("ceiling_crouch"))
 	var crawl := Checks.flipped_edge_pairs(_mesh("ceiling_crawl"))
 	print("T017 flipped edge pairs crouch=%d %s crawl=%d %s" % [crouch.pairs, crouch.edges, crawl.pairs, crawl.edges])
-	assert_eq(crouch.pairs, 3, "ceiling_crouch flipped edge pairs (known, T015)")
-	assert_eq(crawl.pairs, 10, "ceiling_crawl flipped edge pairs (known, T015)")
-	_check_flips_at_boundary(crouch.edges, 1.3, "ceiling_crouch")
-	_check_flips_at_boundary(crawl.edges, 0.75, "ceiling_crawl")
-
-
-func _check_flips_at_boundary(edges: Array, _underside: float, label: String) -> void:
-	for e: Vector3 in edges:
-		assert_true(maxf(absf(e.x), absf(e.z)) > 1.7, "%s flip at %s is inside the room (|x|,|z| <= 1.7)" % [label, e])
+	assert_eq(crouch.pairs, 0, "ceiling_crouch flipped edge pairs at %s" % [crouch.edges])
+	assert_eq(crawl.pairs, 0, "ceiling_crawl flipped edge pairs at %s" % [crawl.edges])
 
 
 func test_self_flipped_edge_check_can_fail() -> void:

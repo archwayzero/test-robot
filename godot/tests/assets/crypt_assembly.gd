@@ -21,7 +21,7 @@ var layout: MazeLayout
 var root: Node3D
 var cell_size := 4.0
 ## Options.
-var vertex_color_srgb := true
+var vertex_color_srgb := false
 var with_lamps := true
 var with_render_trimesh := false
 var with_occluders := false

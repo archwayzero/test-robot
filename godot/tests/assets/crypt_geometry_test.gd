@@ -172,9 +172,9 @@ func _check_probe() -> void:
 	assert_true(reached_y + 0.15 <= 3.95, "camera probe must stop at the 3.9 soffit, its top reached %.3f" % [reached_y + 0.15])
 
 
-## Defect (a), does it reach a player? The camera's arm is a sphere cast, not a ray (SpringArm3D + player.gd probe radius
-## 0.15). Fan from arm pivots under one arch, over the whole orbit pitch range. A sphere must not end in the arch masonry.
-## The ray count is printed only: it is what a ray-based consumer would do on the reversed soffit.
+## The camera's arm is a sphere cast, not a ray (SpringArm3D + player.gd probe radius 0.15). Fan from arm pivots under one
+## arch, over the whole orbit pitch range. Neither a sphere nor a one-sided ray may end in the arch masonry: rays went through
+## the soffit while the arch collision was inside out (86 of 720 before T039).
 func test_camera_arm_fan_stays_out_of_arch_masonry() -> void:
 	_check_arm_fan()
 	checkpoint("end")
@@ -228,6 +228,8 @@ func _check_arm_fan() -> void:
 						counts.ray_past_soffit += 1
 	print("T017 arm fan under arch: %s; sphere centre closest to the soffit %.3f m" % [counts, worst])
 	assert_eq(counts.sphere_in_masonry, 0, "camera probe ends inside the arch masonry")
+	assert_eq(counts.ray_in_masonry, 0, "ray ends inside the arch masonry")
+	assert_eq(counts.ray_past_soffit, 0, "ray passes the render surface by more than 5 cm")
 
 
 func test_self_masonry_check_can_fail() -> void:
@@ -311,6 +313,29 @@ func _soffit_outward(m: Vector3) -> Vector3:
 	if absf(m.z) > 0.29 or radial.length() > 1.75 or m.y < 2.21:
 		return Vector3.ZERO
 	return -radial.normalized()
+
+
+## The whole arch collision, not only the soffit: T017 found all 96 faces reversed, on all four groups.
+func test_arch_collision_all_faces_outward() -> void:
+	var kit: Node = (load(Checks.KIT_PATH) as PackedScene).instantiate()
+	var faces := ((kit.get_node("arch").find_children("*", "CollisionShape3D", true, false)[0] as CollisionShape3D).shape
+			as ConcavePolygonShape3D).get_faces()
+	kit.free()
+	var r := Checks.faces_pointing_with(faces, Callable(self, "_arch_outward"))
+	print("T017 arch collision all faces: outward %d, reversed %d, of %d" % [r.good, r.bad, faces.size() / 3])
+	assert_eq(r.good + r.bad, faces.size() / 3, "every arch collision face is classified")
+	assert_eq(r.bad, 0, "arch collision faces wound into the masonry")
+	checkpoint("end")
+
+
+func _arch_outward(m: Vector3) -> Vector3:
+	if absf(m.z) > 0.29:
+		return Vector3(0, 0, signf(m.z))
+	if m.y > 4.1:
+		return Vector3.UP
+	if absf(m.x) > 1.95:
+		return Vector3(signf(m.x), 0, 0)
+	return _soffit_outward(m)
 
 
 func test_self_winding_check_can_fail() -> void:
@@ -486,6 +511,7 @@ func test_assembly_rules() -> void:
 	assert_eq(asm.counts.wall + asm.counts.arch, 840, "every edge of a 20x20 grid holds a wall or an arch")
 	for m: StandardMaterial3D in asm.all_materials():
 		assert_true(m.vertex_color_use_as_albedo, "vertex colour on")
+		assert_false(m.vertex_color_is_srgb, "contract: vertex colour is linear")
 		assert_eq(m.texture_filter, BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC, "anisotropic filter")
 	checkpoint("end")
 

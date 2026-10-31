@@ -3,7 +3,7 @@
 ## `capture.py --every 2` keeps one frame of each. Camera: game height 2.43 m, pitch -0.35 rad, fov 70, unless noted.
 ## Writes the engine's per-view counters to .captures/t017/<name>_counters.json (counts, not device performance).
 ## One scene for every capture: set env T017_PREVIEW="key=value,..." (keys below) before capture.py, for example
-## T017_PREVIEW="srgb=0,first=6,max=3,tag=srgb_false_low". Reading the env var is the only outside input.
+## T017_PREVIEW="srgb=1,first=6,max=3,tag=srgb_true_low". Reading the env var is the only outside input.
 ## only=a+b picks views by name; magenta=1 paints the background magenta, so any pixel through a hole counts.
 ## nonormal=1 turns the normal maps off and omnispec=0 turns lamp specular off (cause checks); only= keeps its own order.
 ## nocull=1 draws back faces: the difference from a normal run is exactly the pixels a missing or flipped face changes.
@@ -13,9 +13,9 @@ const Assembly := preload("res://tests/assets/crypt_assembly.gd")
 const PITCH := -0.35
 const CAM_H := 2.43
 
-@export var vertex_color_srgb := true
+@export var vertex_color_srgb := false
 @export var use_occluders := false
-@export var name_tag := "srgb_true"
+@export var name_tag := "run2"
 ## Frames per view. The first view of a run needs 3: the counters read 0 until a frame has been drawn.
 @export var hold := 2
 ## Slice of the view list (max_views 0 = to the end): CPU rendering takes about 6 s per frame, so runs stay short.
@@ -196,7 +196,7 @@ func _make_views() -> void:
 		_add("wall_face_%d_unlit" % parity, w.at - w.n * 3.2 + Vector3(0, 2.0, 0), w.at + Vector3(0, 2.0, 0), 60.0)
 	_add("seam_far_16m_a", seam - along * 16.0 - wall_dir * 1.4 + Vector3(0, CAM_H, 0), seam + Vector3(0, 1.2, 0), 12.0)
 	_add("seam_far_16m_b", seam - along * 16.03 - wall_dir * 1.4 + Vector3(0, CAM_H, 0), seam + Vector3(0, 1.2, 0), 12.0)
-	# Reachable cameras over the open capital top: the arm reaches 1.575 + 2.5 sin(1.2) = 3.9 m at the lowest orbit pitch.
+	# Reachable cameras over the capital top: the arm reaches 1.575 + 2.5 sin(1.2) = 3.9 m at the lowest orbit pitch.
 	var free := _free_pier()
 	var top := free + Vector3(0.3, 2.2, 0.3)
 	_add("pier_top_orbit_high", free + Vector3(1.2, 3.3, 1.2), top)
