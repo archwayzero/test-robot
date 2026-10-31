@@ -55,7 +55,7 @@ const CEILING_NORMAL_MAX_Y := -0.5
 ## reach this far past the end of a clear arm.
 const ARM_SAMPLE_WALL_PULL := 0.3
 const ARM_SAMPLE_END_EXTRA := 0.2
-## Player visual fades out when the camera gets closer to the head than FADE_START (m), hidden at FADE_END.
+## Player visual fades out when the camera gets closer to the body than FADE_START (m), hidden at FADE_END.
 const FADE_START := 0.8
 const FADE_END := 0.5
 const FADE_SMOOTHING := 12.0
@@ -458,15 +458,14 @@ func _ray_distance(from: Vector3, to: Vector3, full: float) -> float:
 
 
 ## Fades (GeometryInstance3D.transparency) and finally hides the player visual when the camera is close to the
-## head, so the view ahead stays visible. Generic over whatever meshes live under $Visual.
+## body, so the view ahead stays visible. Generic over whatever meshes live under $Visual.
 func _update_fade(delta: float) -> void:
 	if delta <= 0.0:
 		# Snap (spawn/load): the spring arm has not placed the camera yet, so its position is stale. Start opaque;
 		# the next physics frames fade in from the real camera distance.
 		_visual_fade = 0.0
 	else:
-		var head := global_position + Vector3(0.0, _height_of(_stance) * PIVOT_FRACTION, 0.0)
-		var d := _camera.global_position.distance_to(head)
+		var d := get_body_distance(_camera.global_position)
 		var target := clampf((FADE_START - d) / (FADE_START - FADE_END), 0.0, 1.0)
 		_visual_fade = lerpf(_visual_fade, target, 1.0 - exp(-FADE_SMOOTHING * delta))
 		if target == 0.0 and _visual_fade < 0.01:
@@ -477,6 +476,13 @@ func _update_fade(delta: float) -> void:
 	var show := _visual_fade < 0.99
 	if _visual.visible != show:
 		_visual.visible = show
+
+
+## Distance (m) from `point` to the body's axis, feet to camera pivot height. The mesh is not consulted: the blades
+## reach back past the capsule toward the lens (crawl 0.74 m) and must not trigger the fade.
+func get_body_distance(point: Vector3) -> float:
+	var y := clampf(point.y, global_position.y, global_position.y + _height_of(_stance) * PIVOT_FRACTION)
+	return point.distance_to(Vector3(global_position.x, y, global_position.z))
 
 
 ## Sets the transparency of the cached GeometryInstance3D list, only when the value (or the list) changed.
