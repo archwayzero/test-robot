@@ -52,6 +52,8 @@ def cli(name):
 
 
 OUT_DIR = cli("--out-dir") or HERE
+# every material setting lives in this versioned file; --params points a trial at another copy
+PARAMS = json.load(open(cli("--params") or os.path.join(HERE, "material_params.json")))
 MAPS_DIR = cli("--maps")
 TEX_DIR = os.path.join(OUT_DIR, "textures")
 BLEND = os.path.join(OUT_DIR, "crypt_kit_model.blend")
@@ -102,6 +104,9 @@ C_V0, C_V1 = v_of_row(C_ROWS[1]), v_of_row(C_ROWS[0])
 CAP_JOINTS = [0.35, 1.20, 1.55, 2.40, 2.90, 3.35]   # top course: 0.35-1.20 and 1.55-2.40 are the capital stones
 STONE_LEN = (0.35, 1.00)
 CAP_U = (0.775 / 4, 1.975 / 4)
+# U of the pier's course 0, per face. Under the height soiling a pale bottom course reads as an orange band: each of these windows
+# is no paler than courses 1-2 of its own face. Faces 0 and 2 are opposite, so they may share stones (T039).
+PIER_BASE_U = (0.85, 0.41, 0.90, 0.26)
 ASHLAR_COURSES = [0.32, 0.24, 0.30, 0.22, 0.33, 0.25, 0.34]  # bottom to top, sum 2.0 (last one: capital course)
 BOND_GAPS = []  # smallest head joint offset, m, per course of the generated band A, over the touching pairs on the wall
 STONES = []     # band A stones as (u0, u1, z0, z1) in metres, filled by block_field; the rubble blocks map into these
@@ -397,9 +402,13 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
             lens = np.array([STONES[i][1] - STONES[i][0] for i in ids_c])
             tone[ids_c] -= float((tone[ids_c] * lens).sum() / lens.sum())
     if force:                                            # the capital stones are plain: neither pale nor dark, nor orange
-        tone[n - len(force[max(force)]):] = 0.2
-        warm_s[n - len(force[max(force)]):] = 0.0
-        tone[[n - len(force[max(force)]), n - len(force[max(force)]) + 2]] = 0.62     # the two a capital maps: pale, as under the ring
+        top_ids = list(range(n - len(force[max(force)]), n))
+        warm_s[top_ids] = 0.0
+        tone[top_ids] = 0.0
+        tone[[top_ids[0], top_ids[2]]] = palette.get("capital_tone", 0.62)   # the two a capital maps: a little pale, as under the ring
+        # the top course keeps the mean of the others, or it is a stripe (T039: 0.35 linear against 0.27 with fixed 0.62 and 0.2)
+        lens = np.array([STONES[i][1] - STONES[i][0] for i in top_ids])
+        tone[top_ids] -= float((tone[top_ids] * lens).sum() / lens.sum())
     tone = (np.sign(tone) * np.abs(tone) ** 0.8)[ids]    # more stones far from the mean
     # High-pass over about a metre: stones differ from their neighbours, but no dark or pale cluster forms, because a cluster
     # is a landmark that repeats every tile.
@@ -423,7 +432,7 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
 
     base = np.array(palette["stone"])
     alb = np.ones((h, w, 3)) * base
-    v = 1.0 + palette["tone"] * tone + 0.015 * n_lo + 0.05 * n_mid + 0.02 * n_hi
+    v = 1.0 + palette["tone"] * tone + 0.015 * n_lo + 0.05 * n_mid + palette.get("grain", 0.02) * n_hi
     # a darker stone is browner, not greyer: the blue channel falls faster with tone
     alb = alb * v[..., None]
     alb[..., 2] *= 1.0 + 0.45 * palette["tone"] * tone
@@ -438,12 +447,17 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
     n_soft = blur(n_mid, 0.055 * ppm)
     n_soft = n_soft / (n_soft.std() + 1e-9)
     stain = sstep(-1.0, 2.6, n_lo * 0.25 + n_soft * 0.9)
+    if palette.get("stain_sharp"):      # a6d7e65: no blur, so stains keep the broken edge of n_mid: the crisp speckle
+        stain = sstep(0.0, 2.6, n_lo * 0.12 + n_mid * 0.95)
     alb *= (1.0 - palette["stain"] * stain[..., None] * np.array([0.85, 0.95, 1.1]))
-    pale = sstep(-0.4, 2.8, -n_lo * 0.25 - n_soft * 0.9) * palette.get("pale_amt", 0.14)
+    if palette.get("stain_sharp"):
+        pale = sstep(0.3, 2.6, -n_lo * 0.12 + n_mid * 0.9) * palette.get("pale_amt", 0.35)
+    else:
+        pale = sstep(-0.4, 2.8, -n_lo * 0.25 - n_soft * 0.9) * palette.get("pale_amt", 0.14)
     alb = alb * (1 - pale[..., None]) + np.array(palette["pale"]) * pale[..., None]
     arris = sstep(0.0, 0.6, profile) * (1 - sstep(0.6, 1.0, profile))
-    alb *= 1.0 + 0.02 * arris[..., None]
-    alb *= 1.0 - 0.13 * pits[..., None]
+    alb *= 1.0 + palette.get("arris", 0.02) * arris[..., None]
+    alb *= 1.0 - palette.get("pit_dark", 0.13) * pits[..., None]
     alb *= (1.0 + 0.035 * tool * tool_on)[..., None]
     run = streaks(h, w, seed + 9)
     dark_run = sstep(0.7, 2.4, run) * palette.get("runs", 0.0)
@@ -462,6 +476,11 @@ def stone_maps(h, w, ppm, courses, seed, len_range, palette, joint=0.0045, wear=
         mort = mort * (1 - band_edge) + mort.mean((0, 1)) * band_edge
     mix = sstep(0.0, 0.35, profile)[..., None]
     alb = mort * (1 - mix) + alb * mix
+    if palette.get("joint_dark"):
+        # the photo's joints are broken dark pockets, not an even line: crisp contrast that sits on the joints, not on the stones
+        pocket = sstep(palette["pocket_lo"], palette["pocket_hi"], noise(h, w, 2.0, seed + 12, low=palette["pocket_low"]))
+        band = 1 - sstep(0.5 * jw, palette.get("pocket_w", 2.5 * joint) + 0.5 * jw, d)
+        alb *= (1.0 - palette["joint_dark"] * (pocket * band)[..., None] * np.array([0.9, 1.0, 1.1]))
     if seed == 1501:
         # as-built mortar width: area where any mortar shows, over total joint length (beds + heads)
         length = pu * len(courses) + sum(st[3] - st[2] for st in STONES)
@@ -480,9 +499,9 @@ def ao_from_height(h, ppm, scale):
     return np.clip(1.0 - 0.75 * np.clip(small, 0, 1) - 0.35 * np.clip(large, 0, 1), 0.25, 1.0)
 
 
-PLASTER = (0.925, 0.885, 0.800)
-PLASTER_MID = 0.074
-PLASTER_FINE = 0.016
+PLASTER = PARAMS["plaster"]["colour"]
+PLASTER_MID = PARAMS["plaster"]["mid"]
+PLASTER_FINE = PARAMS["plaster"]["fine"]
 
 
 def plaster_maps(h, w, ppm, seed):
@@ -506,7 +525,7 @@ def plaster_maps(h, w, ppm, seed):
     pal = np.array(PLASTER)
     # the blotch is mapped to all four webs of every bay, so at low frequency it is what shows bays repeating: keep it faint.
     # Contrast sits at 0.1-0.4 m and finer, which reads as worn lime and does not make a landmark.
-    v = 1.0 + 0.012 * n_lo + 0.030 * n_mid + 0.012 * n_hi + PLASTER_MID * n_trowel + PLASTER_FINE * n_grain
+    v = 1.0 + 0.012 * n_lo + PARAMS["plaster"].get("cloud", 0.030) * n_mid + 0.012 * n_hi + PLASTER_MID * n_trowel + PLASTER_FINE * n_grain
     alb = pal * v[..., None]
     alb *= 1 - 0.07 * blotch[..., None] * np.array([0.9, 1.0, 1.15])
     alb *= 1 - 0.20 * grime[..., None] * np.array([0.8, 1.0, 1.3])
@@ -621,12 +640,11 @@ def half(a):
 def build_textures():
     os.makedirs(TEX_DIR, exist_ok=True)
     STONES.clear()
-    pal_a = dict(stone=[0.760, 0.640, 0.430], pale=[0.86, 0.79, 0.64], tone=0.24, warm=0.022, patch=0.055, rim=0.18,
-                 stain=0.22, rough=0.86, polish=0.04, runs=0.26, tone_hp=0.32)
+    pal_a = PARAMS["ashlar"]
     # band A
     ppm = 512
-    a_alb, a_h, a_r = stone_maps(1024, 2048, ppm, ASHLAR_COURSES, 1501, STONE_LEN, pal_a, warp=0.005, relief=0.009, joint=0.003,
-                                 wear=0.008, force={len(ASHLAR_COURSES) - 1: CAP_JOINTS})
+    a_alb, a_h, a_r = stone_maps(1024, 2048, ppm, ASHLAR_COURSES, 1501, STONE_LEN, pal_a, force={len(ASHLAR_COURSES) - 1: CAP_JOINTS},
+                                 **PARAMS["ashlar_maps"])
     a_n = normal_from_height(a_h, ppm)
     a_ao = ao_from_height(a_h, ppm, 0.012)
     new = read_map("ashlar_band_a_color.png")
@@ -641,9 +659,8 @@ def build_textures():
     # band B: voussoirs. One course across, irregular joints along the arc. Generated on a square-ish torus in metres.
     bh, bw = B_ROWS[1] - B_ROWS[0], ATLAS
     bppm = ATLAS / B_LEN
-    pal_b = dict(pal_a, tone=0.11, warm=0.02, stain=0.14, rim=0.09, stone=[0.965, 0.858, 0.682], tone_hp=0, patch=0.04)
-    b_alb, b_h, b_r = stone_maps(bh, bw, bppm, [bh / bppm], 1604, (0.17, 0.27), pal_b, joint=0.003, wear=0.008,
-                                 relief=0.008, warp=0.005)
+    pal_b = dict(pal_a, **PARAMS["voussoir"])
+    b_alb, b_h, b_r = stone_maps(bh, bw, bppm, [bh / bppm], 1604, (0.17, 0.27), pal_b, **PARAMS["voussoir_maps"])
     # one strip serves every arch: a metre-scale gradient along it would show at the same spot of every arch, so take it out
     lum_b = b_alb.mean(2)
     b_alb = b_alb * (lum_b.mean() / blur(lum_b, 0.7 * bppm))[..., None]
@@ -653,7 +670,7 @@ def build_textures():
     fold = np.abs(((np.arange(bh) + 0.5) / bh - 0.5) * B_DEPTH)[:, None]
     edge = 0.275 + 0.075 * np.clip(noise(bh, bw, 2.8, 1650, low=2) / 1.5, -1, 1)
     edge = edge + 0.010 * noise(bh, bw, 1.6, 1651, low=20)
-    wash = 0.20 * (1 - sstep(-0.025, 0.025, fold - edge))[..., None]
+    wash = PARAMS["voussoir"]["wash"] * (1 - sstep(-0.025, 0.025, fold - edge))[..., None]
     b_alb = b_alb * (1 - wash) + np.array([0.86, 0.785, 0.625]) * (0.93 + 0.07 * b_alb / b_alb.mean()) * wash
     b_n = normal_from_height(b_h, bppm)
     b_ao = ao_from_height(b_h, bppm, 0.012)
@@ -693,11 +710,9 @@ def build_textures():
 
     # stone_floor: 4 x 4 m full tile at 256 px/m. Flags on a 20 x 20 grid, no straight joint over FLOOR_MAX_RUN.
     # `tone` stays low and high-passed: the eye reads strong per-flag tone on a regular floor as a checkerboard
-    pal_f = dict(stone=[0.615, 0.565, 0.485], pale=[0.67, 0.625, 0.545], tone=0.045, warm=0.02,
-                 stain=0.24, rough=0.70, polish=0.20, tone_hp=0.6)
+    pal_f = PARAMS["floor"]
     fppm = 256
-    f_alb, f_h, f_r = stone_maps(1024, 1024, fppm, None, 1801, None, pal_f, joint=0.0028, wear=0.024, relief=0.0045,
-                                 warp=0.008, rect_cells=20)
+    f_alb, f_h, f_r = stone_maps(1024, 1024, fppm, None, 1801, None, pal_f, rect_cells=20, **PARAMS["floor_maps"])
     f_ao = ao_from_height(f_h, fppm, 0.010)
     f_alb = f_alb * (0.93 + 0.07 * f_ao)[..., None]
     imgs["floor_color"] = to_image("stone_floor_color", f_alb, True)
@@ -933,13 +948,15 @@ def build_pier(mat):
     rng = np.random.RandomState(31)
     half = PIER / 2 + PIER_PROUD
     # shaft: square with a worn, slightly irregular chamfer. Rings at these heights:
-    levels = [0.0, 0.35, 0.8, 1.4, SHAFT_TOP]
+    levels = [0.0, COURSE_EDGES[1], 0.8, 1.4, SHAFT_TOP]     # first ring on the bed joint, so that course 0 can have its own U
     ch = [[0.012 + 0.016 * rng.uniform() for _ in levels] for _ in range(4)]
     for k in range(4):              # k = which side; rotate +90 deg each side
         ca, sa = [(1, 0), (0, 1), (-1, 0), (0, -1)][k]
         rot = lambda x, y: (ca * x - sa * y, sa * x + ca * y)
         uo = 0.31 * k + 0.1         # the four faces show different stones
+        shaft_u = uo
         for j in range(len(levels) - 1):
+            uo = PIER_BASE_U[k] if j == 0 else shaft_u
             z0, z1 = levels[j], levels[j + 1]
             c0r, c1r = ch[k][j], ch[k][j + 1]                  # chamfer at this side's +s end
             c0l, c1l = ch[(k + 3) % 4][j], ch[(k + 3) % 4][j + 1]
@@ -974,6 +991,12 @@ def build_pier(mat):
             rows.append([(*rot(-w, -w), z), (*rot(w, -w), z)])
             uvs.append([band_a(um - w / 4, v), band_a(um + w / 4, v)])
         b.grid("cap%d" % k, rows, uvs, smooth=False)
+    # top of the impost: seen from above the springing where the capital stands past the wall and arch (T017: camera at 2.43 m)
+    w = cap - 0.006
+    v0, v1 = CAP_COURSE[0] + 0.025, CAP_COURSE[1] - 0.025
+    um = CAP_U[0]
+    b.face("cap_top", [(-w, -w, SPRING), (w, -w, SPRING), (w, w, SPRING), (-w, w, SPRING)],
+           [band_a(um - w / 4, v0), band_a(um + w / 4, v0), band_a(um + w / 4, v1), band_a(um - w / 4, v1)], False)
     ob = b.to_object("pier", mat)
     h = PIER / 2
     collision(ob, [((-h, -h, 0), (h, h, SHAFT_TOP)), ((-cap, -cap, SHAFT_TOP), (cap, cap, SPRING))])
@@ -1039,7 +1062,8 @@ def build_arch(mat):
     outer = [(2.0 * math.cos(math.pi * i / seg) if abs(math.cos(math.pi * i / seg)) > 0.71 else
               R_ARCH * math.cos(math.pi * i / seg), TOP if i not in (0, seg) else SPRING) for i in range(seg + 1)]
     outer[0], outer[seg] = (2.0, SPRING), (-2.0, SPRING)
-    # outline (counter-clockwise seen from +Y is not required for a trimesh, but keep normals outward)
+    # Quads below are listed inward; pts[::-1] makes every normal outward. A one-sided trimesh ignores back faces: spring-arm rays
+    # would pass through a soffit wound into the masonry (T017).
     for i in range(seg):
         a, c = ring[i], ring[i + 1]
         d, e = outer[i], outer[i + 1]
@@ -1047,7 +1071,7 @@ def build_arch(mat):
         tris.append([(a[0], -t, a[1]), (c[0], -t, c[1]), (e[0], -t, e[1]), (d[0], -t, d[1])])  # face -Y
         tris.append([(a[0], t, a[1]), (d[0], t, d[1]), (e[0], t, e[1]), (c[0], t, c[1])])      # face +Y
         tris.append([(d[0], -t, d[1]), (e[0], -t, e[1]), (e[0], t, e[1]), (d[0], t, d[1])])    # top
-    collision(ob, tris=tris)
+    collision(ob, tris=[pts[::-1] for pts in tris])
     return ob
 
 
@@ -1234,24 +1258,31 @@ def rubble_block(b, g, name, poly, centre, rim_depth, inner_depth, centre_depth,
     n = len(poly)
     cx, cy = centre
     frame = _normal([place(0, 0, 0), place(1, 0, 0), place(0, 1, 0)])
+    plan = []
 
     def tri(p, q, r):
-        pts = [place(a[0], a[1], a[2]) for a in (p, q, r)]
-        uvs = [uv((a[0], a[1])) for a in (p, q, r)]
-        flat = [(a[0], a[1]) for a in (p, q, r)]
-        if sum(x * y for x, y in zip(_normal(pts), frame)) * up < 0:
-            pts, uvs, flat = pts[::-1], uvs[::-1], flat[::-1]
-        n0 = len(b.faces)
-        b.face(g, pts, uvs, False)
-        if len(b.faces) > n0:
-            UV2_FLAT.setdefault(name, []).append(flat)
+        # Winding comes from the flat layout, where the whole surface is consistent by construction. Testing the 3D normal instead
+        # hid folds by flipping them, which left inverted triangles (T017: 3 and 10 flipped edge pairs).
+        if (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]) < 0:
+            q, r = r, q
+        plan.append((p, q, r))
+
+    def emit():
+        unfold(plan, place, frame, name)
+        for t in plan:
+            t = t[::-1] if up < 0 else t
+            n0 = len(b.faces)
+            b.face(g, [place(a[0], a[1], a[2]) for a in t], [uv((a[0], a[1])) for a in t], False)
+            if len(b.faces) > n0:
+                UV2_FLAT.setdefault(name, []).append([(a[0], a[1]) for a in t])
 
     rim = [(poly[i][0], poly[i][1], rim_depth[i]) for i in range(n)]
     area = 0.5 * abs(sum(poly[i][0] * poly[(i + 1) % n][1] - poly[(i + 1) % n][0] * poly[i][1] for i in range(n)))
     if area < 0.05:                     # a sliver left by clipping: no room for a ring
-        mid = (cx, cy, sum(rim_depth) / n)
+        mid = [cx, cy, sum(rim_depth) / n]
         for i in range(n):
             tri(rim[i], rim[(i + 1) % n], mid)
+        emit()
         paint_block(b, g, rim, place, tone, vcol)
         return
     ang = [math.atan2(p[1] - cy, p[0] - cx) for p in poly]
@@ -1275,8 +1306,8 @@ def rubble_block(b, g, name, poly, centre, rim_depth, inner_depth, centre_depth,
                 if tt > 0 and -1e-6 <= uu <= 1 + 1e-6:
                     hit = min(hit, tt)
         f, d = inner_depth[j]
-        inner.append((cx + hit * f * math.cos(th), cy + hit * f * math.sin(th), d))
-    mid = (cx, cy, centre_depth)
+        inner.append([cx + hit * f * math.cos(th), cy + hit * f * math.sin(th), d])
+    mid = [cx, cy, centre_depth]
     # radial sweep: step whichever ring comes next in angle, so the band between the rings cannot fold
     run.append(2 * math.pi)
     i = j = 0
@@ -1289,7 +1320,47 @@ def rubble_block(b, g, name, poly, centre, rim_depth, inner_depth, centre_depth,
             j += 1
     for j in range(m):
         tri(inner[j], inner[(j + 1) % m], mid)
+    emit()
     paint_block(b, g, rim, place, tone, vcol)
+
+
+FOLD_STEP = 0.01    # m, per nudge of a vertex out of a fold
+FOLDS_FIXED = {}    # piece -> triangles that needed it
+
+
+def unfold(plan, place, frame, name):
+    """The bottom-edge warp of a side patch can drop a steep rim segment past a block's inner point: a true fold, a triangle turned
+    inside out. Move only the block's own inner points (lists; rim points are tuples, shared with the neighbours) across the
+    edge that fold them, until no triangle of the block is inverted. Depths stay, so the rest of the block keeps its shape."""
+    def add(a, b, s=1.0):
+        return [a[i] + s * b[i] for i in range(3)]
+
+    def cross(a, c):
+        return (a[1] * c[2] - a[2] * c[1], a[2] * c[0] - a[0] * c[2], a[0] * c[1] - a[1] * c[0])
+
+    o = place(0, 0, 0)
+    ex, ey = add(place(1, 0, 0), o, -1), add(place(0, 1, 0), o, -1)
+    fn = math.sqrt(sum(x * x for x in frame))
+    f = [x / fn for x in frame]
+    hit = set()
+    for _ in range(200):
+        bad = [t for t in plan if sum(x * y for x, y in zip(_normal([place(*a) for a in t]), frame)) <= 1e-4]
+        if not bad:
+            FOLDS_FIXED[name] = FOLDS_FIXED.get(name, 0) + len(hit)
+            return
+        for t in bad:
+            hit.add(id(t))
+            # of two inner points move the one further from the rim edge: the nearer is held by that edge's own triangle
+            mv = next((i for i in (2, 1, 0) if isinstance(t[i], list)), None)
+            if mv is None:
+                raise RuntimeError("%s: a fold with no inner point" % name)
+            a, c = place(*t[(mv + 1) % 3]), place(*t[(mv + 2) % 3])
+            n = cross(f, add(c, a, -1))         # in the patch plane, on the side of a-c where the triangle turns the right way
+            ln = math.sqrt(sum(x * x for x in n)) or 1.0
+            n = [x / ln for x in n]
+            t[mv][0] += FOLD_STEP * sum(x * y for x, y in zip(n, ex))
+            t[mv][1] += FOLD_STEP * sum(x * y for x, y in zip(n, ey))
+    raise RuntimeError("%s: fold not removed" % name)
 
 
 def paint_block(b, g, rim, place, tone, vcol):
@@ -1577,6 +1648,7 @@ def main():
     for ob in pieces:
         me = ob.data
         print("piece %-16s tris %5d" % (ob.name, sum(len(p.vertices) - 2 for p in me.polygons)))
+    print("rubble folds removed:", FOLDS_FIXED)
     bpy.ops.wm.save_as_mainfile(filepath=BLEND)
     print("saved", BLEND)
 

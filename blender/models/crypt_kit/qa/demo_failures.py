@@ -29,7 +29,7 @@ INTENDED = {
     "floor_no_collision": "floor has a -colonly child",
     "third_material": "<= 2 materials",
     "uv2_overlap": "wall UV2 non-overlapping",
-    "ashlar_seam_broken": "stone_ashlar_color band A wrap V / bed joint",
+    "ashlar_seam_broken": "stone_ashlar_color band A wrap V tone step",
     "groin_landing_low": "visible groin landing",
     "rubble_flat": "ceiling_crouch underside has depth steps",
     "pier_behind_wall": "pier shaft 1-3 mm proud",
@@ -49,6 +49,11 @@ INTENDED = {
     "ceiling_side_deep": "ceiling_crouch side set back",
     "ceiling_plates": "ceiling_crouch no plates",
     "ceiling_crack": "ceiling_crouch closed surface",
+    "arch_collision_reversed": "arch collision soffit faces the opening",
+    "pier_no_top": "pier capital has a top face",
+    "ceiling_triangle_flipped": "ceiling_crawl winding consistent",
+    "ashlar_top_course_bright": "wall no course stripes",
+    "pier_base_pale": "pier base",
 }
 
 
