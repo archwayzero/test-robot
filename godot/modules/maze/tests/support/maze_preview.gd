@@ -56,7 +56,7 @@ func _game_environment() -> WorldEnvironment:
 	e.background_mode = Environment.BG_COLOR
 	e.background_color = Color(0.015, 0.014, 0.02)
 	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	e.ambient_light_color = Color(0.42, 0.4, 0.5)
+	e.ambient_light_color = Color(0.42, 0.4, 0.4)
 	e.ambient_light_energy = 0.55
 	e.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	e.tonemap_exposure = 1.1
@@ -69,7 +69,7 @@ func _game_environment() -> WorldEnvironment:
 	e.fog_light_color = Color(0.03, 0.03, 0.04)
 	e.fog_light_energy = 1.0
 	e.fog_density = 1.0
-	e.fog_sky_affect = 0.0
+	e.fog_sky_affect = 1.0
 	e.fog_depth_curve = 1.4
 	e.fog_depth_begin = 4.0
 	e.fog_depth_end = 26.0
