@@ -481,7 +481,7 @@ def ao_from_height(h, ppm, scale):
 
 
 PLASTER = (0.925, 0.885, 0.800)
-PLASTER_MID = 0.088
+PLASTER_MID = 0.074
 PLASTER_FINE = 0.016
 
 
