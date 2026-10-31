@@ -1,42 +1,43 @@
-## MazeWorld implementation, greybox stage (T003): primitive boxes with the crypt_kit dimensions
-## (docs/contracts/crypt-kit.md), two plain materials, box collision on physics layer 1 ("world").
-## Geometry is grouped per 4x4-cell chunk (one Node3D per chunk with a merged stone/floor mesh, a merged ceiling
-## mesh and one StaticBody3D) so each mesh stays small enough for the 8-omni-lights-per-mesh limit later (T018).
+## MazeWorld from the crypt_kit (T018). The plan comes from maze_assembly.gd; each chunk merges its share of it into
+## one mesh, so a chunk costs one draw call per material however many pieces it holds.
 extends MazeWorld
 
-const CHUNK_CELLS := 4
-const WALL_THICKNESS := 0.6
-const WALL_HEIGHT := 3.9
-const PIER_SIZE := 0.6
-const PIER_HEIGHT := 2.2
-const FLOOR_THICKNESS := 0.2
-const CEILING_THICKNESS := 0.2
-const CROUCH_UNDERSIDE := 1.3
-const CRAWL_UNDERSIDE := 0.75
+const Assembly := preload("res://modules/maze/internal/maze_assembly.gd")
+const Kit := preload("res://modules/maze/internal/maze_kit.gd")
+
+## 2x2 cells: with OMNI_RANGE below no chunk mesh meets more than 8 omni lights; 3x3 and 4x4 pass 8 at this range.
+const CHUNK_CELLS := 2
 const WORLD_LAYER := 1
-
-const STONE_COLOR := Color(0.62, 0.55, 0.45)
-const FLOOR_COLOR := Color(0.33, 0.31, 0.29)
-
-enum Kind { STONE, FLOOR, CEILING }
+## Measured to the chunk centre. Past the fog end (26 m) the surfaces are flat fog colour, but a culled chunk is not:
+## where the chunk holding a straight run's end wall drops out, the darker background shows as a rectangle. 34 m still
+## does. At 36 m one gap stays on the game seed: runs (0,6) and (0,7) looking south through the crawl slot of cell (0,9).
+## Real cameras reach it: the crawl default (y 0.862) shows 281 px, crouch and stand show it when orbited (up to about
+## 441 px at real cameras, up to 1466 px at the lowest fixed eye tried). The colour change is at most 8 levels, a black
+## slit in a dark zone. Removing it is the game module's job: match background output to fog output.
+## 38 m would close it but puts the raw worst view over the 300,000 triangle budget with the hero: 294,630 + 19,949
+## = 314,579.
+## Follow the fog if it moves.
+const CHUNK_DRAW_DISTANCE := 36.0
+## Boxes inside the masonry: T017 validated 0.5 m thick walls; the low ceilings stay clear of their 0.138 m rubble.
+const OCCLUDER_WALL_SIZE := Vector3(4.0, 4.15, 0.5)
+const OCCLUDER_CEILING_INSET := 0.2
+const OCCLUDER_TOP := 4.15
+const CEILING_UNDERSIDE := {&"ceiling_crouch": 1.3, &"ceiling_crawl": 0.75}
+## Lamps: real-time omnis, no shadows. LightmapGI has no bake call outside the editor and headless has no RenderingDevice.
+const OMNI_RANGE := 5.0  # 1.25 cells. At 6 m (1.5 cells) the game seed sits at the limit and other seeds pass it
+const OMNI_ENERGY := 0.7  # contract 0.8 washes stone out near lamps in Mobile; 0.6 and 0.7 keep the block texture
+const OMNI_COLOR := Color(1.0, 0.93, 0.84)  # near neutral: the albedo is already warm
+const OMNI_SPECULAR := 0.0  # 16 m seam, pixels over 170 all/neutral: 1/0 at 0 and 0.03, 2/0 at 0.1, 27/11 at 0.3
+const FLAME_EMISSION := 1.0
+## Index list of an 8-corner box, corners numbered by bits x, y, z.
+const BOX_TRIS: Array[int] = [0, 2, 1, 1, 2, 3, 4, 5, 6, 5, 7, 6, 0, 1, 4, 1, 5, 4,
+		2, 6, 3, 3, 6, 7, 0, 4, 2, 2, 4, 6, 1, 3, 5, 3, 7, 5]
 
 var _layout: MazeLayout
 var _built := false
 var _generation := 0
 var _chunks: Array[Node3D] = []
-var _stone_mat: StandardMaterial3D
-var _floor_mat: StandardMaterial3D
-var _box_meshes := {}  # Vector3 size -> BoxMesh
-var _box_shapes := {}  # Vector3 size -> BoxShape3D
-
-
-func _init() -> void:
-	_stone_mat = StandardMaterial3D.new()
-	_stone_mat.albedo_color = STONE_COLOR
-	_stone_mat.roughness = 0.9
-	_floor_mat = StandardMaterial3D.new()
-	_floor_mat.albedo_color = FLOOR_COLOR
-	_floor_mat.roughness = 0.95
+var _items: Array[Dictionary] = []
 
 
 func get_layout() -> MazeLayout:
@@ -45,6 +46,11 @@ func get_layout() -> MazeLayout:
 
 func is_built() -> bool:
 	return _built
+
+
+## The plan the current world was built from (tests only; not part of the public interface).
+func assembly_items() -> Array[Dictionary]:
+	return _items
 
 
 func build(layout: MazeLayout) -> void:
@@ -56,10 +62,21 @@ func build(layout: MazeLayout) -> void:
 	_clear()
 	_layout = layout
 	Core.state.set_value(StateKeys.MAZE_SEED, layout.get_seed())
+	get_viewport().use_occlusion_culling = true  # the project default is off and the chunks rely on it
+	var kit := Kit.new()
+	_items = Assembly.items(layout)
+	var by_chunk := {}
+	for item in _items:
+		_group(by_chunk, item.cell, item)
+	var lamps_by_chunk := {}
+	for slot in layout.lamp_slots():
+		_group(lamps_by_chunk, slot.cell, slot)
+	kit.lamp_flame_material.emission_energy_multiplier = FLAME_EMISSION
 	var sz := layout.size()
 	for cy in range(0, sz.y, CHUNK_CELLS):
 		for cx in range(0, sz.x, CHUNK_CELLS):
-			_build_chunk(Vector2i(cx, cy))
+			var key := Vector2i(cx, cy) / CHUNK_CELLS
+			_build_chunk(Vector2i(cx, cy), by_chunk.get(key, []), lamps_by_chunk.get(key, []), kit)
 	# Let the physics server register the new bodies before announcing that collision is ready.
 	await get_tree().physics_frame
 	await get_tree().physics_frame
@@ -67,6 +84,13 @@ func build(layout: MazeLayout) -> void:
 		return  # superseded by a newer build() call
 	_built = true
 	built.emit()
+
+
+static func _group(groups: Dictionary, cell: Vector2i, value: Dictionary) -> void:
+	var key := cell / CHUNK_CELLS
+	if not groups.has(key):
+		groups[key] = []
+	groups[key].append(value)
 
 
 func _clear() -> void:
@@ -77,147 +101,122 @@ func _clear() -> void:
 	_chunks.clear()
 
 
-# --- chunk assembly -------------------------------------------------------------------------------------
-
-func _build_chunk(origin: Vector2i) -> void:
+func _build_chunk(origin: Vector2i, items: Array, slots: Array, kit: Kit) -> void:
 	var sz := _layout.size()
 	var s := _layout.cell_size_m()
 	var end := Vector2i(mini(origin.x + CHUNK_CELLS, sz.x), mini(origin.y + CHUNK_CELLS, sz.y))
-	var boxes: Array = []  # [Kind, size: Vector3, centre: Vector3]
-
-	# Floor slab: top exactly at y = 0.
-	var fw := (end.x - origin.x) * s
-	var fd := (end.y - origin.y) * s
-	boxes.append([Kind.FLOOR, Vector3(fw, FLOOR_THICKNESS, fd),
-			Vector3(origin.x * s + fw * 0.5, -FLOOR_THICKNESS * 0.5, origin.y * s + fd * 0.5)])
-
-	for y in range(origin.y, end.y):
-		for x in range(origin.x, end.x):
-			var c := Vector2i(x, y)
-			# Walls: each cell owns its NORTH and WEST edges; the last column/row also own the outer EAST/SOUTH.
-			if _layout.has_wall(c, MazeLayout.Dir.NORTH):
-				boxes.append(_wall_h(x, y, s))
-			if _layout.has_wall(c, MazeLayout.Dir.WEST):
-				boxes.append(_wall_v(x, y, s))
-			if x == sz.x - 1 and _layout.has_wall(c, MazeLayout.Dir.EAST):
-				boxes.append(_wall_v(x + 1, y, s))
-			if y == sz.y - 1 and _layout.has_wall(c, MazeLayout.Dir.SOUTH):
-				boxes.append(_wall_h(x, y + 1, s))
-			# Ceiling: flat slab at the vault crown for FULL, low inserts (underside -> 3.9) otherwise.
-			var centre := _layout.cell_to_world(c)
-			match _layout.clearance(c):
-				MazeLayout.Clearance.CROUCH:
-					boxes.append(_insert(centre, CROUCH_UNDERSIDE, s))
-				MazeLayout.Clearance.CRAWL:
-					boxes.append(_insert(centre, CRAWL_UNDERSIDE, s))
-				_:
-					boxes.append([Kind.CEILING, Vector3(s, CEILING_THICKNESS, s),
-							Vector3(centre.x, WALL_HEIGHT + CEILING_THICKNESS * 0.5, centre.z)])
-
-	# Piers on corners owned by this chunk (corner (px, py) belongs to the chunk containing cell (px, py),
-	# clamped so the outer corners belong to the last chunk). Skipped where two collinear walls already enclose it.
-	var px_end := end.x + (1 if end.x == sz.x else 0)
-	var py_end := end.y + (1 if end.y == sz.y else 0)
-	for py in range(origin.y, py_end):
-		for px in range(origin.x, px_end):
-			var up := _vertical_wall(px, py - 1)
-			var down := _vertical_wall(px, py)
-			var left := _horizontal_wall(px - 1, py)
-			var right := _horizontal_wall(px, py)
-			if (up and down) or (left and right):
-				continue
-			boxes.append([Kind.STONE, Vector3(PIER_SIZE, PIER_HEIGHT, PIER_SIZE),
-					Vector3(px * s, PIER_HEIGHT * 0.5, py * s)])
-
+	# Chunk-local vertices: compressed positions stay precise and the chunk's origin is its centre.
+	var centre := Vector3((origin.x + end.x) * 0.5 * s, 0.0, (origin.y + end.y) * 0.5 * s)
 	var chunk := Node3D.new()
 	chunk.name = "Chunk_%d_%d" % [origin.x / CHUNK_CELLS, origin.y / CHUNK_CELLS]
+	chunk.position = centre
 	chunk.set_meta(&"maze_chunk", Rect2i(origin, end - origin))
 	var mesh := MeshInstance3D.new()
 	mesh.name = "Mesh"
-	mesh.mesh = _merge(boxes, [Kind.STONE, Kind.FLOOR])
+	mesh.mesh = _merge(items, slots, kit, centre)
+	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mesh.visibility_range_end = CHUNK_DRAW_DISTANCE
 	chunk.add_child(mesh)
-	var ceiling := MeshInstance3D.new()
-	ceiling.name = "Ceiling"
-	ceiling.mesh = _merge(boxes, [Kind.CEILING])
-	chunk.add_child(ceiling)
-	var body := StaticBody3D.new()
-	body.name = "Collision"
-	body.collision_layer = WORLD_LAYER
-	body.collision_mask = 0
-	for b in boxes:
-		var shape := CollisionShape3D.new()
-		shape.shape = _box_shape(b[1])
-		shape.position = b[2]
-		body.add_child(shape)
-	chunk.add_child(body)
+	chunk.add_child(_collision(items, kit, centre))
+	chunk.add_child(_occluder(items, centre))
+	for slot in slots:
+		chunk.add_child(_lamp(slot, kit, centre))
 	add_child(chunk)
 	_chunks.append(chunk)
 
 
-## Wall on the horizontal edge line z = y * s, spanning cell column x.
-func _wall_h(x: int, y: int, s: float) -> Array:
-	return [Kind.STONE, Vector3(s, WALL_HEIGHT, WALL_THICKNESS), Vector3((x + 0.5) * s, WALL_HEIGHT * 0.5, y * s)]
-
-
-## Wall on the vertical edge line x = x * s, spanning cell row y.
-func _wall_v(x: int, y: int, s: float) -> Array:
-	return [Kind.STONE, Vector3(WALL_THICKNESS, WALL_HEIGHT, s), Vector3(x * s, WALL_HEIGHT * 0.5, (y + 0.5) * s)]
-
-
-func _insert(centre: Vector3, underside: float, s: float) -> Array:
-	var h := WALL_HEIGHT - underside
-	return [Kind.STONE, Vector3(s, h, s), Vector3(centre.x, underside + h * 0.5, centre.z)]
-
-
-## Wall on vertical grid line x = px between rows cy and cy+1's top (false if that edge does not exist).
-func _vertical_wall(px: int, cy: int) -> bool:
-	var sz := _layout.size()
-	if cy < 0 or cy >= sz.y or px < 0 or px > sz.x:
-		return false
-	if px == sz.x:
-		return true
-	return _layout.has_wall(Vector2i(px, cy), MazeLayout.Dir.WEST)
-
-
-## Wall on horizontal grid line z = py along column cx (false if that edge does not exist).
-func _horizontal_wall(cx: int, py: int) -> bool:
-	var sz := _layout.size()
-	if cx < 0 or cx >= sz.x or py < 0 or py > sz.y:
-		return false
-	if py == sz.y:
-		return true
-	return _layout.has_wall(Vector2i(cx, py), MazeLayout.Dir.NORTH)
-
-
-func _merge(boxes: Array, kinds: Array) -> ArrayMesh:
+## One surface per material, in the order of first appearance in the plan, which is deterministic.
+func _merge(items: Array, slots: Array, kit: Kit, centre: Vector3) -> ArrayMesh:
+	var tools := {}  # Material -> SurfaceTool
+	for item in items:
+		var xform: Transform3D = item.xform
+		xform.origin -= centre
+		_append(tools, kit.material_of(item.piece), kit.mesh_for(item), xform)
+	for slot in slots:
+		var mount := Assembly.lamp_mount(_layout, slot)
+		mount.origin -= centre
+		_append(tools, kit.lamp_iron_material, kit.lamp_iron, mount * kit.lamp_iron_xform)
+		_append(tools, kit.lamp_flame_material, kit.lamp_flame, mount * kit.lamp_flame_xform)
 	var out := ArrayMesh.new()
-	for kind in kinds:
-		var st := SurfaceTool.new()
-		st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		var any := false
-		for b in boxes:
-			if b[0] != kind:
-				continue
-			st.append_from(_box_mesh(b[1]), 0, Transform3D(Basis.IDENTITY, b[2]))
-			any = true
-		if not any:
-			continue
-		st.set_material(_floor_mat if kind == Kind.FLOOR else _stone_mat)
-		st.commit(out)
+	for mat in tools:
+		(tools[mat] as SurfaceTool).commit(out, Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES)
 	return out
 
 
-func _box_mesh(size: Vector3) -> BoxMesh:
-	if not _box_meshes.has(size):
-		var m := BoxMesh.new()
-		m.size = size
-		_box_meshes[size] = m
-	return _box_meshes[size]
+static func _append(tools: Dictionary, mat: Material, mesh: Mesh, xform: Transform3D) -> void:
+	if not tools.has(mat):
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		st.set_material(mat)
+		tools[mat] = st
+	(tools[mat] as SurfaceTool).append_from(mesh, 0, xform)
 
 
-func _box_shape(size: Vector3) -> BoxShape3D:
-	if not _box_shapes.has(size):
-		var b := BoxShape3D.new()
-		b.size = size
-		_box_shapes[size] = b
-	return _box_shapes[size]
+## The kit's -colonly trimeshes merged into one shape per chunk, on layer 1. The faces keep the kit's winding.
+func _collision(items: Array, kit: Kit, centre: Vector3) -> StaticBody3D:
+	var faces := PackedVector3Array()
+	for item in items:
+		var xform: Transform3D = item.xform
+		xform.origin -= centre
+		faces.append_array(xform * (kit.faces[item.piece] as PackedVector3Array))
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(faces)
+	var node := CollisionShape3D.new()
+	node.shape = shape
+	var body := StaticBody3D.new()
+	body.name = "Collision"
+	body.collision_layer = WORLD_LAYER
+	body.collision_mask = 0
+	body.add_child(node)
+	return body
+
+
+## One OccluderInstance3D per chunk: a box in each wall and in each solid low ceiling.
+func _occluder(items: Array, centre: Vector3) -> OccluderInstance3D:
+	var vertices := PackedVector3Array()
+	var indices := PackedInt32Array()
+	for item in items:
+		var xform: Transform3D = item.xform
+		xform.origin -= centre
+		if item.piece == &"wall":
+			var half := OCCLUDER_WALL_SIZE * 0.5
+			_add_box(vertices, indices, xform, Vector3(-half.x, 0, -half.z), Vector3(half.x, OCCLUDER_WALL_SIZE.y, half.z))
+		elif CEILING_UNDERSIDE.has(item.piece):
+			var half := _layout.cell_size_m() * 0.5 - OCCLUDER_CEILING_INSET
+			_add_box(vertices, indices, xform, Vector3(-half, CEILING_UNDERSIDE[item.piece], -half),
+					Vector3(half, OCCLUDER_TOP, half))
+	var occluder := ArrayOccluder3D.new()
+	occluder.set_arrays(vertices, indices)
+	var node := OccluderInstance3D.new()
+	node.name = "Occluder"
+	node.occluder = occluder
+	return node
+
+
+static func _add_box(vertices: PackedVector3Array, indices: PackedInt32Array, xform: Transform3D, low: Vector3,
+		high: Vector3) -> void:
+	var base := vertices.size()
+	for i in 8:
+		vertices.append(xform * Vector3(high.x if i & 1 else low.x, high.y if i & 2 else low.y, high.z if i & 4 else low.z))
+	for i in BOX_TRIS:
+		indices.append(base + i)
+
+
+## The lamp's meshes are merged into the chunk (flame material shared, so dim it through FLAME_EMISSION). This node is
+## the mount, on the wall face with local +Z into the cell; it has no collision. The omni stands at the kit's emitter.
+func _lamp(slot: Dictionary, kit: Kit, centre: Vector3) -> Node3D:
+	var mount := Node3D.new()
+	mount.name = "Lamp_%d_%d" % [slot.cell.x, slot.cell.y]
+	mount.transform = Assembly.lamp_mount(_layout, slot)
+	mount.position -= centre
+	mount.set_meta(&"maze_lamp", slot)
+	var omni := OmniLight3D.new()
+	omni.name = "Light"
+	omni.position = kit.lamp_emitter
+	omni.omni_range = OMNI_RANGE
+	omni.light_energy = OMNI_ENERGY
+	omni.light_color = OMNI_COLOR
+	omni.light_specular = OMNI_SPECULAR
+	omni.shadow_enabled = false
+	mount.add_child(omni)
+	return mount

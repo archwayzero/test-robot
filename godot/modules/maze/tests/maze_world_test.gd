@@ -56,14 +56,18 @@ func test_chunks() -> void:
 		if c.has_meta(&"maze_chunk"):
 			chunks += 1
 			var r: Rect2i = c.get_meta(&"maze_chunk")
-			assert_true(r.size.x <= 4 and r.size.y <= 4, "chunk at most 4x4 cells")
+			assert_true(r.size.x <= 2 and r.size.y <= 2, "chunk at most 2x2 cells")
 			var body := c.get_node("Collision") as StaticBody3D
 			assert_eq(body.collision_layer, 1, "world geometry on physics layer 1")
-	assert_eq(chunks, 25, "20x20 maze -> 5x5 chunks")
+	assert_eq(chunks, 100, "20x20 maze -> 10x10 chunks")
 
 
 func test_raycasts_match_has_wall() -> void:
 	await get_tree().physics_frame
+	_check_raycasts()
+
+
+func _check_raycasts() -> void:
 	var sz := layout.size()
 	var sampled := 0
 	var walls := 0
@@ -91,6 +95,10 @@ func test_raycasts_match_has_wall() -> void:
 
 func test_floor_at_zero() -> void:
 	await get_tree().physics_frame
+	_check_floor()
+
+
+func _check_floor() -> void:
 	var sz := layout.size()
 	for c in [Vector2i(0, 0), Vector2i(sz.x - 1, sz.y - 1), layout.start_cell(), Vector2i(7, 13)]:
 		var p := layout.cell_to_world(c)
@@ -102,8 +110,12 @@ func test_floor_at_zero() -> void:
 
 func test_ceiling_heights() -> void:
 	await get_tree().physics_frame
+	_check_ceilings()
+
+
+func _check_ceilings() -> void:
 	var expected := {
-		MazeLayout.Clearance.FULL: 3.9,
+		MazeLayout.Clearance.FULL: 4.148,  # vault crown, collision matches the render mesh (T017)
 		MazeLayout.Clearance.CROUCH: 1.3,
 		MazeLayout.Clearance.CRAWL: 0.75,
 	}
@@ -131,17 +143,28 @@ func test_rebuild_is_idempotent() -> void:
 	world.build(other)
 	assert_false(world.is_built(), "not built while rebuilding")
 	await world.built
-	assert_true(world.is_built(), "first rebuild finished")
-	assert_eq(core().state.get_value(StateKeys.MAZE_SEED), 42)
+	_check_rebuilt(42, "first rebuild finished")
 	world.build(layout)
 	await world.built
-	assert_true(world.is_built(), "second rebuild finished")
-	assert_eq(built_count, before + 2)
-	assert_eq(_count_chunks(), 25, "old chunks removed on rebuild")
-	assert_eq(world.get_layout(), layout)
-	assert_eq(core().state.get_value(StateKeys.MAZE_SEED), MazeFactory.GAME_SEED)
-	# Collision matches the rebuilt layout again.
+	_check_rebuilt(MazeFactory.GAME_SEED, "second rebuild finished")
+	_check_counts_after_rebuild(before + 2)
 	await get_tree().physics_frame
+	_check_start_cell_collision()
+
+
+func _check_rebuilt(want_seed: int, message: String) -> void:
+	assert_true(world.is_built(), message)
+	assert_eq(core().state.get_value(StateKeys.MAZE_SEED), want_seed)
+
+
+func _check_counts_after_rebuild(want_built: int) -> void:
+	assert_eq(built_count, want_built)
+	assert_eq(_count_chunks(), 100, "old chunks removed on rebuild")
+	assert_eq(world.get_layout(), layout)
+
+
+## Collision matches the rebuilt layout again.
+func _check_start_cell_collision() -> void:
 	var start := layout.start_cell()
 	for d in 4:
 		var from := layout.cell_to_world(start) + Vector3(0, RAY_Y, 0)
