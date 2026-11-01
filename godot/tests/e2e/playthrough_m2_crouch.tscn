@@ -1,0 +1,8 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://tests/e2e/playthrough_m2.gd" id="1_m2"]
+
+[node name="PlaythroughM2" type="Node"]
+script = ExtResource("1_m2")
+part = "crouch"
+offset_s = 7.6
