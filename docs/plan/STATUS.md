@@ -10,20 +10,20 @@ Last updated: 2026-10-31, session 4.
 ## Open PRs (human to review/merge)
 | PR | Branch | Task | State after merge |
 |---|---|---|---|
-| #62 | task/rigger-animator/T042-hero-textures-import-as-astc | T042 | `task.py done T042` |
-| (this) | arch/before-t020 | status, retrospective | none |
+| #64 | task/qa/T020-m2-milestone-e2e-budgets-frame | T020 | `task.py done T020` |
+| (this) | arch/t021-export | T021: iOS preset, name The Crypt, bundle ID, handoff, status | none |
 
 ## Priority (human, 2026-10-31)
 Reach running on the phone fastest. Lighting and occlusion wait until after the first device build. Order below.
 
 ## Next actions, in order
-1. T020 qa, slimmed (human kept it): movement, stances, jump, budgets, one short video.
-2. T021 orchestrator: export preset (exclude `res://tests/*`, T014 preview scenes, automation,
-   `res://assets/*/model/*_preview*`, unused `res://assets/hero/model/*`), min iOS 16, ASTC, Mac package.
-3. T022 qa: network/data audit + release checklist. T023 human (Mac): Xcode build, sign, install on iPhone 12, profile.
-   Device checks: frame rate, occlusion on iOS, load stall, first-fade hitch, `fog_sky_affect` output and cost.
+1. T022 qa after both merge: net_data_audit, `docs/qa/reports/network-data-audit.md` and `release-candidate.md`, each with
+   a line `RESULT: PASS`, committed after the last change to godot/.
+2. After that merges: `python3 tools/release/make_mac_package.py --version 0.1.0` on clean, current main.
+3. T023 human (Mac), per docs/IOS_HANDOFF.md: report the device checks listed there.
 
 ## Deferred until after the first device build
+F1 hero hidden past low-passage mouths, F2 partial fade looks wrong (T020 report): judge on the phone.
 Hero fill light (human: judge the dark hero on a phone; spec in the T019 review, hero-only omni on the camera, layer 20).
 Lighting (reviewer 7.0/10): pale plaster near lamps, dark corridor ends, crawl ceiling wedges. T020's full scope: motion,
 shimmer, occlusion pop, TEST_PLAN P1-P4, the 28 unmeasured views. N1 audits T033-T036.
@@ -31,8 +31,8 @@ Tooling: tools/xdisplay.py docstring wrongly says no lock file, and `_free_displ
 Godot hangs instead of exiting on a script parse error in a capture probe.
 
 ## Active task
-None running. T019 done (#61). T042 awaiting merge: 345/345, all six hero textures ASTC. Lighting (human): keep wall lamps.
-Kit look accepted.
+None running. T021 on PR: export preset done; pack export 127 files, 0 test or preview files, 16 ASTC textures, boots
+headless without errors. App Store Team ID is left empty for the human. No app icon yet.
 
 ## Process notes that worked in session 3
 - Quality loops: reviewer measures independently and scores out of 10 against the reference; send back with numbered,
