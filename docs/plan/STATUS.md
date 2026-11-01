@@ -10,14 +10,13 @@ Last updated: 2026-10-31, session 4.
 ## Open PRs (human to review/merge)
 | PR | Branch | Task | State after merge |
 |---|---|---|---|
-| #64 | task/qa/T020-m2-milestone-e2e-budgets-frame | T020 | `task.py done T020` |
-| (this) | arch/t021-export | T021: iOS preset, name The Crypt, bundle ID, handoff, status | none |
+| #65 | arch/t021-export | T021: iOS preset, name The Crypt, bundle ID, handoff, status | none |
 
 ## Priority (human, 2026-10-31)
 Reach running on the phone fastest. Lighting and occlusion wait until after the first device build. Order below.
 
 ## Next actions, in order
-1. T022 qa after both merge: net_data_audit, `docs/qa/reports/network-data-audit.md` and `release-candidate.md`, each with
+1. T022 qa after #65 merges: net_data_audit, `docs/qa/reports/network-data-audit.md` and `release-candidate.md`, each with
    a line `RESULT: PASS`, committed after the last change to godot/.
 2. After that merges: `python3 tools/release/make_mac_package.py --version 0.1.0` on clean, current main.
 3. T023 human (Mac), per docs/IOS_HANDOFF.md: report the device checks listed there.
