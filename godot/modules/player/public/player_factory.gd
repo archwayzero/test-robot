@@ -1,6 +1,5 @@
 ## Creates the player scene. Owner: orchestrator. Implemented by internal/player.tscn (root script extends
-## PlayerController). Until the hero rig exists (asset `hero`, godot/assets/hero/rig/hero.glb) the player uses a
-## capsule placeholder of the same dimensions.
+## PlayerController). The visual is the hero rig, godot/assets/hero/rig/hero.glb.
 class_name PlayerFactory
 extends RefCounted
 

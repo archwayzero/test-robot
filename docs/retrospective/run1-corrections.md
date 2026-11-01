@@ -389,3 +389,8 @@ modeler task with two reviews). Next game: separate work into different commits,
 - **Git and DVC after merge:** `git merge` and fast-forward do not sync DVC files, and `git checkout -b x origin/main`
   fails part-way here because tracking writes to the protected .git/config, leaving HEAD behind main's tree. Use
   `--no-track`, and run `dvc checkout` after merges.
+- **Stalled agent read as busy (T042):** an agent waited about 90 minutes on a job that had ended, and the orchestrator
+  relayed "waiting on background work" without checking until the human asked. When an agent reports that, check the
+  mtime of its transcript and `free -m`. Likely cause: a Godot probe with a script error hangs instead of quitting.
+  Next game: test harnesses need a hard timeout that cannot leave stale X locks, and Godot should run with a quit on
+  script error.
