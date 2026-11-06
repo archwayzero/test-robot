@@ -89,5 +89,68 @@ Then run `python3 tools/qa/check_budgets.py` and include the asset's row; an ass
   `idle_loop`, `walk_loop`, `jog_loop`, `crouch_idle_loop`, `crouch_walk_loop`, `crawl_idle_loop`, `crawl_loop`, `jump`.
   Walk cycle stride should match `PlayerController.WALK_SPEED` 1.6 m/s, jog 4.0, crouch walk 1.0, crawl 0.5.
 
+## Asset: hero cloak (2026-11-06, decision D18)
+Human direction: docs/specs/ASSETS.md and RIGGING_ANIMATION.md "hero cloak". References (human-provided, DVC via
+T043): `reference/hero/cloak_front.png` (front three-quarter), `reference/hero/cloak_backside.png` (rear three-quarter).
+They are vintage black-and-white studio photos of a draped costume, with a "world4.eu" watermark at the bottom; ignore the
+watermark and do not treat the photos as orthographic views. Take the cut, fold language and colours from them, not the figure.
+
+**Model (modeler, extends `blender/models/hero/conform.py` -> `hero_model.blend` -> `godot/assets/hero/model/hero.glb`)**
+- Two cloth layers, fitted over the hero's I-pose rest:
+  - **Mantle**, white. Draped over both shoulders and the upper arms, with the cascading vertical folds and zigzag hems of the
+    references. The hem is about knee height at the front and longer at the sides. It sits under the loosened hood at the
+    neck. Arms stay free from the elbow down.
+  - **Cloak**, gray. Hangs from the shoulders under the mantle, is **open at the front** (the blade legs come through the
+    opening), and is **floor length at the back** with a slight train. The hem clears the floor by 2-4 cm in the rest pose.
+    A lighter trim band at the hem, as in the references, is optional.
+  - Both layers are worn **under the backpack**. The backpack and its straps stay on top and visible.
+- **Hood:** loosen the existing hood a little to match the drape of the references: a deeper, softer fall around the face,
+  neck and shoulders. Keep its material. The head top (hood) stays <= 1.78 m.
+- **Colours:** matte fabric, metallic 0, roughness 0.85-0.95. Mantle albedo is about sRGB (215, 210, 198), off-white
+  (pure white blooms under the lamps). Cloak albedo is about sRGB (105, 105, 108). Both layers are double-sided (glTF
+  `doubleSided`), because the inside shows when the cloak flares.
+- **One** new material for both layers. The colour comes from a UV region of one small texture set, or from the albedo
+  multiplied by a texture: <= 1024 px, adding <= 4 MB to the uncompressed texture measure. This gives 3 materials total,
+  3/4 draw calls. Keep the hero a single mesh object, so it stays one skinned MeshInstance3D.
+- **Triangles:** the whole hero stays <= 20,000 (budgets.json; it is 19,949 now). The cloth needs about 3,000-4,500
+  triangles, with enough rows down its length to bend smoothly. Pay for them in this order:
+  1. delete body faces that are always hidden under the mantle and cloak (shoulders, upper chest and back under the
+     mantle);
+  2. use limited-dissolve or planar decimation on the Tripo upper body, away from the face, hood edge and backpack
+     silhouette;
+  3. then reduce the cloth.
+  The legs keep their T011 shape.
+- **Self-check:** render front, side, back and three-quarter views next to the references and `full_body.png`. Nothing
+  passes through the body in the rest pose, and no hole shows where faces were removed.
+
+**Rig and motion (rigger-animator, extends `blender/rigs/hero/rig.py`)**
+- Cloak bones are chains parented to the spine or chest (and the upper arms for the mantle front, if needed). The total
+  is **<= 64 joints** (23 now). Use at most 4 weights per vertex. The body skinning stays as T013.
+- **Motion is baked from Blender cloth simulation into the cloak bones.** There is no runtime cloth and no shape keys.
+  Simulate with body, leg, backpack and floor colliders, then key the bones to follow the simulated cloth, for example
+  with damped-track or stretch-to bones on vertex-parented empties, baked with visual keying. Then remove the helpers.
+- **The cloth must see the real motion.** The clips are in-place, so during the simulation move the character through
+  the world at the clip's speed: walk 1.6, jog 4.0, crouch walk 1.0, crawl 0.5 m/s. For `jump`, use the physics arc:
+  up at 4.0 m/s, airborne 0.80 s, touchdown at frame 25. Bake in the character's local space.
+- **Per clip (clip names and lengths unchanged):**
+  - `idle_loop`, `crouch_idle_loop`, `crawl_idle_loop`: one settled drape per stance, held still.
+  - `walk_loop`: gentle sway.
+  - `jog_loop`: the cloak **streams behind** and the mantle hems lift and trail.
+  - `crouch_walk_loop`, `crawl_loop`: the cloak drapes over the back and drags behind on the floor.
+  - `jump`: the cloak **flares**. Hems lift and spread on the way up and in the air, then fall back by the landing. The last
+    frame is close to the idle drape.
+  - Loops are seamless. Simulate at least 3 cycles, use the last one, and blend its end into its start. Use the T014
+    seam check.
+- **Limits checked on every frame of every clip:**
+  - the cloth never passes through the body, legs or backpack (a few mm is tolerated);
+  - it never goes below the floor (more than 1 cm);
+  - the tops including the cloth are: crawl <= 0.73 m (0.75 m ceiling), crouch and crouch walk <= 1.28 m (1.3 m ceiling),
+    stand <= 1.78 m.
+- Re-export `godot/assets/hero/rig/hero.glb`, then rerun `import_settings.py` and `--verify` (ASTC, T042).
+
+**Known limit (accepted for this pass):** the player's AnimationTree crossfades in 0.15 s. Stopping from a run swaps
+the streaming cloak to the still drape within that time. Runtime spring bones (`SpringBoneSimulator3D`) or a longer cloak
+blend in `player` can come later, if it looks wrong on the phone.
+
 ## Asset: crypt_kit (run 1)
 See docs/contracts/crypt-kit.md (pieces, dimensions, clearances, materials).

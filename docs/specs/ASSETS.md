@@ -12,3 +12,8 @@ Put provided originals at `blender/models/<id>/source/<file>.glb` and track them
 | id (snake_case) | name | purpose / used by mechanic | source | style notes | tri budget | needs rig? | priority |
 |---|---|---|---|---|---|---|---|
 | hero | Main character | player avatar (M1) | provided: blender/models/hero/source/hero.glb | keep look of the Tripo model | (from budgets) | yes | 1 |
+
+## hero cloak (human, 2026-11-06, transcribed by the orchestrator)
+Add a floor-length cloak to the hero. References: `reference/hero/cloak_front.png`, `reference/hero/cloak_backside.png`.
+Colours white and gray as in the reference. The hero already has a hood: alter it a little to be looser, to match
+the general vibe of the cloak references.
