@@ -91,8 +91,9 @@ Then run `python3 tools/qa/check_budgets.py` and include the asset's row; an ass
 
 ## Asset: hero cloak (2026-11-06, decision D18)
 Human direction: docs/specs/ASSETS.md and RIGGING_ANIMATION.md "hero cloak". References (human-provided, DVC via
-T043): `reference/hero/cloak_front.png`, `reference/hero/cloak_backside.png`. They are a historical draped costume. Take
-the cut, fold language and colours from them, not the figure.
+T043): `reference/hero/cloak_front.png` (front three-quarter), `reference/hero/cloak_backside.png` (rear three-quarter).
+They are vintage black-and-white studio photos of a draped costume, with a "world4.eu" watermark at the bottom; ignore the
+watermark and do not treat the photos as orthographic views. Take the cut, fold language and colours from them, not the figure.
 
 **Model (modeler, extends `blender/models/hero/conform.py` -> `hero_model.blend` -> `godot/assets/hero/model/hero.glb`)**
 - Two cloth layers, fitted over the hero's I-pose rest:
