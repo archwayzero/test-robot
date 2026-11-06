@@ -1,4 +1,4 @@
-"""T011 hero conform (pass 7): Tripo upper body (provided) + continuous digitigrade legs -> hero_model.blend.
+"""T011 hero conform (pass 7) + T044 cloak: Tripo upper body (provided) + continuous digitigrade legs -> hero_model.blend.
 
 Build (re-runnable, deterministic), then export:
   python3 tools/qa/memguard.py --expect-peak-mb 2000 -- blender -b -P blender/models/hero/conform.py
@@ -42,11 +42,15 @@ Steps:
      Tripo-matched next to the seam, the reference's heavy ochre on the plates, dark segment lines, sparse rust
      on the darker shins and feet.
   7. Body textures: base colour 4096 -> 2048, roughness/metallic 2048 -> 1024, normal kept at 2048.
-  8. Save hero_model.blend (images packed). Export separately (command above).
+  8. T044 cloak stage (cloak.py): white mantle + gray cloak (one material `hero_cloak`, vertex groups `cloak_mantle`
+     / `cloak_gray`), looser hood, backpack straps on top; pays for the cloth with hidden body faces and a limited
+     dissolve of the torso under it (whole hero <= 20,000 tris).
+  9. Save hero_model.blend (images packed). Export separately (command above).
 """
 import array
 import math
 import os
+import sys
 
 import bmesh
 import bpy
@@ -1467,6 +1471,13 @@ for m in (body_mat, leg_mat):
     except AttributeError:
         pass
 
+# ------------------------------------------------------------- T044: cloak (mantle + gray cloak, decision D18)
+# Mantle + cloak, looser hood, straps on top, body faces always hidden under the cloth removed, budget (cloak.py).
+sys.path.insert(0, HERE)
+import cloak  # noqa: E402
+
+CLOAK = cloak.apply(obj)
+
 # ------------------------------------------------------------------------------------------ finish
 obj.location = (0, 0, 0)
 obj.rotation_euler = (0, 0, 0)
@@ -1482,6 +1493,6 @@ lo = Vector((min(v.x for v in vs), min(v.y for v in vs), min(v.z for v in vs)))
 hi = Vector((max(v.x for v in vs), max(v.y for v in vs), max(v.z for v in vs)))
 log("RESULT tris", len(me.loop_triangles), "body", body_tris1, "legs", leg_tris,
     "bbox min", tuple(round(c, 4) for c in lo), "max", tuple(round(c, 4) for c in hi),
-    "materials", [m.name for m in me.materials])
+    "materials", [m.name for m in me.materials], "cloak", CLOAK)
 bpy.ops.wm.save_as_mainfile(filepath=OUT, compress=True)
 log("saved", OUT)

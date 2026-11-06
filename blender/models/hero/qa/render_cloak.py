@@ -45,6 +45,9 @@ for v, a in full.items():
         # angle 0 = camera in front (+Y), 90 = camera at +X
         aim((D * math.sin(r), D * math.cos(r), 0.9), (0, 0, 0.9))
         render(v, (520, 1000))
+if "game" in views:          # third-person game camera (as in qa/render.py)
+    cam.data.type = "PERSP"; cam.data.lens = 35
+    aim((0.4, -2.5, 2.3), (0, 0.3, 1.0)); render("game", (960, 540))
 close = {"torso_front": (0, 1.25, 0.9), "torso_back": (180, 1.25, 0.9), "torso_side": (90, 1.25, 0.9),
          "torso_3q": (35, 1.25, 0.9), "hood": (25, 1.55, 0.45), "hem": (120, 0.25, 0.7)}
 for v, (a, zc, span) in close.items():

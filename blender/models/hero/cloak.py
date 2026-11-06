@@ -276,9 +276,6 @@ def make_material(path):
     nt.links.new(tex.outputs[0], bsdf.inputs["Base Color"])
     bsdf.inputs["Roughness"].default_value = 0.9
     bsdf.inputs["Metallic"].default_value = 0.0
-    for key in ("Specular IOR Level",):
-        if key in bsdf.inputs:
-            bsdf.inputs[key].default_value = 0.3
     mat.use_backface_culling = False          # glTF doubleSided
     try:
         mat.surface_render_method = "DITHERED"
@@ -568,9 +565,25 @@ def apply(obj):
         dissolved = limited_dissolve(bm, total - TRI_MAX, protect)
         total = count()
         log("after limited dissolve", total)
+    # duplicate faces (same vertex set, e.g. a triangulated dissolve n-gon over an existing triangle): keep one
+    seen, dup = {}, []
+    bm.verts.index_update()
+    for f in bm.faces:
+        key = frozenset(v.index for v in f.verts)
+        if key in seen:
+            dup.append(f)
+        else:
+            seen[key] = f
+    if dup:
+        log("duplicate faces removed", len(dup), [(round(f.calc_center_median().x, 3), round(f.calc_center_median().y, 3),
+                                                    round(f.calc_center_median().z, 3), f.material_index) for f in dup])
+        bmesh.ops.delete(bm, geom=dup, context="FACES_ONLY")
+        total = count()
     bm.to_mesh(me)
     bm.free()
     me.update()
+    if me.validate(verbose=True, clean_customdata=False):
+        log("WARNING: mesh.validate() changed the mesh")
     report = check(obj, mi)
     report.update({"tris": total, "cloth_tris": cloth_tris, "hidden_removed_tris": n_hidden, "dissolved": dissolved,
                    "tris_before": tris0})
