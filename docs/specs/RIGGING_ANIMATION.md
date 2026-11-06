@@ -13,3 +13,6 @@ One section per asset that needs a rig (ids must match docs/specs/ASSETS.md).
 - Required controls or constraints: does not clip through walls, the floor, or the ceiling or any other object in its path. Left screen joystick controls for walking, running; right screen button for jumping and switching to crouch and crawl.
 - Animations: walking, jogging, crouch-walking, crawling on the floor, jumping
   
+
+## hero cloak (human, 2026-11-06, transcribed by the orchestrator)
+- When idle the cloak does not need to move. When running it streams behind. When jumping it flares.
