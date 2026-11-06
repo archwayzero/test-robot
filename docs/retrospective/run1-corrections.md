@@ -397,7 +397,8 @@ modeler task with two reviews). Next game: separate work into different commits,
 - **Target platforms (human, 2026-11-05): mobile AND Mac, next game or a later run.** Run 1 was specified for iOS only
   (docs/specs/PLATFORM.md, budgets, touch-only controls). Wanted instead:
   1. **Budgets per platform.** docs/qa/budgets.json has one set of limits sized for the iPhone 12. Split them into
-     per-platform tiers (iPhone 12 minimum; Mac, Apple Silicon and Intel) with cited sources and human approval, and
+     per-platform tiers (iPhone 12 minimum; Apple Silicon Mac only, no Intel Macs, human 2026-11-05: ASTC textures
+     serve both, no BPTC/S3TC needed) with cited sources and human approval, and
      make QA check each tier.
   2. **In-game graphics settings,** with defaults chosen by platform on first launch and the player able to change
      them: for example render scale, shadow quality, light count or range, draw distance, particle density, texture
