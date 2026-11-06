@@ -394,3 +394,20 @@ modeler task with two reviews). Next game: separate work into different commits,
   mtime of its transcript and `free -m`. Likely cause: a Godot probe with a script error hangs instead of quitting.
   Next game: test harnesses need a hard timeout that cannot leave stale X locks, and Godot should run with a quit on
   script error.
+- **Target platforms (human, 2026-11-05): mobile AND Mac, next game or a later run.** Run 1 was specified for iOS only
+  (docs/specs/PLATFORM.md, budgets, touch-only controls). Wanted instead:
+  1. **Budgets per platform.** docs/qa/budgets.json has one set of limits sized for the iPhone 12. Split them into
+     per-platform tiers (iPhone 12 minimum; Apple Silicon Mac only, no Intel Macs, human 2026-11-05: ASTC textures
+     serve both, no BPTC/S3TC needed) with cited sources and human approval, and
+     make QA check each tier.
+  2. **In-game graphics settings,** with defaults chosen by platform on first launch and the player able to change
+     them: for example render scale, shadow quality, light count or range, draw distance, particle density, texture
+     size, and frame-rate cap. This needs a settings module, persisted in GameState and saved, and every visual feature
+     (lighting, debris, particles, cloth) must be built with quality levels from the start, not added later.
+  3. **Controls per input device:** touch controls on mobile (as now); trackpad drag on a MacBook; mouse drag on a
+     desktop Mac; plus keyboard. Input still goes through GameActions; camera orbit must accept touch, trackpad and mouse
+     (today it accepts only touch, with mouse emulated as touch). On-screen controls hide when no touch screen is used.
+  4. **Specs and export:** PLATFORM.md lists both targets, export presets for iOS and macOS, a release report per
+     platform, and Mac signing and notarization if the game is given to others (paid Apple Developer account).
+  Decide this at planning: budgets, the settings module and input handling shape every module and asset task.
+
