@@ -10,16 +10,15 @@ Last updated: 2026-10-31, session 4.
 ## Open PRs (human to review/merge)
 | PR | Branch | Task | State after merge |
 |---|---|---|---|
-| #65 | arch/t021-export | T021: iOS preset, name The Crypt, bundle ID, handoff, status | none |
+| (this) | arch/t023-handoff | status, cloud save decision | none |
 
 ## Priority (human, 2026-10-31)
-Reach running on the phone fastest. Lighting and occlusion wait until after the first device build. Order below.
+Reach running on the phone fastest. Lighting and occlusion wait until after the first device build.
 
 ## Next actions, in order
-1. T022 qa after #65 merges: net_data_audit, `docs/qa/reports/network-data-audit.md` and `release-candidate.md`, each with
-   a line `RESULT: PASS`, committed after the last change to godot/.
-2. After that merges: `python3 tools/release/make_mac_package.py --version 0.1.0` on clean, current main.
-3. T023 human (Mac), per docs/IOS_HANDOFF.md: report the device checks listed there.
+1. T023 human (Mac): `dist/The-Crypt-0.1.0-beffc3ae-mac.zip` (commit beffc3ae, 354 files, budget 100,
+   sha256 starts eab926754a3c), steps in docs/IOS_HANDOFF.md. Help from errors the human pastes.
+2. Triage device results, then the deferred list below. A change to godot/ needs both release reports rerun.
 
 ## Deferred until after the first device build
 F1 hero hidden past low-passage mouths, F2 partial fade looks wrong (T020 report): judge on the phone.
@@ -30,8 +29,8 @@ Tooling: tools/xdisplay.py docstring wrongly says no lock file, and `_free_displ
 Godot hangs instead of exiting on a script parse error in a capture probe.
 
 ## Active task
-None running. T021 on PR: export preset done; pack export 127 files, 0 test or preview files, 16 ASTC textures, boots
-headless without errors. App Store Team ID is left empty for the human. No app icon yet.
+None running. T021, T022 merged. Waiting on the human's Mac build (T023). Cloud save: not in this build (human, D11).
+Lighting (human): keep wall lamps. Kit look accepted.
 
 ## Process notes that worked in session 3
 - Quality loops: reviewer measures independently and scores out of 10 against the reference; send back with numbered,
