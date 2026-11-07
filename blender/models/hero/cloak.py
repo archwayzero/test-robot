@@ -468,7 +468,7 @@ def apply(obj):
     dfront = np.abs(((np.degrees(m_th) - 90 + 180) % 360) - 180)
     # hem: front centre about knee height, long tails at the front and back sides, the arm span raised (arm_min)
     hem_design = np.interp(dfront, [0, 10, 22, 35, 50, 62, 75, 105, 118, 130, 145, 162, 180],
-                           [0.56, 0.54, 0.46, 0.36, 0.31, 0.36, 0.9, 0.9, 0.36, 0.30, 0.32, 0.42, 0.50])
+                           [0.56, 0.54, 0.45, 0.33, 0.26, 0.34, 0.9, 0.9, 0.33, 0.25, 0.27, 0.40, 0.50])
     fa = use & (np.abs(V0[:, 0]) > FOREARM_X) & (V0[:, 2] < FOREARM_TOP)
     fa_th = ang(V0[fa, 0], V0[fa, 1])
     arm_min = np.zeros(M_COLS)
@@ -558,7 +558,7 @@ def apply(obj):
     m_room = np.maximum(0.0, mR - np.maximum(env_at(E_body, mTH, mZ) + M_OFF, env_at(E_cloak, mTH, mZ) + M_GAP))
     mR2, mD, mc = folds(mR, m_u, A, m_room, M_FOLD_IN)
     low = mZ < 0.95             # below the hips: never closer than M_OFF to the legs / body (the swing of the open
-    mR2 = np.where(low, np.maximum(mR2, env_at(envelope(BP, 12), mTH, mZ) + M_OFF), mR2)      # front edges can cut a knee)
+    mR2 = np.where(low, np.maximum(mR2, env_at(envelope(BP, 20), mTH, mZ) + M_OFF), mR2)      # front edges can cut a knee)
     mantle = to_xyz(mR2, mTH, mZ)
     top = mZ[0] >= M_OPEN_Z - 1e-6        # the closing column = the first column above the opening
     mantle[-1, top] = mantle[0, top]
