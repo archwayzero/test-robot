@@ -385,6 +385,7 @@ def apply(obj):
     nv0 = len(me.vertices)
     tris0 = sum(len(p.vertices) - 2 for p in me.polygons)
     V0 = np.array([v.co[:] for v in me.vertices])
+    N0 = np.array([v.normal[:] for v in me.vertices])      # original vertex normals (hood shell vs its lining)
     mat_v = np.zeros(nv0, int)
     for p in me.polygons:
         if p.material_index == 1:
@@ -678,6 +679,8 @@ def apply(obj):
         bm.verts[i].co += d
     log("hood lifted over the mantle", len(need), "verts, max", round(max((d.length for d in disp.values()), default=0), 4),
         "capped", big)
+    n_lin = keep_lining_inside(bm, V0, N0, hood_idx)
+    log("hood lining vertices kept behind the outer shell", n_lin)
 
     # ---- mantle neckline rows that still stick out past the hood: tucked back under it (8 mm inside the shell)
     hfaces0 = [f for f in bm.faces if f.material_index == 0 and all(v.index in hood_set for v in f.verts)]
@@ -698,6 +701,27 @@ def apply(obj):
                 v.co = h[0] - rad * 0.008
                 tucked += 1
     log("mantle neckline vertices tucked back under the hood", tucked)
+    # mantle neckline vertices lying on / just over the hood's lower edge (over the shoulders they poked through the
+    # cowl rim as light shards): pushed under the nearest outward-facing hood face, 8 mm below its surface
+    hout = []
+    for f in hfaces0:
+        c = f.calc_center_median()
+        rad = Vector((c.x, c.y - YC, 0.0))
+        if rad.length > 1e-6 and f.normal.dot(rad.normalized()) > -0.2 and f.normal.z > 0.3:     # push goes down
+            hout.append(f)
+    htree1, _ = tree_of(hout)
+    under = 0
+    for col in mvs:
+        for v in col[:3]:
+            q, n, fi, dist = htree1.find_nearest(v.co, 0.012)
+            if q is None:
+                continue
+            sd = (v.co - q).dot(n)
+            lateral = ((v.co - q) - n * sd).length
+            if sd > -0.008 and lateral < 0.004:
+                v.co = v.co - n * (sd + 0.008)
+                under += 1
+    log("mantle neckline vertices pushed under the hood rim", under)
     # cloak vertices that poke out of the mantle at the top (z > 1.15): pulled back under it
     mtree3, _ = tree_of(mfaces)
     cvs = [vs for part, faces, vs in layers if part == 21][0]
@@ -715,10 +739,41 @@ def apply(obj):
                 v.co = h[0] - rad * 0.006
                 pulled += 1
     log("cloak vertices pulled back under the mantle", pulled)
+    # crumpled slivers at the cowl's outer tips over the shoulders (tiny Tripo faces hanging on the open edge, they
+    # stuck out of the outline as shards after the loosening): deleted
+    n_shards = 0
+    for _ in range(2):
+        shards = []
+        for f in bm.faces:
+            if f.material_index != 0 or (lp and int(round(f[lp])) == 22) or \
+                    not all(v.index in hood_set for v in f.verts):
+                continue
+            c = f.calc_center_median()
+            nb = sum(1 for e in f.edges if len(e.link_faces) == 1)
+            if abs(c.x) > 0.14 and 1.43 < c.z < 1.495 and (nb >= 2 or (nb == 1 and f.calc_area() < 3.0e-4)):
+                shards.append(f)
+        bmesh.ops.delete(bm, geom=shards, context="FACES_ONLY")
+        n_shards += len(shards)
+    log("hood rim slivers at the shoulder tips deleted", n_shards)
     # ---- backpack straps on top of the mantle / bib
     hood_faces = [f for f in bm.faces if f.material_index == 0 and all(v.index in hood_set for v in f.verts)]
     STRAP = add_straps(bm, mfaces + hood_faces, lp, uvl)
     log("strap ribbons", STRAP)
+    # mantle neckline vertices (lowered under the hood rim above) that ended up over a strap ribbon end: under it
+    sfaces = [f for f in bm.faces if f.is_valid and lp and int(round(f[lp])) == 22]
+    stree, _ = tree_of(sfaces)
+    bm.normal_update()
+    sunk = 0
+    for col in mvs:
+        for v in col[:4]:
+            if not v.is_valid:
+                continue
+            nv = v.normal.copy()
+            h = stree.ray_cast(v.co + nv * 1e-4, -nv, 0.008)
+            if h[0] is not None:
+                v.co = h[0] - nv * 0.003
+                sunk += 1
+    log("mantle neckline vertices sunk under the strap ends", sunk)
 
     # ---- torso faces that still cut the cloth at the neck / shoulders: inside the cloth, deleted
     bm.faces.ensure_lookup_table()
@@ -881,6 +936,76 @@ def apply(obj):
                    "hem": HEM, "folds": FOLD, "straps": STRAP, "neck_cut": len(neck_cut)})
     log("REPORT", report)
     return report
+
+
+def keep_lining_inside(bm, V0, N0, hood_idx, gap=0.002):
+    """The Tripo hood is a thin two-layer shell (outer chainmail + an inward-facing lining ~7 mm behind it). The
+    loosening and the lift over the mantle move each vertex on its own, so where the lining sits closer to the mantle
+    it was lifted further than the outer shell and poked through it (dark inward-facing triangles on the back of the
+    hood, stretched lining texture on the bib). Here every lining vertex gets at most the outward (radial) move of the
+    nearest outer-shell vertex, minus `gap`: the layering of the original shell is restored."""
+    from mathutils.kdtree import KDTree
+    z = V0[hood_idx, 2]
+    ay = np.where(z > 1.47, YH, YC)
+    rad = np.stack([V0[hood_idx, 0], V0[hood_idx, 1] - ay, np.zeros(len(hood_idx))], 1)
+    rad /= np.maximum(np.linalg.norm(rad, axis=1), 1e-6)[:, None]
+    nd = np.einsum("ij,ij->i", N0[hood_idx], rad)
+    ok = z < 1.66
+    outer = hood_idx[ok & (nd > 0.2)]
+    lining = [(i, r) for i, r, d, k in zip(hood_idx, rad, nd, ok) if k and d < -0.2]
+    if not len(outer) or not lining:
+        return 0
+    kd = KDTree(len(outer))
+    for k, i in enumerate(outer):
+        kd.insert(Vector(V0[i]), k)
+    kd.balance()
+    bm.verts.ensure_lookup_table()
+    n = 0
+    for i, r in lining:
+        _, k, dist = kd.find(Vector(V0[i]))
+        if dist > 0.025:
+            continue
+        o = outer[k]
+        r = Vector(r)
+        d_l = bm.verts[i].co - Vector(V0[i])
+        d_o = bm.verts[o].co - Vector(V0[o])
+        excess = (d_l - d_o).dot(r) + gap
+        if excess > 0:
+            bm.verts[i].co -= r * excess
+            n += 1
+    # large lining triangles (corners on the rim) span chords that still cut the curved, finer outer shell between
+    # their corners (side walls next to the face opening). There the outer shell is eased outward over them: an
+    # outer-shell vertex whose outward normal ray meets a lining face within 1.5 cm goes to that point + `gap`
+    # (the lining is hidden under the hood; a few mm, side / back walls between z 1.47 and 1.62 only)
+    hood_set = set(hood_idx.tolist())
+    for _ in range(3):
+        bm.normal_update()
+        lin_f, cand = [], []
+        for f in bm.faces:
+            if f.material_index != 0 or not all(v.index in hood_set for v in f.verts):
+                continue
+            c = f.calc_center_median()
+            rr = Vector((c.x, c.y - (YH if c.z > 1.47 else YC), 0.0))
+            if c.z < 1.66 and rr.length > 1e-6 and f.normal.dot(rr.normalized()) < -0.2:
+                lin_f.append(f)
+        lset = set(lin_f)
+        ltree, _ = tree_of(lin_f)
+        moved = 0
+        for v in bm.verts:
+            if v.index not in hood_set or not (1.47 < v.co.z < 1.62) or abs(v.co.x) > 0.13 or \
+                    any(g in lset for g in v.link_faces):
+                continue
+            rr = Vector((v.co.x, v.co.y - YH, 0.0))
+            if rr.length < 1e-6 or v.normal.dot(rr.normalized()) < 0.3:
+                continue
+            h = ltree.ray_cast(v.co + v.normal * 1e-4, v.normal, 0.015)
+            if h[0] is not None:
+                v.co = h[0] + v.normal * gap
+                moved += 1
+        n += moved
+        if not moved:
+            break
+    return n
 
 
 def add_straps(bm, top_faces, lp, uvl):
@@ -1076,7 +1201,8 @@ def limited_dissolve(bm, excess, protect):
         fs = [f for f in bm2.faces if f.index in idx]
         es = list({e for f in fs for e in f.edges if all(g.index in idx for g in e.link_faces)})
         vs = list({v for f in fs for v in f.verts})
-        bmesh.ops.dissolve_limit(bm2, angle_limit=math.radians(deg), verts=vs, edges=es, use_dissolve_boundaries=False)
+        bmesh.ops.dissolve_limit(bm2, angle_limit=math.radians(deg), verts=vs, edges=es, use_dissolve_boundaries=False,
+                                 delimit={"UV"})
         ng = [f for f in bm2.faces if len(f.verts) > 3]
         bmesh.ops.triangulate(bm2, faces=ng, quad_method="BEAUTY", ngon_method="BEAUTY")
         t = sum(len(f.verts) - 2 for f in bm2.faces)
@@ -1087,7 +1213,7 @@ def limited_dissolve(bm, excess, protect):
             es = list({e for f in fs for e in f.edges if all(g.index in idx for g in e.link_faces)})
             vs = list({v for f in fs for v in f.verts})
             bmesh.ops.dissolve_limit(bm, angle_limit=math.radians(deg), verts=vs, edges=es,
-                                     use_dissolve_boundaries=False)
+                                     use_dissolve_boundaries=False, delimit={"UV"})
             ng = [f for f in bm.faces if len(f.verts) > 3]
             bmesh.ops.triangulate(bm, faces=ng, quad_method="BEAUTY", ngon_method="BEAUTY")
             return deg
