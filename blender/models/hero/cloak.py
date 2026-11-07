@@ -72,7 +72,7 @@ M_OPEN_HEM_DEG = 10.0                  # half opening at the hem; the front edge
 M_OPEN_Z = 1.22
 SH_Z0, SH_X0 = 1.495, 0.13           # outline point at the hood edge for the pressed shoulders
 SHOULDER_DEG = 34.0                    # the neckline is raised until neck -> shoulder corner falls this steeply
-START_ZMAX = 1.505                     # ... but not higher than this (inside the loosened hood)
+START_ZMAX = 1.49                      # ... but not higher than this (inside the loosened hood)
 LIFT_MAX = 0.06                        # hood lift over the mantle neckline (cap)
 LIFT_CLEAR = 0.008                     # hood clearance over the mantle
 FOREARM_X, FOREARM_TOP = 0.185, 1.10   # |x| beyond this and below this: forearm / hand (kept free)
@@ -140,6 +140,8 @@ def loosen_hood(V0, C, mat_v, polys):
     phi = np.degrees(np.arctan2(np.abs(hv[:, 0]), hv[:, 1] - YH))        # 0 = straight ahead from the head axis
     g = np.where((z > 1.49) & (z < 1.745), sstep(38.0, 52.0, phi), 1.0)  # the face (front) stays
     L = L * g * sstep(0.0, 0.05, rr)                                    # no hole at the crown
+    rh = np.hypot(hv[:, 0], hv[:, 1] - YH)                               # the neck lining inside the hood stays
+    L = L * np.where((z > 1.47) & (z < 1.64), sstep(0.064, 0.078, rh), 1.0)
     V[idx] += dv * L[:, None]
     # face opening rim: hood vertices sharing a face with face vertices
     face_v = C["face"]
@@ -181,15 +183,15 @@ def loosen_hood(V0, C, mat_v, polys):
 
 
 # ----------------------------------------------------------------------------------------------- envelope
-def envelope(P):
-    """E[k, i]: max radius of points P (n,3) in theta bin k (+- WEDGE_BINS) and z bin i (+-2)."""
+def envelope(P, dz_bins=2):
+    """E[k, i]: max radius of points P (n,3) in theta bin k (+- WEDGE_BINS) and z bin i (+-dz_bins)."""
     E = np.zeros((NT, NZ))
     th = ang(P[:, 0], P[:, 1])
     r = np.hypot(P[:, 0], P[:, 1] - YC)
     k0 = np.round(th / math.radians(DT_DEG)).astype(int)
     i0 = np.round(P[:, 2] / DZ).astype(int)
     for dk in range(-WEDGE_BINS, WEDGE_BINS + 1):
-        for di in (-2, -1, 0, 1, 2):
+        for di in range(-dz_bins, dz_bins + 1):
             k = (k0 + dk) % NT
             i = np.clip(i0 + di, 0, NZ - 1)
             np.maximum.at(E, (k, i), r)
@@ -530,6 +532,20 @@ def apply(obj):
                 pr = hull_profile(groups, m_th[j], m_start[j], m_hem[j], sweep=float(m_extra(j, np.zeros(1))[1][0]))
                 log("DEBUG col", j, round(math.degrees(m_th[j]) % 360), "start", m_start[j].round(3), "prof", pr[:6].round(3).tolist(),
                     "rows", np.stack([mR[j], mZ[j]], 1)[:5].round(3).tolist())
+    # neighbouring columns of the upper mantle smoothed outward (no pleats where one column rides over a strap
+    # buckle and the next one does not)
+    for _ in range(4):          # the neckline edge (row 0, row 1 half) smoothed along the columns: no zigzag top edge
+        for arr in (mR, mZ):
+            a = arr[:-1, :2].copy()
+            sm = 0.25 * np.roll(a, 1, 0) + 0.5 * a + 0.25 * np.roll(a, -1, 0)
+            arr[:-1, 0] = sm[:, 0]
+            arr[:-1, 1] = 0.5 * (a[:, 1] + sm[:, 1])
+            arr[-1, :2] = arr[0, :2]
+    up = mZ > 1.25
+    for _ in range(3):
+        Rs = mR.copy()
+        Rs[1:-1] = np.maximum(mR[1:-1], 0.25 * mR[:-2] + 0.5 * mR[1:-1] + 0.25 * mR[2:])
+        mR = np.where(up, Rs, mR)
     # folds: start at the shoulder line, deepen to the hem; flat under the bib and the strap ribbons
     A = np.interp(mZ, *M_FOLD_Z)
     A = np.maximum(A, M_FOLD_HEM * sstep(0.55, 1.0, mS) * (m_hem[:, None] < 0.95))
@@ -537,10 +553,12 @@ def apply(obj):
     B = to_xyz(mR, mTH, mZ)
     bx, by, bz = B[..., 0], B[..., 1], B[..., 2]
     bib = (by > YC) * sstep(bib_bottom(np.abs(bx)) - 0.05, bib_bottom(np.abs(bx)), bz)
-    strap = np.exp(-((np.abs(bx) - STRAP_X) / 0.035) ** 2) * sstep(1.08, 1.16, bz) * (by > -0.08)
-    A *= (1 - bib) * (1 - 0.9 * strap)
+    strap = np.exp(-((np.abs(bx) - STRAP_X) / 0.045) ** 2) * sstep(1.08, 1.16, bz) * (by > -0.08)
+    A *= (1 - bib) * (1 - strap)
     m_room = np.maximum(0.0, mR - np.maximum(env_at(E_body, mTH, mZ) + M_OFF, env_at(E_cloak, mTH, mZ) + M_GAP))
     mR2, mD, mc = folds(mR, m_u, A, m_room, M_FOLD_IN)
+    low = mZ < 0.95             # below the hips: never closer than M_OFF to the legs / body (the swing of the open
+    mR2 = np.where(low, np.maximum(mR2, env_at(envelope(BP, 12), mTH, mZ) + M_OFF), mR2)      # front edges can cut a knee)
     mantle = to_xyz(mR2, mTH, mZ)
     top = mZ[0] >= M_OPEN_Z - 1e-6        # the closing column = the first column above the opening
     mantle[-1, top] = mantle[0, top]
@@ -653,7 +671,7 @@ def apply(obj):
         disp = new_d
     big = 0
     for i in hood_idx:
-        d = disp[i]
+        d = disp[i] * float(sstep(1.63, 1.53, bm.verts[i].co.z))     # the head shell above the neck stays put
         if d.length > LIFT_MAX:
             d = d * (LIFT_MAX / d.length)
             big += 1
@@ -722,19 +740,41 @@ def apply(obj):
     neck_cut = list({bf[b] for a, b in ctree.overlap(btree)})
     bmesh.ops.delete(bm, geom=neck_cut, context="FACES_ONLY")
     log("torso faces cutting the cloth at the neck / shoulders deleted", len(neck_cut))
-    # hood faces still cutting the mantle with their centre under it: they are covered by the mantle there
-    mtree2, _ = tree_of([f for f in bm.faces if f.material_index == mi and lp and int(round(f[lp])) == 20])
-    hf = [f for f in bm.faces if f.material_index == 0 and all(v.index in hood_set for v in f.verts)]
-    htree, hfl = tree_of(hf)
-    hood_cut = []
-    for b in {b for a, b in mtree2.overlap(htree)}:
-        f = hfl[b]
+    # torso bits (Tripo strap buckles) that poke out of the mantle on the chest / shoulders: deleted (the mantle is
+    # the outer layer there)
+    mtree4, _ = tree_of([f for f in bm.faces if f.material_index == mi and lp and int(round(f[lp])) == 20])
+    poke = []
+    for f in bm.faces:
+        if f.material_index != 0 or (lp and int(round(f[lp])) == 22):
+            continue
         c = f.calc_center_median()
-        loc, n, _, d = mtree2.find_nearest(c)
-        if loc is not None and (c - loc).dot(n) < 0:
-            hood_cut.append(f)
-    bmesh.ops.delete(bm, geom=hood_cut, context="FACES_ONLY")
-    log("hood faces under the mantle deleted", len(hood_cut))
+        ids = [v.index for v in f.verts]
+        if not (1.10 < c.z < 1.47 and abs(c.x) < 0.24 and (abs(c.x) > 0.08 or c.z > 1.24)) or \
+                any(i in protect for i in ids) or all(i in pack_set for i in ids):
+            continue
+        loc, n, _, d = mtree4.find_nearest(c, 0.05)
+        if loc is not None and (c - loc).dot(n) > 0:
+            poke.append(f)
+    bmesh.ops.delete(bm, geom=poke, context="FACES_ONLY")
+    log("torso faces outside the mantle deleted", len(poke))
+    # hood faces still cutting the mantle with their centre under it: they are covered by the mantle there
+    inner_set = set(np.nonzero(C["inner"])[0].tolist())
+    n_hood_cut = 0
+    for _ in range(3):
+        mtree2, _ = tree_of([f for f in bm.faces if f.material_index == mi and lp and int(round(f[lp])) == 20])
+        hf = [f for f in bm.faces if f.material_index == 0 and not (lp and int(round(f[lp])) == 22)
+              and all(v.index in hood_set or v.index in inner_set for v in f.verts)]
+        htree, hfl = tree_of(hf)
+        hood_cut = []
+        for b in {b for a, b in mtree2.overlap(htree)}:
+            f = hfl[b]
+            c = f.calc_center_median()
+            loc, n, _, d = mtree2.find_nearest(c)
+            if loc is not None and (c - loc).dot(n) < 0:
+                hood_cut.append(f)
+        bmesh.ops.delete(bm, geom=hood_cut, context="FACES_ONLY")
+        n_hood_cut += len(hood_cut)
+    log("hood / neck-lining faces under the mantle deleted", n_hood_cut)
 
     # ---- cut the cloth inside the backpack (closed Tripo surface: inside = behind the nearest pack face)
     bm.faces.ensure_lookup_table()
@@ -862,7 +902,7 @@ def add_straps(bm, top_faces, lp, uvl):
             hs = [tree.ray_cast(o, d, 3.0) for o in origins]
             hs = [h for h in hs if h[0] is not None]
             return max(hs, key=key)[0] if hs else None
-        for z in np.linspace(1.16, 1.42, 14):                 # chest, front: rays from the front, frontmost hit
+        for z in np.linspace(1.34, 1.42, 5):                  # chest, front: rays from the front, frontmost hit
             h = outer([Vector((x, 0.8, z))], Vector((0, -1, 0)), lambda h: h[0].y)
             if h is not None:
                 pts.append(Vector((x, h.y, h.z)))
@@ -871,7 +911,7 @@ def add_straps(bm, top_faces, lp, uvl):
             k_top = float(sstep(y_front - 0.02, y_front - 0.06, y))
             xx = side * (STRAP_X + (STRAP_X_TOP - STRAP_X) * k_top + (STRAP_X_PACK - STRAP_X_TOP) * float(sstep(0.03, -0.05, y)))
             h = outer([Vector((xx, y, 2.2))], Vector((0, 0, -1)), lambda h: h[0].z)
-            if h is not None:
+            if h is not None and (not pts or h.z > pts[-1].z - 0.03):
                 pts.append(Vector((xx, h.y, h.z)))
         z_last = pts[-1].z if pts else 1.44
         for z in np.linspace(z_last - 0.01, 1.395, 4):      # down the back to the backpack's top: rays from behind
@@ -883,6 +923,8 @@ def add_straps(bm, top_faces, lp, uvl):
             log("WARNING: strap path not found", side)
             continue
         P = np.array([p[:] for p in pts])
+        if os.environ.get("CLOAK_DEBUG"):
+            log("DEBUG strap path", side, [tuple(round(c, 3) for c in p) for p in pts])
         for _ in range(3):
             P[1:-1] = 0.25 * P[:-2] + 0.5 * P[1:-1] + 0.25 * P[2:]
         cum = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(P, axis=0), axis=1))])
@@ -899,15 +941,19 @@ def add_straps(bm, top_faces, lp, uvl):
             hc = tree.ray_cast(q + nrm * 0.08, -nrm, 0.16)
             if hc[0] is not None:
                 nrm = hc[1].copy() if hc[1].dot(nrm) > 0 else -hc[1]
-            w = t.normalized().cross(nrm).normalized()
-            if w.x * side < 0:
-                w = -w
+            X = Vector((float(side), 0.0, 0.0))            # width along x, in the surface's tangent plane
+            w = (X - nrm * X.dot(nrm)).normalized()
             row = []
             for off in (-STRAP_W / 2, 0.0, STRAP_W / 2):
                 p = q + w * off
-                h = tree.ray_cast(p + nrm * 0.08, -nrm, 0.16)          # first (outermost) surface along -n
-                if h[0] is None:
-                    h = tree.find_nearest(p)
+                hits, o = [], p + nrm * 0.06                    # all surfaces along -n; the one nearest the path
+                for _ in range(6):
+                    h = tree.ray_cast(o, -nrm, 0.12)
+                    if h[0] is None:
+                        break
+                    hits.append(h)
+                    o = h[0] - nrm * 1e-4
+                h = min(hits, key=lambda h: (h[0] - p).length) if hits else tree.find_nearest(p)
                 hp, hn = h[0], h[1].copy()
                 if hn.dot(nrm) < 0:
                     hn = -hn
@@ -931,6 +977,7 @@ def add_straps(bm, top_faces, lp, uvl):
                 n_tris += 2
     # chords of the flat ribbon faces sink into the convex cloth between the samples: push the corners out until
     # every face centre / edge midpoint is >= 1.5 mm above the surface
+    pushed = {}
     for _ in range(6):
         push = {}
         for f in ribbon_faces:
@@ -945,6 +992,9 @@ def add_straps(bm, top_faces, lp, uvl):
         if not push:
             break
         for v, d in push.items():
+            if pushed.get(v, 0.0) + d > 0.004:          # never more than 4 mm in total
+                d = max(0.0, 0.004 - pushed.get(v, 0.0))
+            pushed[v] = pushed.get(v, 0.0) + d
             n = sum((g.normal for g in v.link_faces), Vector()).normalized()
             v.co += n * d
         for f in ribbon_faces:
